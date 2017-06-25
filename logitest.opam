@@ -17,9 +17,15 @@ remove: [
 ]
 depends: [
     "ocamlfind" {build}
-    "containers" { >= "1.0" }
-    "base-unix"
     "jbuilder" {build}
+    "base-unix"
+    "containers" { >= "1.0" }
+    "re"
+    "junit"
+    "toml"
+    "olinq"
+    "csv"
+    "cmdliner"
 ]
 homepage: "https://github.com/nunchaku-inria/logitest/"
 available: [ocaml-version >= "4.01.0"]
