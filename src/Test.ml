@@ -64,8 +64,8 @@ module Raw = struct
 
   let pp_stat out s =
     fpf out
-      "{@[<hv>unsat: %d,@ sat: %d,@ errors: %d,@ unknown: %d,@ \
-       timeout: %d,@ total: %d,@ total_time: %.2f@]}"
+      "(@[<hv>:unsat %d@ :sat %d@ :errors %d@ :unknown %d@ \
+       :timeout %d@ :total %d@ :total_time %.2f@])"
       s.unsat s.sat s.errors s.unknown s.timeout
       (s.unsat + s.sat + s.errors + s.unknown + s.timeout)
       s.total_time
@@ -140,10 +140,10 @@ module Analyze = struct
       (MStr.cardinal t.raw)
 
   let pp out ({ raw=_; stat; improved; ok; disappoint; bad; errors } as r) =
-    let pp_l out = fpf out "[@[<hv>%a@]]" (pp_list_ pp_raw_res_) in
+    let pp_l = pp_list_ pp_raw_res_ in
     fpf out
       "(@[<hv2>results@ :summary %a@ :stat %a@ :%-15s %a@ \
-       :%-15s: %a@ :%-15s: %a@ :%-15s: %a@ :%-15s: %a@]@)"
+       :%-15s: %a@ :%-15s: %a@ :%-15s: %a@ :%-15s: %a@])"
       pp_summary  r
       Raw.pp_stat stat
       "ok" pp_l ok
@@ -241,7 +241,7 @@ module ResultsComparison = struct
 
   let pp out (t:t) =
     fpf out "(@[<v2>comparison@ :appeared: %a@ :disappeared %a@ :same %a@ \
-             :mismatch %a@ :improved: %a@ :regressed: %a@]@)"
+             :mismatch %a@ :improved: %a@ :regressed: %a@])"
       (pp_hvlist_ pp_pb_res) t.appeared
       (pp_hvlist_ pp_pb_res) t.disappeared
       (pp_hvlist_ pp_pb_same) t.same
