@@ -17,8 +17,8 @@ let expect_of_config config = function
     begin match CCString.Split.left ~by:":" s with
       | Some ("program", p) ->
         Prover_set.find_config config p >|= fun p -> C.Program p
-      | _ -> Ok (C.Res (Res.of_string s))
-      | exception Not_found -> Ok (C.Res (Res.of_string s))
+      | _ -> E.return (C.Res (Res.of_string s))
+      | exception Not_found -> E.return (C.Res (Res.of_string s))
     end
 
 let config_of_config ?(profile="test") config dirs =

@@ -181,8 +181,8 @@ let config_term =
     );
     let config = Config.interpolate_home config in
     begin match Config.parse_file config with
-      | Ok x -> `Ok x
-      | Error e -> `Error (false, e)
+      | Result.Ok x -> `Ok x
+      | Result.Error e -> `Error (false, e)
     end
   in
   let arg =

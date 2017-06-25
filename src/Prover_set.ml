@@ -104,7 +104,7 @@ let find_config config name =
     Config.(get_or ~default:[] config @@ string_list "provers")
   in
   if not (List.mem name provers) then (
-    Error ("prover " ^ name ^ " not listed in config")
+    E.fail_fprintf "prover %s not listed in config" name
   ) else build_from_config config name
 
 (* make a list of provers from the given config *)
