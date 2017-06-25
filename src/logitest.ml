@@ -198,8 +198,8 @@ let config_term =
 let term_run =
   let open Cmdliner in
   let aux dyn dirs dir_file config profile timeout memory
-      meta provers junit =
-    Run.main ~dyn ?timeout ?memory ?junit ?provers
+      meta provers junit csv =
+    Run.main ~dyn ?timeout ?memory ?junit ?csv ?provers
       ~meta ?profile ~config ?dir_file dirs ()
   in
   let config = config_term
@@ -219,6 +219,8 @@ let term_run =
     "test a program on every file in a directory"
   and junit =
     Arg.(value & opt (some string) None & info ["junit"] ~doc:"junit output file")
+  and csv =
+    Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
   and dir =
     Arg.(value & pos_all string [] &
          info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
@@ -226,7 +228,7 @@ let term_run =
     Arg.(value & opt (some (list string)) None & info ["p"; "provers"] ~doc:"select provers")
   in
   Term.(pure aux $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
-    $ meta $ provers $ junit),
+    $ meta $ provers $ junit $ csv),
   Term.info ~doc "run"
 
 let snapshot_name_term : string option Cmdliner.Term.t =
