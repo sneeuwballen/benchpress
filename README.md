@@ -1,6 +1,6 @@
 # Logitest
 
-Tool to run one or more logic programs, one a set of files, and collect the
+Tool to run one or more logic programs, on a set of files, and collect the
 results.
 
 License: BSD.

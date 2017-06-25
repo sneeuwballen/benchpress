@@ -124,8 +124,14 @@ let run ?(on_solve = nop_) ?(on_done = nop_)
   E.map_l
     (fun pb_path ->
        (* transform into problem *)
-       let find_expect = Problem_run.find_expect ~expect in
-       Problem_run.make ~find_expect pb_path >>= fun pb ->
+       Problem_run.find_expect ~expect pb_path >|= fun expect ->
+       pb_path, expect)
+    set
+  >>= fun l ->
+  E.map_l
+    (fun (pb_path,expect) ->
+       (* transform into problem *)
+       Problem_run.make ~expect pb_path >>= fun pb ->
        (* run provers *)
        E.map_l
          (fun prover ->
@@ -137,7 +143,7 @@ let run ?(on_solve = nop_) ?(on_done = nop_)
             |> E.add_ctxf "(@[running :prover %a :on %a@])"
               Prover.pp_name prover Problem.pp pb)
          provers)
-    set
+    l
   >>= fun res ->
   let res = List.flatten res in
   let r = T.Top_result.make (List.map Event.mk_prover res) in

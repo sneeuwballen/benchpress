@@ -13,12 +13,12 @@ val find_expect :
 (** FInd the expected result for this given problem *)
 
 val make :
-  find_expect:(path -> Res.t or_error) ->
+  expect:Res.t ->
   path ->
   Problem.t or_error
-(** [make ~find_expect file] tries to find the expected result of [file], and
+(** [make ~expect file] tries to find the expected result of [file], and
     makes a problem if it finds the result
-    @param find_expect the function to obtain the actual expected result *)
+    @param expect the expected result *)
 
 val of_dir :
   filter:(string -> bool) ->

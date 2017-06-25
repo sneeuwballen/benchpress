@@ -42,6 +42,7 @@ let find_expected_ ?default file =
   end
 
 let find_expect ~expect file : Res.t or_error =
+  Misc.Debug.debugf 3 (fun k->k "find_expect `%s`…" file);
   begin match expect with
     | Test.Config.Auto -> find_expected_ ?default:None file
     | Test.Config.Res r -> find_expected_ ~default:r file
@@ -51,11 +52,7 @@ let find_expect ~expect file : Res.t or_error =
       E.return (Event.analyze_p event)
   end
 
-let make ~find_expect file =
-  let open E.Infix in
-  Misc.Debug.debugf 3 (fun k->k "convert `%s` into problem..." file);
-  find_expect file |> E.add_ctxf "parsing expected result of `%s`" file
-  >>= fun res ->
+let make ~expect:res file =
   let pb = Problem.make file res in
   E.return pb
 
@@ -76,11 +73,14 @@ module Set = struct
   let size = List.length
 
   let make ~find_expect l =
-    let l = CCList.map (make ~find_expect) l in
-    let l = E.map_l CCFun.id l in
+    let open E.Infix in
+    E.map_l
+      (fun pb ->
+         find_expect pb >>= fun res ->
+         make ~expect:res pb)
+      l
     (* sort by alphabetic order *)
-    let l = E.(l >|= List.sort Problem.compare_name) in
-    l
+    >|= List.sort Problem.compare_name
 
   let of_dir ~expect ~filter d =
     let open E.Infix in
