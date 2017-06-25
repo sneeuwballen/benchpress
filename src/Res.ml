@@ -1,0 +1,44 @@
+
+(* This file is free software. See file "license" for more details. *)
+
+type t =
+  | Sat
+  | Unsat
+  | Unknown
+  | Timeout
+  | Error
+
+let to_string = function
+  | Sat -> "sat"
+  | Unsat -> "unsat"
+  | Unknown -> "unknown"
+  | Timeout -> "timeout"
+  | Error -> "error"
+
+let of_string = function
+  | "sat" -> Sat
+  | "unsat" -> Unsat
+  | "error" -> Error
+  | "timeout" -> Timeout
+  | "unknown" -> Unknown
+  | s -> failwith ("unknown result: " ^ s)
+
+let print out s = Format.pp_print_string out (to_string s)
+
+let compare a b = match a, b with
+  | Unsat, Unsat
+  | Sat, Sat
+  | (Unknown | Timeout), (Unknown | Timeout)
+  | Error, Error -> `Same
+    (*
+  | Unknown, Timeout -> `LeftBetter
+  | Timeout, Unknown -> `RightBetter
+       *)
+  | (Unknown | Timeout | Error), (Sat | Unsat) -> `RightBetter
+  | (Sat | Unsat), (Unknown | Timeout | Error) -> `LeftBetter
+  | Error, (Unknown | Timeout) -> `RightBetter
+  | (Unknown | Timeout), Error -> `LeftBetter
+  | Unsat, Sat
+  | Sat, Unsat ->
+    `Mismatch
+

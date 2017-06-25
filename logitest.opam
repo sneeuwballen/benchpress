@@ -1,0 +1,26 @@
+opam-version: "1.2"
+name: "nunchaku"
+version: "dev"
+authors: ["Simon Cruanes"]
+maintainer: "simon.cruanes@inria.fr"
+build: [
+    [make "build"]
+]
+install: [
+    ["jbuilder" "make" "install"]
+]
+build-doc: [ make "doc" ]
+build-test: [ make "test" ]
+remove: [
+    ["ocamlfind" "remove" "nunchaku"]
+]
+depends: [
+    "ocamlfind" {build}
+    "containers" { >= "1.0" }
+    "base-unix"
+    "jbuilder" {build}
+]
+homepage: "https://github.com/nunchaku-inria/logitest/"
+available: [ocaml-version >= "4.01.0"]
+dev-repo: "https://github.com/nunchaku-inria/logitest.git"
+bug-reports: "https://github.com/nunchaku-inria/logitest/issues"
