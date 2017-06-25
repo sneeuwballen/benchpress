@@ -5,9 +5,10 @@ authors: ["Simon Cruanes"]
 maintainer: "simon.cruanes@inria.fr"
 build: [
     [make "build"]
+    ["jbuilder" "build" "@install"]
 ]
 install: [
-    ["jbuilder" "make" "install"]
+    ["jbuilder" "install"]
 ]
 build-doc: [ make "doc" ]
 build-test: [ make "test" ]

@@ -8,3 +8,8 @@
   (libraries (containers containers.unix re re.perl junit csv
               cmdliner result toml olinq))
   (flags (:standard -w +a-4-42-44-48-50-58-32-60@8 -color always))))
+
+(install
+  ((section bin)
+   (files
+     ((logitest.exe as logitest)))))

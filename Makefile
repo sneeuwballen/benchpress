@@ -2,7 +2,7 @@
 
 TARGETS=src/logitest.exe
 
-all:
+build:
 	jbuilder build $(TARGETS)
 
 clean:
