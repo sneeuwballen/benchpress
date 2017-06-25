@@ -263,6 +263,7 @@ let parse_opt () =
   Cmdliner.Term.eval_choice help [ term_run; term_sample; ]
 
 let () =
+  CCFormat.set_color_default true;
   match parse_opt () with
   | `Version | `Help | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
   | `Ok (Ok ()) -> ()
