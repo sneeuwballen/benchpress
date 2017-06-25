@@ -122,25 +122,30 @@ module Analyze = struct
   let is_ok r = r.bad = []
   let num_failed r = List.length r.bad
 
-  let pp_raw_res_ out r =
-    fpf out "@[<h>problem %s (expected: %a, result: %a in %.2f)@]"
-      r.Event.problem.Problem.name
-      Res.print r.Event.problem.Problem.expected
-      Res.print (Event.analyze_p r)
+  let pp_raw_res_ ?(color="reset") out r =
+    fpf out "@[<h>problem %a (expected: %a, result: %a in %.2f)@]"
+      CCFormat.(with_color color string) r.Event.problem.Problem.name
+      (CCFormat.with_color color Res.print) r.Event.problem.Problem.expected
+      (CCFormat.with_color color Res.print) (Event.analyze_p r)
       r.Event.raw.Event.rtime
 
   let pp_summary out t: unit =
+    let pp_z_or_err out d =
+      if d=0 then CCFormat.int out d
+      else CCFormat.(with_color "Red" int) out d
+    in
     Format.fprintf out
-      "(@[<hv>:ok %d@ :improved %d@ :disappoint %d@ :bad %d@ :errors %d@ :total %d@])"
+      "(@[<hv>:ok %d@ :improved %d@ :disappoint %d@ :bad %a@ :errors %a@ :total %d@])"
       (List.length t.ok)
       (List.length t.improved)
       (List.length t.disappoint)
-      (List.length t.bad)
-      (List.length t.errors)
+      pp_z_or_err (List.length t.bad)
+      pp_z_or_err (List.length t.errors)
       (MStr.cardinal t.raw)
 
   let pp out ({ raw=_; stat; improved; ok; disappoint; bad; errors } as r) =
-    let pp_l = pp_list_ pp_raw_res_ in
+    let pp_l = pp_list_ (pp_raw_res_ ?color:None) in
+    let pp_l_red = pp_list_ (pp_raw_res_ ~color:"Red") in
     fpf out
       "(@[<hv2>results@ :summary %a@ :stat %a@ :%-15s %a@ \
        :%-15s %a@ :%-15s %a@ :%-15s %a@ :%-15s %a@])"
@@ -149,8 +154,8 @@ module Analyze = struct
       "ok" pp_l ok
       "improved" pp_l improved
       "disappoint" pp_l disappoint
-      "bad" pp_l bad
-      "errors" pp_l errors
+      "bad" pp_l_red bad
+      "errors" pp_l_red errors
 end
 
 module Config = struct
@@ -232,7 +237,7 @@ module ResultsComparison = struct
   let pp_pb_res out (pb,res) = fpf out "@[<h>%s: %a@]" pb.Problem.name Res.print res
   let pp_pb_same out (pb,res,t1,t2) =
     fpf out "@[<h>%s: %a (%.2f vs %.2f)@]" pb.Problem.name Res.print res t1 t2
-  let pp_pb_res2 ?(color="white") ~bold out (pb,res1,res2) =
+  let pp_pb_res2 ?(color="reset") ~bold out (pb,res1,res2) =
     let module F = CCFormat in
     fpf out "@[<h>%s: %a@]" pb.Problem.name
       ((if bold then F.with_color (CCString.capitalize_ascii color) else F.with_color color)
@@ -255,7 +260,7 @@ module ResultsComparison = struct
       (List.length t.appeared)
       (List.length t.disappeared)
       (List.length t.same)
-      (List.length t.mismatch) (pp_hvlist_ (pp_pb_res2 ~bold:true ~color:"white")) t.mismatch
+      (List.length t.mismatch) (pp_hvlist_ (pp_pb_res2 ~bold:true ~color:"reset")) t.mismatch
       (List.length t.improved) (pp_hvlist_ (pp_pb_res2 ~bold:false ~color:"green")) t.improved
       (List.length t.regressed) (pp_hvlist_ (pp_pb_res2 ~bold:true ~color:"yellow")) t.regressed
 end
