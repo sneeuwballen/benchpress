@@ -78,7 +78,7 @@ module Run = struct
       >>= fun results ->
       Prover.Map_name.iter
         (fun p r ->
-           Format.printf "@[<2>%s on `%s`:@ @[<hv>%a@]@]@."
+           Format.printf "(@[<2>:prover %s :on %S@ @[<2>:results@ %a@]@])@."
              (Prover.name p) dir T.Analyze.pp r)
         (Lazy.force results.T.analyze);
       E.return results

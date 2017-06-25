@@ -123,7 +123,7 @@ module Analyze = struct
   let num_failed r = List.length r.bad
 
   let pp_raw_res_ ?(color="reset") out r =
-    fpf out "@[<h>problem %a (expected: %a, result: %a in %.2f)@]"
+    fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
       CCFormat.(with_color color string) r.Event.problem.Problem.name
       (CCFormat.with_color color Res.print) r.Event.problem.Problem.expected
       (CCFormat.with_color color Res.print) (Event.analyze_p r)
@@ -147,8 +147,8 @@ module Analyze = struct
     let pp_l = pp_list_ (pp_raw_res_ ?color:None) in
     let pp_l_red = pp_list_ (pp_raw_res_ ~color:"Red") in
     fpf out
-      "(@[<hv2>results@ :summary %a@ :stat %a@ :%-15s %a@ \
-       :%-15s %a@ :%-15s %a@ :%-15s %a@ :%-15s %a@])"
+      "(@[<hv2>:summary %a@ :stat %a@ :%-12s %a@ \
+       :%-12s %a@ :%-12s %a@ :%-12s %a@ :%-12s %a@])"
       pp_summary  r
       Raw.pp_stat stat
       "ok" pp_l ok
