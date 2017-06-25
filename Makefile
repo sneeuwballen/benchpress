@@ -5,6 +5,8 @@ TARGETS=src/logitest.exe
 build:
 	jbuilder build $(TARGETS)
 
+all: build
+
 clean:
 	jbuilder clean
 
