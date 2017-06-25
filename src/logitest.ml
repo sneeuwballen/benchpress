@@ -186,7 +186,7 @@ let config_term =
     end
   in
   let arg =
-    Arg.(value & opt string "$home/.logitest.toml" &
+    Arg.(value & opt string "~/.logitest.toml" &
          info ["c"; "config"] ~doc:"configuration file (in target directory)")
   and debug =
     let doc = "Enable debug (verbose) output" in
