@@ -143,7 +143,7 @@ module Analyze = struct
     let pp_l = pp_list_ pp_raw_res_ in
     fpf out
       "(@[<hv2>results@ :summary %a@ :stat %a@ :%-15s %a@ \
-       :%-15s: %a@ :%-15s: %a@ :%-15s: %a@ :%-15s: %a@])"
+       :%-15s %a@ :%-15s %a@ :%-15s %a@ :%-15s %a@])"
       pp_summary  r
       Raw.pp_stat stat
       "ok" pp_l ok
