@@ -12,8 +12,13 @@ type env = (string * string) array
 
 let mk_cmd ?env ~timeout ~memory ~prover ~file () =
   Misc.Debug.debugf 5 (fun k->k "mk_cmd timeout: %d, memory: %d" timeout memory);
+  (* limit time and memory ('v' is virtual memory, needed because 'm' ignored on linux) *)
+  let memory' = memory * 1000 in
+  let prefix =
+    Printf.sprintf "ulimit -t %d -m %d -Sv %d; " timeout memory' memory'
+  in
   let cmd = Prover.make_command ?env prover ~timeout ~memory ~file in
-  cmd
+  prefix ^ cmd
 
 let run_proc ~timeout cmd =
   let start = Unix.gettimeofday () in
