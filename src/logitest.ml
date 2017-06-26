@@ -198,7 +198,8 @@ let config_term =
 let term_run =
   let open Cmdliner in
   let aux dyn dirs dir_file config profile timeout memory
-      meta provers junit csv =
+      meta provers junit csv no_color : (unit,string) E.t =
+    if no_color then CCFormat.set_color_default false;
     Run.main ~dyn ?timeout ?memory ?junit ?csv ?provers
       ~meta ?profile ~config ?dir_file dirs ()
   in
@@ -226,9 +227,11 @@ let term_run =
          info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
   and provers =
     Arg.(value & opt (some (list string)) None & info ["p"; "provers"] ~doc:"select provers")
+  and no_color =
+    Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
   in
   Term.(pure aux $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
-    $ meta $ provers $ junit $ csv),
+    $ meta $ provers $ junit $ csv $ no_color),
   Term.info ~doc "run"
 
 let snapshot_name_term : string option Cmdliner.Term.t =
