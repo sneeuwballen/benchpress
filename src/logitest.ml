@@ -87,10 +87,13 @@ module Run = struct
   let check_res (results:T.top_result) : unit or_error =
     let lazy map = results.T.analyze in
     if Prover.Map_name.for_all (fun _ r -> T.Analyze.is_ok r) map
-    then E.return ()
-    else
-      E.fail_fprintf "%d failure(s)"
+    then (
+      Format.printf "OK@.";
+      E.return ()
+    ) else (
+      E.fail_fprintf "FAIL (%d failures)"
         (Prover.Map_name.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0)
+    )
 
   (* lwt main *)
   let main ?dyn ?timeout ?memory ?junit ?csv ?provers ?meta:_ ~config ?profile ?dir_file dirs () =
