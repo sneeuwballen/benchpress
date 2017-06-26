@@ -5,7 +5,7 @@ type env = (string * string) array
 
 (** {2 Main} *)
 
-val run_proc : timeout:int -> string -> Event.raw_result
+val run_proc : string -> Event.raw_result
 
 val run_prover :
   ?env:env ->
