@@ -116,7 +116,7 @@ let pp_result (res:Test.result): unit =
 
 let nop_ _ = ()
 
-let run ?(on_solve = nop_) ?(on_done = nop_)
+let run ?(j=1) ?(on_solve = nop_) ?(on_done = nop_)
     ?timeout ?memory ~provers ~expect ~config (set:path list)
     : Test.top_result or_error =
   let open E.Infix in
@@ -128,24 +128,29 @@ let run ?(on_solve = nop_) ?(on_done = nop_)
        pb_path, expect)
     set
   >>= fun l ->
+  (* build list of tasks *)
   E.map_l
     (fun (pb_path,expect) ->
        (* transform into problem *)
        Problem_run.make ~expect pb_path >>= fun pb ->
-       (* run provers *)
        E.map_l
-         (fun prover ->
-            begin
-              run_pb ~config prover pb >|= fun result ->
-              on_solve result; (* callback *)
-              result
-            end
-            |> E.add_ctxf "(@[running :prover %a :on %a@])"
-              Prover.pp_name prover Problem.pp pb)
+         (fun prover -> E.return (prover,pb))
          provers)
     l
+  >|= CCList.flatten
+  >|=
+  (* run provers *)
+  Misc.Par_map.map_p ~j
+    (fun (prover,pb) ->
+      begin
+        run_pb ~config prover pb >|= fun result ->
+        on_solve result; (* callback *)
+        result
+      end
+      |> E.add_ctxf "(@[running :prover %a :on %a@])"
+        Prover.pp_name prover Problem.pp pb)
+  >>= E.map_l CCFun.id
   >>= fun res ->
-  let res = List.flatten res in
   let r = T.Top_result.make (List.map Run_event.mk_prover res) in
   on_done r;
   E.return r

@@ -21,3 +21,19 @@ end = struct
 
   let debug l msg = debugf l (fun k->k "%s" msg)
 end
+
+(** Parallel map *)
+module Par_map = struct
+  (* map on the list with at most [j] parallel threads *)
+  let map_p ~j f l =
+    if j<1 then invalid_arg "map_p: ~j";
+    let module P = CCPool.Make(struct
+        let min_size = 1
+        let max_size = j
+      end) in
+    CCList.map
+      (fun x -> P.Fut.make1 f x)
+      l
+    |> P.Fut.sequence_l
+    |> P.Fut.get
+end

@@ -50,7 +50,7 @@ module Run = struct
        ())
 
   (* run provers on the given dir, return a list [prover, dir, results] *)
-  let test_dir ?dyn ?timeout ?memory ?provers ~config d : T.Top_result.t or_error =
+  let test_dir ?j ?dyn ?timeout ?memory ?provers ~config d : T.Top_result.t or_error =
     let open E.Infix in
     let dir = d.T.Config.directory in
     begin
@@ -70,7 +70,7 @@ module Run = struct
       let on_solve = progress ?dyn (len * List.length provers) in
       (* solve *)
       let main =
-        Test_run.run ?timeout ?memory ~provers
+        Test_run.run ?j ?timeout ?memory ~provers
           ~expect:d.T.Config.expect ~on_solve ~config pbs
         |> E.add_ctxf "running %d tests" len
       in
@@ -96,7 +96,7 @@ module Run = struct
     )
 
   (* lwt main *)
-  let main ?dyn ?timeout ?memory ?junit ?csv ?provers ?meta:_ ~config ?profile ?dir_file dirs () =
+  let main ?j ?dyn ?timeout ?memory ?junit ?csv ?provers ?meta:_ ~config ?profile ?dir_file dirs () =
     let open E.Infix in
     (* parse list of files, if need be *)
     let dirs = match dir_file with
@@ -116,7 +116,7 @@ module Run = struct
     let problems = config.T.Config.problems in
     (* build problem set (exclude config file!) *)
     E.map_l
-      (test_dir ?dyn ?timeout ?memory ?provers ~config)
+      (test_dir ?j ?dyn ?timeout ?memory ?provers ~config)
       problems
     >>= fun l ->
     Misc.Debug.debugf 1 (fun k->k  "merging %d top results…" (List.length l));
@@ -200,10 +200,10 @@ let config_term =
 (* sub-command for running tests *)
 let term_run =
   let open Cmdliner in
-  let aux dyn dirs dir_file config profile timeout memory
+  let aux j dyn dirs dir_file config profile timeout memory
       meta provers junit csv no_color : (unit,string) E.t =
     if no_color then CCFormat.set_color_default false;
-    Run.main ~dyn ?timeout ?memory ?junit ?csv ?provers
+    Run.main ~dyn ~j ?timeout ?memory ?junit ?csv ?provers
       ~meta ?profile ~config ?dir_file dirs ()
   in
   let config = config_term
@@ -215,6 +215,8 @@ let term_run =
     Arg.(value & opt (some string) None & info ["profile"] ~doc:"pick test profile (default 'test')")
   and timeout =
     Arg.(value & opt (some int) None & info ["t"; "timeout"] ~doc:"timeout (in s)")
+  and j =
+    Arg.(value & opt int 1 & info ["j"] ~doc:"level of parallelism")
   and memory =
     Arg.(value & opt (some int) None & info ["m"; "memory"] ~doc:"memory (in MB)")
   and meta =
@@ -233,7 +235,7 @@ let term_run =
   and no_color =
     Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
   in
-  Term.(pure aux $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
+  Term.(pure aux $ j $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
     $ meta $ provers $ junit $ csv $ no_color),
   Term.info ~doc "run"
 

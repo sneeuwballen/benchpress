@@ -19,6 +19,7 @@ val config_of_config : ?profile:string -> Config.t -> string list -> Test.Config
 val pp_result : Test.result -> unit
 
 val run :
+  ?j:int ->
   ?on_solve:(Test.result -> unit) ->
   ?on_done:(Test.top_result -> unit) ->
   ?timeout:int ->
