@@ -33,11 +33,12 @@ let find_expected_ ?default file =
       else if Re.marked g m_unknown_ then E.return Res.Unknown
       else if Re.marked g m_timeout_ then E.return Res.Timeout
       else if Re.marked g m_error_ then E.return Res.Error
-      else E.fail "could not parse the content of the `expect:` field"
+      else E.fail_fprintf "could not parse the content of the `expect:` field in `%s`" file
     | None ->
       begin match default with
         | Some r -> E.return r
-        | None -> E.fail "could not find the `expect:` field"
+        | None ->
+          E.fail_fprintf "could not find the `expect:` field in `%s`" file
       end
   end
 
