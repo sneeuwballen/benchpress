@@ -25,7 +25,6 @@ type +'a result = {
   problem : Problem.t;
   raw : raw_result;
 }
-[@@deriving yojson,eq]
 
 val program : 'a result -> 'a
 val problem : _ result -> Problem.t

@@ -81,9 +81,9 @@ let run_pb_ ~config prover pb =
   in
   Misc.Debug.debugf 4 (fun k->k "output for %s/%s: `%s`, `%s`, errcode %d"
     prover.Prover.binary pb.Problem.name
-    result.Event.raw.Event.stdout
-    result.Event.raw.Event.stderr
-    result.Event.raw.Event.errcode);
+    result.Run_event.raw.Run_event.stdout
+    result.Run_event.raw.Run_event.stderr
+    result.Run_event.raw.Run_event.errcode);
   result
 
 let run_pb ~config prover pb : _ E.t =
@@ -94,9 +94,9 @@ let run_pb ~config prover pb : _ E.t =
 
 let pp_result (res:Test.result): unit =
   let module F = CCFormat in
-  let p_res = Event.analyze_p res in
+  let p_res = Run_event.analyze_p res in
   let pp_res out () =
-    let str, c = match Problem.compare_res res.Event.problem p_res with
+    let str, c = match Problem.compare_res res.Run_event.problem p_res with
       | `Same -> "ok", "Green"
       | `Improvement -> "ok (improved)", "Blue"
       | `Disappoint -> "disappoint", "Cyan"
@@ -105,13 +105,13 @@ let pp_result (res:Test.result): unit =
     in
     Format.fprintf out "%a" (F.with_color c Format.pp_print_string) str
   in
-  let prover = res.Event.program in
+  let prover = res.Run_event.program in
   let prover_name = Filename.basename prover.Prover.name in
-  let pb_name = res.Event.problem.Problem.name in
+  let pb_name = res.Run_event.problem.Problem.name in
   Misc.Debug.debugf 3 (fun k->k "result for `%s` with %s: %s (%.1fs)"
-      prover_name pb_name (Res.to_string p_res) res.Event.raw.Event.rtime);
+      prover_name pb_name (Res.to_string p_res) res.Run_event.raw.Run_event.rtime);
   Format.printf "%-25s%-50s %a (%.1fs)@." prover_name (pb_name ^ " :")
-    pp_res () res.Event.raw.Event.rtime;
+    pp_res () res.Run_event.raw.Run_event.rtime;
   ()
 
 let nop_ _ = ()
@@ -146,6 +146,6 @@ let run ?(on_solve = nop_) ?(on_done = nop_)
     l
   >>= fun res ->
   let res = List.flatten res in
-  let r = T.Top_result.make (List.map Event.mk_prover res) in
+  let r = T.Top_result.make (List.map Run_event.mk_prover res) in
   on_done r;
   E.return r

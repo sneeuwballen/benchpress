@@ -7,7 +7,7 @@ type 'a or_error = ('a, string) CCResult.t
 
 module MStr = Misc.Str_map
 
-type result = Event.prover Event.result
+type result = Run_event.prover Run_event.result
 
 module Raw : sig
   type t = result MStr.t
@@ -112,7 +112,7 @@ end
 
 type top_result = private {
   timestamp: float; (* timestamp *)
-  events: Event.t list;
+  events: Run_event.t list;
   raw: Raw.t Prover.Map_name.t lazy_t;
   analyze: Analyze.t Prover.Map_name.t lazy_t;
 }
@@ -130,11 +130,11 @@ module Top_result : sig
 
   val merge_l : t list -> t
 
-  val make : ?timestamp:float -> Event.t list -> t
+  val make : ?timestamp:float -> Run_event.t list -> t
 
-  val snapshot : ?meta:string -> t -> Event.Snapshot.t
+  val snapshot : ?meta:string -> t -> Run_event.Snapshot.t
 
-  val of_snapshot : Event.Snapshot.t -> t
+  val of_snapshot : Run_event.Snapshot.t -> t
 
   val filter :
     provers:string list option ->

@@ -9,22 +9,22 @@ let test_analyze (t:Test.Analyze.t) : Junit.Testsuite.t =
   let l =
     MStr.fold
       (fun _ r acc ->
-         let prover = r.Event.program in
-         let res = Event.analyze_p r in
+         let prover = r.Run_event.program in
+         let res = Run_event.analyze_p r in
          let name =
            Printf.sprintf "prover `%s` on problem `%s`"
              prover.Prover.name
-             r.Event.problem.Problem.name
+             r.Run_event.problem.Problem.name
          and message =
            Printf.sprintf "result: `%s`, expected: `%s`"
              (Res.to_string res)
-             (Res.to_string r.Event.problem.Problem.expected)
+             (Res.to_string r.Run_event.problem.Problem.expected)
          and classname = ""
          and typ = ""
-         and time = r.Event.raw.Event.rtime
+         and time = r.Run_event.raw.Run_event.rtime
          in
          let case =
-           match Problem.compare_res r.Event.problem res with
+           match Problem.compare_res r.Run_event.problem res with
              | `Error
              | `Mismatch ->
                J.Testcase.error

@@ -7,7 +7,7 @@ module E = CCResult
 
 module MStr = Misc.Str_map
 
-type result = Event.prover Event.result
+type result = Run_event.prover Run_event.result
 
 type 'a or_error = ('a, string) CCResult.t
 
@@ -28,14 +28,14 @@ let pp_hvlist_ p =
     (CCFormat.hvbox
        (CCFormat.(list ~sep:(return "@ ") p)))
 
-let time_of_res e = e.Event.raw.Event.rtime
+let time_of_res e = e.Run_event.raw.Run_event.rtime
 
 module Raw = struct
   type t = result MStr.t
   let empty = MStr.empty
 
   let add r raw =
-    let pb = r.Event.problem.Problem.name in
+    let pb = r.Run_event.problem.Problem.name in
     MStr.add pb r raw
 
   let merge =
@@ -80,7 +80,7 @@ module Raw = struct
           | Res.Timeout -> add_timeout_
         ) !stat
     in
-    MStr.iter (fun _ r -> add_res (time_of_res r) (Event.analyze_p r)) r;
+    MStr.iter (fun _ r -> add_res (time_of_res r) (Run_event.analyze_p r)) r;
     !stat
 end
 
@@ -101,7 +101,7 @@ module Analyze = struct
       M.of_map raw
       |> OLinq.map snd
       |> OLinq.group_by
-        (fun r -> Problem.compare_res r.Event.problem (Event.analyze_p r))
+        (fun r -> Problem.compare_res r.Run_event.problem (Run_event.analyze_p r))
       |> OLinq.run_list ?limit:None
     in
     let improved = assoc_or [] `Improvement l in
@@ -124,10 +124,10 @@ module Analyze = struct
 
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
-      CCFormat.(with_color color string) r.Event.problem.Problem.name
-      (CCFormat.with_color color Res.print) r.Event.problem.Problem.expected
-      (CCFormat.with_color color Res.print) (Event.analyze_p r)
-      r.Event.raw.Event.rtime
+      CCFormat.(with_color color string) r.Run_event.problem.Problem.name
+      (CCFormat.with_color color Res.print) r.Run_event.problem.Problem.expected
+      (CCFormat.with_color color Res.print) (Run_event.analyze_p r)
+      r.Run_event.raw.Run_event.rtime
 
   let pp_summary out t: unit =
     let pp_z_or_err out d =
@@ -200,7 +200,7 @@ module ResultsComparison = struct
 
   (* TODO: use outer_join? to also find the disappeared/appeared *)
   let compare (a: Raw.t) b : t =
-    let open Event in
+    let open Run_event in
     let module M = OLinq.AdaptMap(MStr) in
     let a = M.of_map a |> OLinq.map snd in
     let b = M.of_map b |> OLinq.map snd in
@@ -220,14 +220,14 @@ module ResultsComparison = struct
     let same = assoc_or [] `Same j |> List.rev_map (fun (pb,r,_,t1,t2) -> pb,r,t1,t2) in
     let disappeared =
       OLinq.diff a b
-        ~eq:(CCFun.compose_binop Event.problem Problem.same_name)
-        ~hash:(CCFun.compose Event.problem Problem.hash_name)
+        ~eq:(CCFun.compose_binop Run_event.problem Problem.same_name)
+        ~hash:(CCFun.compose Run_event.problem Problem.hash_name)
       |> OLinq.map (fun r -> r.problem, analyze_p r)
       |> OLinq.run_list
     and appeared =
       OLinq.diff b a
-        ~eq:(CCFun.compose_binop Event.problem Problem.same_name)
-        ~hash:(CCFun.compose Event.problem Problem.hash_name)
+        ~eq:(CCFun.compose_binop Run_event.problem Problem.same_name)
+        ~hash:(CCFun.compose Run_event.problem Problem.hash_name)
       |> OLinq.map (fun r -> r.problem, analyze_p r)
       |> OLinq.run_list
     in
@@ -267,7 +267,7 @@ end
 
 type top_result = {
   timestamp: float; (* timestamp *)
-  events: Event.t list;
+  events: Run_event.t list;
   raw: Raw.t Prover.Map_name.t lazy_t;
   analyze: Analyze.t Prover.Map_name.t lazy_t;
 }
@@ -275,7 +275,7 @@ type top_result = {
 module Top_result = struct
   type t = top_result
 
-  let snapshot ?meta t = Event.Snapshot.make ?meta t.events
+  let snapshot ?meta t = Run_event.Snapshot.make ?meta t.events
 
   (* more recent first *)
   let compare_date a b: int = CCFloat.compare b.timestamp a.timestamp
@@ -289,14 +289,14 @@ module Top_result = struct
       l
       |> List.fold_left
         (fun map e -> match e with
-           | Event.Prover_run r ->
-             let p = r.Event.program in
+           | Run_event.Prover_run r ->
+             let p = r.Run_event.program in
              let raw =
                try Prover.Map_name.find p map with Not_found -> Raw.empty
              in
              let analyze_raw = Raw.add r raw in
              Prover.Map_name.add p analyze_raw map
-           | Event.Checker_run _ -> map)
+           | Run_event.Checker_run _ -> map)
         Prover.Map_name.empty
     ) in
     let analyze = lazy (
@@ -308,24 +308,24 @@ module Top_result = struct
     (* predicates on events *)
     let prover_ok r: bool = match provers with
       | None -> true
-      | Some l -> List.mem r.Event.program.Prover.name l
+      | Some l -> List.mem r.Run_event.program.Prover.name l
     and dir_ok r: bool = match dir with
       | [] -> true
       | l ->
-        let path = r.Event.problem.Problem.name in
+        let path = r.Run_event.problem.Problem.name in
         List.exists (fun d -> CCString.mem ~sub:d path) l
     in
     let events =
       CCList.filter
         (function
-          | Event.Prover_run r -> prover_ok r && dir_ok r
-          | Event.Checker_run _ -> true)
+          | Run_event.Prover_run r -> prover_ok r && dir_ok r
+          | Run_event.Checker_run _ -> true)
         t.events
     in
     make ~timestamp:t.timestamp events
 
   let of_snapshot s =
-    make ~timestamp:s.Event.timestamp s.Event.events
+    make ~timestamp:s.Run_event.timestamp s.Run_event.events
 
   let merge a b = make (List.rev_append a.events b.events)
 
@@ -442,7 +442,7 @@ module Top_result = struct
                     Prover.name prover, Res.Unknown, 0.
                   | Some res ->
                     let time = time_of_res res in
-                    let res = Event.analyze_p res in
+                    let res = Run_event.analyze_p res in
                     Prover.name prover, res, time)
                provers
            in
@@ -513,13 +513,13 @@ module Bench = struct
            let stat = Raw.stat raw in
            let sat =
              MStr.fold
-               (fun file res acc -> match Event.analyze_p res with
+               (fun file res acc -> match Run_event.analyze_p res with
                   | Res.Sat -> (file, time_of_res res) :: acc
                   | _ -> acc)
                raw []
            and unsat =
              MStr.fold
-               (fun file res acc -> match Event.analyze_p res with
+               (fun file res acc -> match Run_event.analyze_p res with
                   | Res.Unsat -> (file, time_of_res res) :: acc
                   | _ -> acc)
                raw []

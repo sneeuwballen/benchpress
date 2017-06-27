@@ -33,10 +33,10 @@ let run_proc cmd =
   let stime = 0. in
   let stdout = p#stdout in
   let stderr = p#stderr in
-  { Event.stdout; stderr; errcode; rtime; utime; stime; }
+  { Run_event.stdout; stderr; errcode; rtime; utime; stime; }
 
 let run_prover ?env ~timeout ~memory ~prover ~pb () =
   let file = pb.Problem.name in
   let cmd = mk_cmd ?env ~timeout ~memory ~prover ~file () in
   let raw = run_proc cmd in
-  { Event.program = prover; problem = pb; raw; }
+  { Run_event.program = prover; problem = pb; raw; }

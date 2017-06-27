@@ -5,7 +5,7 @@ type env = (string * string) array
 
 (** {2 Main} *)
 
-val run_proc : string -> Event.raw_result
+val run_proc : string -> Run_event.raw_result
 
 val run_prover :
   ?env:env ->
@@ -14,5 +14,5 @@ val run_prover :
   prover:Prover.t ->
   pb:Problem.t ->
   unit ->
-  Event.prover Event.result
+  Run_event.prover Run_event.result
 (** Runs the prover in a sub-process, and returns a the result *)

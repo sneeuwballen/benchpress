@@ -49,7 +49,7 @@ let find_expect ~expect file : Res.t or_error =
     | Test.Config.Program prover ->
       let pb = Problem.make file Res.Unknown in
       let event = Run.run_prover ~timeout:1 ~memory:1_000 ~prover ~pb () in
-      E.return (Event.analyze_p event)
+      E.return (Run_event.analyze_p event)
   end
 
 let make ~expect:res file =
