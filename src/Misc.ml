@@ -12,11 +12,15 @@ end = struct
   let lev_ = ref 0
   let set_level = (:=) lev_
 
+  let lock_ = CCLock.create ()
+
   let debugf l k =
     if l <= !lev_ then (
-      k (Format.kfprintf
-          (fun fmt -> Format.fprintf fmt "@.")
-          Format.std_formatter)
+      CCLock.with_lock lock_
+        (fun () ->
+        k (Format.kfprintf
+            (fun fmt -> Format.fprintf fmt "@.")
+            Format.std_formatter))
     )
 
   let debug l msg = debugf l (fun k->k "%s" msg)
