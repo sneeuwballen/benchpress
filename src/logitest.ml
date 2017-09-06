@@ -96,7 +96,8 @@ module Run = struct
     )
 
   (* lwt main *)
-  let main ?j ?dyn ?timeout ?memory ?junit ?csv ?provers ?meta:_ ~config ?profile ?dir_file dirs () =
+  let main ?j ?dyn ?timeout ?memory ?junit ?csv ?provers
+      ?meta:_ ?summary ~config ?profile ?dir_file dirs () =
     let open E.Infix in
     (* parse list of files, if need be *)
     let dirs = match dir_file with
@@ -139,6 +140,15 @@ module Run = struct
       | Some file ->
         Misc.Debug.debugf 1 (fun k->k "write results in CSV to file `%s`" file);
         T.Top_result.to_csv_file file results
+    end;
+    (* write summary in some file *)
+    begin match summary with
+      | None -> ()
+      | Some file ->
+        CCIO.with_out file
+          (fun oc ->
+             let out = Format.formatter_of_out_channel oc in
+             Format.fprintf out "%a@." T.Top_result.pp_compact results);
     end;
     (* now fail if results were bad *)
     check_res results
@@ -201,10 +211,10 @@ let config_term =
 let term_run =
   let open Cmdliner in
   let aux j dyn dirs dir_file config profile timeout memory
-      meta provers junit csv no_color : (unit,string) E.t =
+      meta provers junit csv summary no_color : (unit,string) E.t =
     if no_color then CCFormat.set_color_default false;
     Run.main ~dyn ~j ?timeout ?memory ?junit ?csv ?provers
-      ~meta ?profile ~config ?dir_file dirs ()
+      ~meta ?profile ?summary ~config ?dir_file dirs ()
   in
   let config = config_term
   and dyn =
@@ -234,9 +244,11 @@ let term_run =
     Arg.(value & opt (some (list string)) None & info ["p"; "provers"] ~doc:"select provers")
   and no_color =
     Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
+  and summary =
+    Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
   in
   Term.(pure aux $ j $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
-    $ meta $ provers $ junit $ csv $ no_color),
+    $ meta $ provers $ junit $ csv $ summary $ no_color),
   Term.info ~doc "run"
 
 let snapshot_name_term : string option Cmdliner.Term.t =

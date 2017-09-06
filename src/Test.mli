@@ -52,6 +52,7 @@ module Analyze : sig
   val num_failed : t -> int
 
   val pp : t CCFormat.printer
+  val pp_compact : t CCFormat.printer
 end
 
 module Config : sig
@@ -125,6 +126,9 @@ module Top_result : sig
 
   val pp_header : t CCFormat.printer
   (** Print only meta-information: UUID and timestamp *)
+
+  val pp_compact : t CCFormat.printer
+  (** Print meta-informations + compact results *)
 
   val merge : t -> t -> t
 

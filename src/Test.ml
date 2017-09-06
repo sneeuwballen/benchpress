@@ -156,6 +156,11 @@ module Analyze = struct
       "disappoint" pp_l disappoint
       "bad" pp_l_red bad
       "errors" pp_l_red errors
+
+  let pp_compact out ({stat; _} as r) =
+    fpf out
+      "(@[<hv2>:summary %a@ :stat %a@])"
+      pp_summary r Raw.pp_stat stat
 end
 
 module Config = struct
@@ -337,13 +342,22 @@ module Top_result = struct
     Format.fprintf out "(@[(date %a)@])"
       ISO8601.Permissive.pp_datetime t.timestamp
 
+  let pp_compact out (r:t) =
+    let pp_tup out (p,res) =
+      Format.fprintf out "@[<2>%a:@ @[%a@]@]"
+        Prover.pp_name p Analyze.pp_compact res
+    in
+    let {analyze=lazy a; _} = r in
+    Format.fprintf out "(@[<2>%a@ %a@])"
+      pp_header r (pp_list_ pp_tup) (Prover.Map_name.to_list a)
+
   let pp out (r:t) =
     let pp_tup out (p,res) =
       Format.fprintf out "@[<2>%a:@ @[%a@]@]"
         Prover.pp_name p Analyze.pp res
     in
     let {analyze=lazy a; _} = r in
-    Format.fprintf out "(@[<2>%a@ >%a@])"
+    Format.fprintf out "(@[<2>%a@ %a@])"
       pp_header r (pp_list_ pp_tup) (Prover.Map_name.to_list a)
 
   type comparison_result = {
