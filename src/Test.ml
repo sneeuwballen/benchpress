@@ -466,9 +466,7 @@ module Top_result = struct
     {t_meta=line0; t_provers=List.map Prover.name provers; t_rows}
 
   let table_to_csv (t:table): Csv.t =
-    let time_to_csv (r:Res.t) f = match r with
-      | Res.Timeout | Res.Error | Res.Unknown -> "-"
-      | Res.Sat | Res.Unsat -> Printf.sprintf "%.2f" f
+    let time_to_csv (_:Res.t) f = Printf.sprintf "%.2f" f
     and res_to_csv (r:Res.t) = match r with
       | Res.Error -> "error"
       | Res.Timeout -> "timeout"
