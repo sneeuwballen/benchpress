@@ -51,13 +51,21 @@ module Par_map = struct
   let map_p ~j f l =
     if j<1 then invalid_arg "map_p: ~j";
     die_on_sigterm();
+    (* NOTE: for some reason the pool seems to spawn one too many thread
+       in some cases. So we add a guard to respect [-j] properly. *)
+    let sem = CCSemaphore.create j in
+    let f_with_sem x =
+      CCSemaphore.with_acquire ~n:1 sem ~f:(fun () -> f x)
+    in
     let module P = CCPool.Make(struct
         let min_size = 1
         let max_size = j
       end) in
-    CCList.map
-      (fun x -> P.Fut.make1 f x)
-      l
-    |> P.Fut.sequence_l
-    |> P.Fut.get
+    let res =
+      CCList.map (fun x -> P.Fut.make1 f_with_sem x) l
+      |> P.Fut.sequence_l
+      |> P.Fut.get
+    in
+    P.stop();
+    res
 end

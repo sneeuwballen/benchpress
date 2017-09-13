@@ -95,7 +95,7 @@ let run_pb ~config prover pb : _ E.t =
 let pp_result (res:Test.result): unit =
   let module F = CCFormat in
   let p_res = Run_event.analyze_p res in
-  let pp_res out () =
+  let pp_res out () : unit =
     let str, c = match Problem.compare_res res.Run_event.problem p_res with
       | `Same -> "ok", "Green"
       | `Improvement -> "ok (improved)", "Blue"
@@ -103,7 +103,7 @@ let pp_result (res:Test.result): unit =
       | `Error -> "error", "Yellow"
       | `Mismatch -> "bad", "Red"
     in
-    Format.fprintf out "%a" (F.with_color c Format.pp_print_string) str
+    F.with_color c Format.pp_print_string out str
   in
   let prover = res.Run_event.program in
   let prover_name = Filename.basename prover.Prover.name in
