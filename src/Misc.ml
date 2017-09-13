@@ -3,6 +3,10 @@
 
 module Str_map = CCMap.Make(String)
 
+let _lock = CCLock.create()
+
+let synchronized f = CCLock.with_lock _lock f
+
 module Debug : sig
   val set_level : int -> unit
 
@@ -12,15 +16,13 @@ end = struct
   let lev_ = ref 0
   let set_level = (:=) lev_
 
-  let lock_ = CCLock.create ()
-
   let debugf l k =
     if l <= !lev_ then (
-      CCLock.with_lock lock_
+      synchronized
         (fun () ->
-        k (Format.kfprintf
-            (fun fmt -> Format.fprintf fmt "@.")
-            Format.std_formatter))
+           k (Format.kfprintf
+               (fun fmt -> Format.fprintf fmt "@.")
+               Format.std_formatter))
     )
 
   let debug l msg = debugf l (fun k->k "%s" msg)

@@ -78,8 +78,9 @@ module Run = struct
       >>= fun results ->
       Prover.Map_name.iter
         (fun p r ->
+           Misc.synchronized (fun () ->
            Format.printf "(@[<2>:prover %s :on %S@ @[<2>:results@ %a@]@])@."
-             (Prover.name p) dir T.Analyze.pp r)
+             (Prover.name p) dir T.Analyze.pp r))
         (Lazy.force results.T.analyze);
       E.return results
     end |> E.add_ctxf "running tests in dir `%s`" dir
@@ -88,7 +89,7 @@ module Run = struct
     let lazy map = results.T.analyze in
     if Prover.Map_name.for_all (fun _ r -> T.Analyze.is_ok r) map
     then (
-      Format.printf "OK@.";
+      Misc.synchronized (fun () -> Format.printf "OK@.");
       E.return ()
     ) else (
       E.fail_fprintf "FAIL (%d failures)"
@@ -180,7 +181,7 @@ module Sample = struct
     in
     let sample = List.map (Array.get files) sample_idx in
     (* print sample *)
-    List.iter (Printf.printf "%s\n%!") sample;
+    Misc.synchronized (fun () -> List.iter (Printf.printf "%s\n%!") sample);
     E.return ()
 end
 

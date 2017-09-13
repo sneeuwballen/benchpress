@@ -110,8 +110,10 @@ let pp_result (res:Test.result): unit =
   let pb_name = res.Run_event.problem.Problem.name in
   Misc.Debug.debugf 3 (fun k->k "result for `%s` with %s: %s (%.1fs)"
       prover_name pb_name (Res.to_string p_res) res.Run_event.raw.Run_event.rtime);
-  Format.printf "%-25s%-50s %a (%.1fs)@." prover_name (pb_name ^ " :")
-    pp_res () res.Run_event.raw.Run_event.rtime;
+  Misc.synchronized
+    (fun () ->
+       Format.printf "%-25s%-50s %a (%.1fs)@." prover_name (pb_name ^ " :")
+         pp_res () res.Run_event.raw.Run_event.rtime);
   ()
 
 let nop_ _ = ()
