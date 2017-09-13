@@ -30,21 +30,25 @@ module Run = struct
   let progress_dynamic len =
     let start = Unix.gettimeofday () in
     let count = ref 0 in
-    function _ ->
+    fun _ ->
       let time_elapsed = Unix.gettimeofday () -. start in
       incr count;
       let len_bar = 50 in
       let bar = String.init len_bar
           (fun i -> if i * len <= len_bar * !count then '#' else '-') in
       let percent = if len=0 then 100 else (!count * 100) / len in
-      Format.printf "... %5d/%d | %3d%% [%6s: %s]@?"
-        !count len percent (time_string time_elapsed) bar;
-      if !count = len then Format.printf "@."
+      Misc.synchronized
+        (fun () ->
+           Format.printf "... %5d/%d | %3d%% [%6s: %s]@?"
+             !count len percent (time_string time_elapsed) bar);
+      if !count = len then (
+        Misc.synchronized (fun() -> Format.printf "@.")
+      )
 
   let progress ?(dyn=false) n =
     let pp_bar = progress_dynamic n in
     (function res ->
-       if dyn then Format.printf "\r";
+       if dyn then output_char stdout '\r';
        Test_run.pp_result res;
        if dyn then pp_bar res;
        ())
