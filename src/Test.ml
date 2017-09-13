@@ -477,7 +477,11 @@ module Top_result = struct
       | Res.Unsat -> "unsat"
     in
     let line0 = [t.t_meta] in
-    let header_line = "problem" :: t.t_provers @ t.t_provers in
+    let header_line =
+      "problem" ::
+        t.t_provers @
+        (List.map (fun p -> p ^ ".time") t.t_provers)
+    in
     let lines =
       List.map
         (fun r ->
