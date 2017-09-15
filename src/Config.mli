@@ -98,5 +98,9 @@ val get : t -> 'a getter -> 'a or_error
 (** [get config g] tries to find a value using [f] in [config],
     or returns an error. *)
 
+val get_exn : t -> 'a getter -> 'a
+(** [get config g] tries to find a value using [f] in [config],
+    or returns an error. *)
+
 val get_or : default:'a -> t -> 'a getter -> 'a
 (** Get with a default *)

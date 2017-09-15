@@ -277,3 +277,7 @@ let get (c:t) (g:'a getter) : 'a or_error =
 let get_or ~default c g = match get c g with
   | CCResult.Ok x -> x
   | CCResult.Error _ -> default
+
+let get_exn c g = match get c g with
+  | CCResult.Ok x -> x
+  | CCResult.Error msg -> failwith msg

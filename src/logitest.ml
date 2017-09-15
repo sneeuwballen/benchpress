@@ -54,16 +54,18 @@ module Run = struct
        ())
 
   (* run provers on the given dir, return a list [prover, dir, results] *)
-  let test_dir ?j ?dyn ?timeout ?memory ?provers ~config d : T.Top_result.t or_error =
+  let test_dir
+      ?j ?dyn ?timeout ?memory ?provers ~config ~notify d
+    : T.Top_result.t or_error =
     let open E.Infix in
     let dir = d.T.Config.directory in
     begin
-      Format.printf "testing dir `%s`...@." dir;
+      Notify.sendf notify "testing dir `%s`…" dir;
       Problem_run.of_dir dir
         ~filter:(Re.execp (Re_perl.compile_pat d.T.Config.pattern))
       >>= fun pbs ->
       let len = List.length pbs in
-      Format.printf "run %d tests in %s@." len dir;
+      Notify.sendf notify "run %d tests in %s" len dir;
       let provers = match provers with
         | None -> config.T.Config.provers
         | Some l ->
@@ -89,21 +91,26 @@ module Run = struct
       E.return results
     end |> E.add_ctxf "running tests in dir `%s`" dir
 
-  let check_res (results:T.top_result) : unit or_error =
+  let check_res notify (results:T.top_result) : unit or_error =
     let lazy map = results.T.analyze in
     if Prover.Map_name.for_all (fun _ r -> T.Analyze.is_ok r) map
     then (
-      Misc.synchronized (fun () -> Format.printf "OK@.");
+      Notify.send notify "OK";
       E.return ()
     ) else (
-      E.fail_fprintf "FAIL (%d failures)"
-        (Prover.Map_name.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0)
+      let n_fail =
+        Prover.Map_name.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0
+      in
+      Notify.sendf notify "FAIL (%d failures)" n_fail;
+      E.fail_fprintf "FAIL (%d failures)" n_fail
     )
 
   (* lwt main *)
   let main ?j ?dyn ?timeout ?memory ?junit ?csv ?provers
-      ?meta:_ ?summary ~config ?profile ?dir_file dirs () =
+      ?meta:_ ?summary ~config ?profile ?dir_file ?(irc=false) dirs () =
     let open E.Infix in
+    let irc = irc || Config.get_or ~default:false config (Config.bool "irc") in
+    let notify = Notify.make ~irc config in
     (* parse list of files, if need be *)
     let dirs = match dir_file with
       | None -> dirs
@@ -122,7 +129,7 @@ module Run = struct
     let problems = config.T.Config.problems in
     (* build problem set (exclude config file!) *)
     E.map_l
-      (test_dir ?j ?dyn ?timeout ?memory ?provers ~config)
+      (test_dir ?j ?dyn ?timeout ?memory ?provers ~config ~notify)
       problems
     >>= fun l ->
     Misc.Debug.debugf 1 (fun k->k  "merging %d top results…" (List.length l));
@@ -156,7 +163,7 @@ module Run = struct
              Format.fprintf out "%a@." T.Top_result.pp_compact results);
     end;
     (* now fail if results were bad *)
-    check_res results
+    check_res notify results
 end
 
 (** {2 Sample} *)
@@ -197,14 +204,21 @@ let config_term =
     if debug then (
       Misc.Debug.set_level 5;
     );
-    let config = Config.interpolate_home config in
-    begin match Config.parse_file config with
+    let default_conf = "$HOME/.logitest.toml" in
+    let conf_files = match config with None -> [] | Some c -> [c] in
+    let conf_files =
+      if Sys.file_exists (Config.interpolate_home default_conf)
+      then conf_files @ [default_conf] else conf_files
+    in
+    let conf_files = List.map Config.interpolate_home conf_files in
+    Misc.Debug.debugf 1 (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
+    begin match Config.parse_files conf_files with
       | Result.Ok x -> `Ok x
       | Result.Error e -> `Error (false, e)
     end
   in
   let arg =
-    Arg.(value & opt string "~/.logitest.toml" &
+    Arg.(value & opt (some string) None &
          info ["c"; "config"] ~doc:"configuration file (in target directory)")
   and debug =
     let doc = "Enable debug (verbose) output" in
@@ -216,10 +230,11 @@ let config_term =
 let term_run =
   let open Cmdliner in
   let aux j dyn dirs dir_file config profile timeout memory
-      meta provers junit csv summary no_color : (unit,string) E.t =
+      meta provers junit csv summary no_color irc
+    : (unit,string) E.t =
     if no_color then CCFormat.set_color_default false;
     Run.main ~dyn ~j ?timeout ?memory ?junit ?csv ?provers
-      ~meta ?profile ?summary ~config ?dir_file dirs ()
+      ~meta ?profile ?summary ~config ?dir_file ~irc dirs ()
   in
   let config = config_term
   and dyn =
@@ -251,9 +266,11 @@ let term_run =
     Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
   and summary =
     Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
+  and irc =
+    Arg.(value & flag & info ["irc"] ~doc:"connect to IRC")
   in
   Term.(pure aux $ j $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
-    $ meta $ provers $ junit $ csv $ summary $ no_color),
+    $ meta $ provers $ junit $ csv $ summary $ no_color $ irc),
   Term.info ~doc "run"
 
 let snapshot_name_term : string option Cmdliner.Term.t =
