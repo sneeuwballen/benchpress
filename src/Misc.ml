@@ -42,6 +42,7 @@ let die_on_sigterm : unit -> unit =
       (Sys.Signal_handle
          (fun _ ->
             print_endline "received sigterm, exiting";
+            Unix.kill 0 15; (* kill children *)
             exit 1)))
   in fun () -> Lazy.force thunk
 
