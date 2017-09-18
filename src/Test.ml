@@ -133,15 +133,20 @@ module Analyze = struct
     let pp_z_or_err out d =
       if d=0 then CCFormat.int out d
       else CCFormat.(with_color "Red" int) out d
+    and pp_bad out t =
+      if t.bad=[] then ()
+      else Format.fprintf out "(@[<hv1>bad@ %a@])"
+          (pp_list_ (pp_raw_res_ ?color:None)) t.bad
     in
     Format.fprintf out
-      "(@[<hv>:ok %d@ :improved %d@ :disappoint %d@ :bad %a@ :errors %a@ :total %d@])"
+      "(@[<hv>:ok %d@ :improved %d@ :disappoint %d@ :bad %a@ :errors %a@ :total %d@])%a"
       (List.length t.ok)
       (List.length t.improved)
       (List.length t.disappoint)
       pp_z_or_err (List.length t.bad)
       pp_z_or_err (List.length t.errors)
       (MStr.cardinal t.raw)
+      pp_bad t
 
   let pp out ({ raw=_; stat; improved; ok; disappoint; bad; errors } as r) =
     let pp_l = pp_list_ (pp_raw_res_ ?color:None) in
