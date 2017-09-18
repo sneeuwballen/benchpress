@@ -163,7 +163,9 @@ module Run = struct
              Format.fprintf out "%a@." T.Top_result.pp_compact results);
     end;
     (* now fail if results were bad *)
-    check_res notify results
+    let r = check_res notify results in
+    Notify.sync notify;
+    r
 end
 
 (** {2 Sample} *)

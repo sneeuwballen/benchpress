@@ -5,19 +5,26 @@
 
 type t = {
   notify: string -> unit;
+  sync: unit -> unit;
 }
 
-let mk_ notify : t = {notify}
+let mk_ notify sync : t = {notify;sync}
 
 let send (n:t) s = n.notify s
 let sendf (n:t) fmt = CCFormat.ksprintf ~f:n.notify fmt
+let sync (n:t): unit = n.sync()
 
-let nil : t = mk_ (fun _ ->())
+let nil : t = mk_ (fun _ ->()) (fun _ -> ())
 
-let stdout : t = mk_ print_endline
+let stdout : t = mk_ print_endline (fun _ -> flush stdout)
 
-let combine a b : t = mk_ (fun x -> a.notify x; b.notify x)
-let combine_l l : t = mk_ (fun x -> List.iter (fun n -> send n x) l)
+let combine a b : t =
+  mk_ (fun x -> a.notify x; b.notify x) (fun () -> a.sync(); b.sync())
+
+let combine_l l : t =
+  mk_
+    (fun x -> List.iter (fun n -> send n x) l)
+    (fun() -> List.iter (fun n->n.sync()) l)
 
 (* IRC notification *)
 let mk_irc_ config : t option =
@@ -36,7 +43,11 @@ let mk_irc_ config : t option =
       let chan = Q.create 25 in
       (* to send a notification, push onto queue. If queue is full,
          just ignore. *)
-      let n = mk_ (fun s -> ignore (Q.try_push chan s)) in
+      let n =
+        mk_
+          (fun s -> ignore (Q.try_push chan s))
+          (fun () -> I.send_quit ~connection)
+      in
       (* thread to keep connection alive *)
       let th1 =
         CCThread.spawn
@@ -60,12 +71,12 @@ let mk_irc_ config : t option =
                I.send_privmsg ~connection ~target:channel ~message
              done)
       in
-      Gc.finalise
-        (fun _ ->
-           Thread.kill th1;
-           Thread.kill th2;
-           I.send_quit ~connection)
-        n;
+      let cleanup() =
+        Thread.kill th1;
+        Thread.kill th2;
+        I.send_quit ~connection
+      in
+      Gc.finalise (fun _ -> cleanup()) n;
       Some n
     | None ->
       Misc.Debug.debug 1 "could not connect to IRC";
@@ -76,3 +87,4 @@ let make ?(irc=false) (config:Config.t) : t =
   (* notification by IRC, if any *)
   let n_irc = if irc then CCOpt.to_list (mk_irc_ config) else [] in
   combine_l (stdout :: n_irc)
+

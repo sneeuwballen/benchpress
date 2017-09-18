@@ -17,3 +17,6 @@ val combine_l : t list -> t
 
 val make : ?irc:bool -> Config.t -> t
 (** Make a combination of notification systems *)
+
+val sync : t -> unit
+(** Wait for notifications to be done *)
