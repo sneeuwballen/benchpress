@@ -60,7 +60,7 @@ let mk_irc_ config : t option =
                  Misc.Debug.debugf 2
                    (fun k->k "received IRC error `%s`" e);
              in
-             I.listen ~keepalive:{I.mode=`Active;timeout=30} ~connection ~callback ())
+             I.listen ~keepalive:{I.mode=`Passive;timeout=300} ~connection ~callback ())
       (* thread to send messages without blocking *)
       and th2 =
         CCThread.spawn
