@@ -26,6 +26,7 @@ depends: [
     "olinq"
     "csv"
     "cmdliner"
+    "irc-client"
 ]
 homepage: "https://github.com/nunchaku-inria/logitest/"
 available: [ocaml-version >= "4.01.0"]
