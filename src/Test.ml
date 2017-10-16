@@ -64,9 +64,9 @@ module Raw = struct
 
   let pp_stat out s =
     fpf out
-      "(@[<hv>:unsat %d@ :sat %d@ :errors %d@ :unknown %d@ \
+      "(@[<hv>:unsat %d@ :sat %d@ :solved %d@ :errors %d@ :unknown %d@ \
        :timeout %d@ :total %d@ :total_time %.2f@])"
-      s.unsat s.sat s.errors s.unknown s.timeout
+      s.unsat s.sat (s.sat + s.unsat) s.errors s.unknown s.timeout
       (s.unsat + s.sat + s.errors + s.unknown + s.timeout)
       s.total_time
 
