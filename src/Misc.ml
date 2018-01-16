@@ -59,7 +59,7 @@ module Par_map = struct
       CCSemaphore.with_acquire ~n:1 sem ~f:(fun () -> f x)
     in
     let module P = CCPool.Make(struct
-        let min_size = 1
+        let min_size = 0
         let max_size = j
       end) in
     let res =
