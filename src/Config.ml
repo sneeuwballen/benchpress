@@ -64,9 +64,6 @@ let parse_or_empty file = match parse_file file with
     empty
   | Ok x -> x
 
-(* local exception *)
-exception Error_files of string * string
-
 let parse_files l: t or_error =
   let open E.Infix in
   E.map_l parse_file l >|= merge_l
@@ -77,7 +74,6 @@ type error = error_msg * string list
 and error_msg =
   | Try of error list
   | Field_not_found of string list
-  | Wrong_type of string list * string
   | User_err of string
 
 module Fmt = CCFormat
@@ -94,8 +90,6 @@ and pp_error_msg out = function
       Fmt.(list ~sep:(return "@ | ") pp_error) l
   | Field_not_found path ->
     Fmt.fprintf out "field not found: %a" pp_path path
-  | Wrong_type (path, msg) ->
-    Fmt.fprintf out "field %a has wrong type: %s" pp_path path msg
   | User_err s -> Fmt.string out s
 
 let string_of_error = Fmt.to_string pp_error

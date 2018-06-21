@@ -62,7 +62,7 @@ module Run = struct
     begin
       Notify.sendf notify "testing dir `%s`…" dir;
       Problem_run.of_dir dir
-        ~filter:(Re.execp (Re_perl.compile_pat d.T.Config.pattern))
+        ~filter:(Re.execp (Re.Perl.compile_pat d.T.Config.pattern))
       >>= fun pbs ->
       let len = List.length pbs in
       Notify.sendf notify "run %d tests in %s" len dir;
