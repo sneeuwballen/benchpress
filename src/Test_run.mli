@@ -16,7 +16,7 @@ val config_of_config : ?profile:string -> Config.t -> string list -> Test.Config
     @param profile if present, look for the test configuration named [profile]
     instead of "test" *)
 
-val pp_result : Test.result -> unit
+val pp_result : w_prover:int -> w_pb:int -> Test.result -> unit
 
 val run :
   ?j:int ->

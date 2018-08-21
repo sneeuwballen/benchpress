@@ -92,7 +92,7 @@ let run_pb ~config prover pb : _ E.t =
   with e ->
     E.of_exn e
 
-let pp_result (res:Test.result): unit =
+let pp_result ~w_prover ~w_pb (res:Test.result): unit =
   let module F = CCFormat in
   let p_res = Run_event.analyze_p res in
   let pp_res out () : unit =
@@ -112,7 +112,7 @@ let pp_result (res:Test.result): unit =
       prover_name pb_name (Res.to_string p_res) res.Run_event.raw.Run_event.rtime);
   Misc.synchronized
     (fun () ->
-       Format.printf "%-25s%-50s %a (%.1fs)@." prover_name (pb_name ^ " :")
+       Format.printf "%-*s%-*s : %a (%.1fs)@." w_prover prover_name w_pb pb_name
          pp_res () res.Run_event.raw.Run_event.rtime);
   ()
 

@@ -45,11 +45,11 @@ module Run = struct
         Misc.synchronized (fun() -> Format.printf "@.")
       )
 
-  let progress ?(dyn=false) n =
+  let progress ~w_prover ~w_pb ?(dyn=false) n =
     let pp_bar = progress_dynamic n in
     (function res ->
        if dyn then output_char stdout '\r';
-       Test_run.pp_result res;
+       Test_run.pp_result ~w_prover ~w_pb res;
        if dyn then pp_bar res;
        ())
 
@@ -73,7 +73,13 @@ module Run = struct
             (fun p -> List.mem (Prover.name p) l)
             config.T.Config.provers
       in
-      let on_solve = progress ?dyn (len * List.length provers) in
+      let on_solve =
+        let w_prover =
+          List.fold_left (fun m p -> max m (String.length (Prover.name p)+1)) 0 provers
+        and w_pb =
+          List.fold_left (fun m pb -> max m (String.length pb+1)) 0 pbs
+        in
+        progress ~w_prover ~w_pb ?dyn (len * List.length provers) in
       (* solve *)
       let main =
         Test_run.run ?j ?timeout ?memory ~provers
