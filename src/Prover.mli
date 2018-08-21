@@ -52,11 +52,6 @@ val make_command :
 module Map_name : CCMap.S with type key = t
 
 (** Map with full compare *)
-module Map : sig
-  include Map.S with type key = t
-  val to_list : 'a t -> (key * 'a) list
-  val of_list : (key * 'a) list -> 'a t
-end
-
-module Set : Set.S with type elt = t
+module Map : CCMap.S with type key = t
+module Set : CCSet.S with type elt = t
 

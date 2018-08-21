@@ -96,7 +96,7 @@ module Analyze = struct
   }
 
   let analyse_ raw =
-    let module M = OLinq.AdaptMap(MStr) in
+    let module M = OLinq.AdaptMap(Map.Make(String)) in
     let l =
       M.of_map raw
       |> OLinq.map snd
@@ -211,7 +211,7 @@ module ResultsComparison = struct
   (* TODO: use outer_join? to also find the disappeared/appeared *)
   let compare (a: Raw.t) b : t =
     let open Run_event in
-    let module M = OLinq.AdaptMap(MStr) in
+    let module M = OLinq.AdaptMap(Map.Make(String)) in
     let a = M.of_map a |> OLinq.map snd in
     let b = M.of_map b |> OLinq.map snd in
     let j =
