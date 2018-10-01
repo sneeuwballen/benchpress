@@ -36,22 +36,11 @@ let ensure_session_leader : unit -> unit =
   ) in
   fun () -> Lazy.force thunk
 
-let die_on_sigterm : unit -> unit =
-  let thunk = lazy (
-    Sys.set_signal 15
-      (Sys.Signal_handle
-         (fun _ ->
-            print_endline "received sigterm, exiting";
-            Unix.kill 0 15; (* kill children *)
-            exit 1)))
-  in fun () -> Lazy.force thunk
-
 (** Parallel map *)
 module Par_map = struct
   (* map on the list with at most [j] parallel threads *)
   let map_p ~j f l =
     if j<1 then invalid_arg "map_p: ~j";
-    die_on_sigterm();
     (* NOTE: for some reason the pool seems to spawn one too many thread
        in some cases. So we add a guard to respect [-j] properly. *)
     let sem = CCSemaphore.create j in
