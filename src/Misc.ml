@@ -36,6 +36,17 @@ let ensure_session_leader : unit -> unit =
   ) in
   fun () -> Lazy.force thunk
 
+let die_on_sigterm : unit -> unit =
+  let thunk = lazy (
+    Sys.set_signal 15
+      (Sys.Signal_handle
+         (fun _ ->
+            print_endline "received sigterm, exiting";
+            flush stdout;
+            Unix.kill 0 15; (* kill children *)
+            exit 1)))
+  in fun () -> Lazy.force thunk
+
 (** Parallel map *)
 module Par_map = struct
   (* map on the list with at most [j] parallel threads *)

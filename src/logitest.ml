@@ -112,13 +112,6 @@ module Run = struct
     )
 
   let mk_sig_thread () : unit =
-    Sys.set_signal 15
-      (Sys.Signal_handle
-         (fun _ ->
-            print_endline "received sigterm, exiting";
-            flush stdout;
-            Unix.kill 0 15; (* kill children *)
-            exit 1));
     let _th =
       Thread.create
         (fun () ->
@@ -134,6 +127,7 @@ module Run = struct
   let main ?j ?dyn ?timeout ?memory ?junit ?csv ?provers
       ?meta:_ ?summary ~config ?profile ?dir_file ?(irc=false) dirs () =
     let open E.Infix in
+    Misc.die_on_sigterm();
     let irc = irc || Config.get_or ~default:false config (Config.bool "irc") in
     let notify = Notify.make ~irc config in
     (* signal handler *)
