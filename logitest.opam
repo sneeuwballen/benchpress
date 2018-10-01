@@ -16,8 +16,7 @@ remove: [
     ["ocamlfind" "remove" "nunchaku"]
 ]
 depends: [
-    "ocamlfind" {build}
-    "jbuilder" {build}
+    "dune" {build}
     "base-unix"
     "containers" { >= "1.0" }
     "re"
