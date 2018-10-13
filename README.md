@@ -5,6 +5,8 @@ results.
 
 License: BSD.
 
+[![build status](https://travis-ci.org/nunchaku-inria/logitest.svg?branch=master "build status")](https://travis-ci.org/nunchaku-inria/logitest)
+
 ### Basic usage
 
 ```sh
