@@ -1,5 +1,4 @@
 
-;; This declare the hello_world executable implemented by hello_world.ml
 (executable
  (name logitest)
  (public_name logitest)

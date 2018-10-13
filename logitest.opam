@@ -1,19 +1,11 @@
-opam-version: "1.2"
-name: "nunchaku"
+opam-version: "2.0"
+name: "logitest"
 version: "dev"
 authors: ["Simon Cruanes" "Guillaume Bury"]
-maintainer: "simon.cruanes@inria.fr"
+maintainer: "simon.cruanes.2007@m4x.org"
 build: [
-    [make "build"]
-    ["jbuilder" "build" "@install"]
-]
-install: [
-    ["jbuilder" "install"]
-]
-build-doc: [ make "doc" ]
-build-test: [ make "test" ]
-remove: [
-    ["ocamlfind" "remove" "nunchaku"]
+  ["dune" "build" "@install" "-p" name "-j" jobs]
+  ["dune" "build" "@doc" "-p" name] {with-doc}
 ]
 depends: [
     "dune" {build}
@@ -27,8 +19,8 @@ depends: [
     "cmdliner"
     "irc-client" { >= "0.6" }
     "irc-client-unix"
+    "ocaml" {>= "4.02" }
 ]
 homepage: "https://github.com/nunchaku-inria/logitest/"
-available: [ocaml-version >= "4.01.0"]
-dev-repo: "https://github.com/nunchaku-inria/logitest.git"
+dev-repo: "git+https://github.com/nunchaku-inria/logitest.git"
 bug-reports: "https://github.com/nunchaku-inria/logitest/issues"

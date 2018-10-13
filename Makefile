@@ -1,14 +1,12 @@
 
 
-TARGETS=src/logitest.exe
-
 build:
-	jbuilder build $(TARGETS)
+	@dune build @install
 
 all: build
 
 clean:
-	jbuilder clean
+	@dune clean
 
 watch:
 	while find src/ -print0 | xargs -0 inotifywait -e delete_self -e modify ; do \
