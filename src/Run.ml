@@ -22,7 +22,6 @@ let mk_cmd ?env ~timeout ~memory ~prover ~file () =
   prefix ^ cmd
 
 let run_proc cmd =
-  Misc.ensure_session_leader();
   let start = Unix.gettimeofday () in
   (* call process and block *)
   let p = CCUnix.call_full "%s" cmd in

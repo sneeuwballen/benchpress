@@ -28,14 +28,6 @@ end = struct
   let debug l msg = debugf l (fun k->k "%s" msg)
 end
 
-(** make sure that we are a session leader; that is, our children die if we die *)
-let ensure_session_leader : unit -> unit =
-  let thunk = lazy (
-    if not Sys.win32 && not Sys.cygwin
-    then ignore (Unix.setsid ())
-  ) in
-  fun () -> Lazy.force thunk
-
 let die_on_sigterm : unit -> unit =
   let thunk = lazy (
     Sys.set_signal 15
