@@ -42,7 +42,7 @@ let find_expected_ ?default file =
       end
   end
 
-let find_expect ~expect file : Res.t or_error =
+let find_expect ?default_expect ~expect file : Res.t or_error =
   Misc.Debug.debugf 3 (fun k->k "find_expect `%s`…" file);
   begin match expect with
     | Test.Config.Auto -> find_expected_ ?default:None file
@@ -50,7 +50,11 @@ let find_expect ~expect file : Res.t or_error =
     | Test.Config.Program prover ->
       let pb = Problem.make file Res.Unknown in
       let event = Run.run_prover ~timeout:1 ~memory:1_000 ~prover ~pb () in
-      E.return (Run_event.analyze_p event)
+      match Run_event.analyze_p_opt event, default_expect with
+      | Some r, _ -> E.return r
+      | None, Some r -> E.return r
+      | None, None ->
+        E.fail_printf "cannot find expect for problem `%s`" file
   end
 
 let make ~expect:res file =

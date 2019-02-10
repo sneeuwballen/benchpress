@@ -186,10 +186,11 @@ module Config = struct
     memory: int;
     problems : problem_set list [@default []];
     provers: Prover.t list;
+    default_expect: Res.t option;
   }
 
-  let make ?(j=1) ?(timeout=5) ?(memory=1000) ?(dirs=[]) ~provers () =
-    { j; timeout; memory; provers; problems=dirs; }
+  let make ?(j=1) ?(timeout=5) ?(memory=1000) ?(dirs=[]) ?default_expect ~provers () =
+    { j; timeout; memory; provers; problems=dirs; default_expect;}
 
   let update ?j ?timeout ?memory c =
     let j = CCOpt.get_or ~default:c.j j in

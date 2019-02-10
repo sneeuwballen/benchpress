@@ -7,6 +7,7 @@ type t = Problem.t
 type path = string
 
 val find_expect :
+  ?default_expect:Res.t ->
   expect:Test.Config.expect ->
   path ->
   Res.t or_error

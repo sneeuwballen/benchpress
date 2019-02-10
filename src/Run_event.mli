@@ -30,6 +30,7 @@ val program : 'a result -> 'a
 val problem : _ result -> Problem.t
 val raw : _ result -> raw_result
 
+val analyze_p_opt : prover result -> Res.t option
 val analyze_p : prover result -> Res.t
 
 type t =

@@ -28,7 +28,7 @@ type +'a result = {
   raw : raw_result;
 }
 
-let analyze_p t =
+let analyze_p_opt t =
   let prover = t.program in
   (* find if [re: re option] is present in [stdout] *)
   let find_opt_ re = match re with
@@ -37,11 +37,16 @@ let analyze_p t =
       Re.execp (Re.Perl.compile_pat re) t.raw.stdout ||
       Re.execp (Re.Perl.compile_pat re) t.raw.stderr
   in
-  if find_opt_ prover.Prover.sat then Res.Sat
-  else if find_opt_ prover.Prover.unsat then Res.Unsat
-  else if find_opt_ prover.Prover.timeout then Res.Timeout
-  else if find_opt_ prover.Prover.unknown then Res.Unknown
-  else if t.raw.errcode = 0 then Res.Unknown else Res.Error
+  if find_opt_ prover.Prover.sat then Some Res.Sat
+  else if find_opt_ prover.Prover.unsat then Some Res.Unsat
+  else if find_opt_ prover.Prover.timeout then Some Res.Timeout
+  else if find_opt_ prover.Prover.unknown then Some Res.Unknown
+  else None
+
+let analyze_p t =
+  match analyze_p_opt t with
+  | Some x -> x
+  | None -> if t.raw.errcode = 0 then Res.Unknown else Res.Error
 
 type t =
   | Prover_run of prover result

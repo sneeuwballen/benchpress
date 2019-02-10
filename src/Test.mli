@@ -74,6 +74,7 @@ module Config : sig
     memory: int;
     problems : problem_set list [@default []];
     provers: Prover.t list;
+    default_expect: Res.t option;
   }
 
   val make:
@@ -81,6 +82,7 @@ module Config : sig
     ?timeout:int ->
     ?memory:int ->
     ?dirs:problem_set list ->
+    ?default_expect:Res.t ->
     provers:Prover.t list ->
     unit -> t
 

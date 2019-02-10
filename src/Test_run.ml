@@ -49,17 +49,19 @@ let config_of_config ?(profile="test") config dirs =
             <|> default_expect)
            >>= fun e -> (expect_of_config config e |> pure_or_error) )
          >|= fun expect ->
-         { C.directory = dir; pattern = pat; expect = expect; }
+         { C.directory = dir; pattern = pat; expect; }
          end |> add_ctxf "read config for directory `%s`" dir_name)
       l
     >>= fun problems ->
     ((try_tables [tbl; top] @@ string_list "provers") |> add_ctxf "get provers")
-     >>= fun provers ->
+    >>= fun provers ->
     map_l
       (fun p -> Prover_set.find_config config p |> pure_or_error)
       provers
     >>= fun provers ->
-    return { C.j; timeout; memory; provers; problems; }
+    (default_expect >|= fun e-> CCOpt.flat_map (fun s->try Some(Res.of_string s) with _ -> None) e)
+    >>= fun default_expect ->
+    return { C.j; timeout; memory; provers; problems; default_expect }
   in
   Config.get config getter
 
@@ -126,7 +128,7 @@ let run ?(j=1) ?(on_solve = nop_) ?(on_done = nop_)
   E.map_l
     (fun pb_path ->
        (* transform into problem *)
-       Problem_run.find_expect ~expect pb_path >|= fun expect ->
+       Problem_run.find_expect ?default_expect:config.C.default_expect ~expect pb_path >|= fun expect ->
        pb_path, expect)
     set
   >>= fun l ->
