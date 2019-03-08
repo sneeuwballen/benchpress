@@ -26,6 +26,13 @@ let combine_l l : t =
     (fun x -> List.iter (fun n -> send n x) l)
     (fun() -> List.iter (fun n->n.sync()) l)
 
+(* TODO: run subprocess if IRC flag activated (assumings deps are there
+   and the irc notifier program is installed), send it messages on stdin 
+
+   OR: sub-library, that we can try to dynlink optionally
+  *)
+
+
 (* IRC notification *)
 let mk_irc_ config : t option =
   let module I = Irc_client_unix in
