@@ -34,8 +34,9 @@ let analyze_p_opt t =
   let find_opt_ re = match re with
     | None -> false
     | Some re ->
-      Re.execp (Re.Perl.compile_pat re) t.raw.stdout ||
-      Re.execp (Re.Perl.compile_pat re) t.raw.stderr
+      let re = Re.Perl.compile_pat ~opts:[`Multiline] re in
+      Re.execp re t.raw.stdout ||
+      Re.execp re t.raw.stderr
   in
   if find_opt_ prover.Prover.sat then Some Res.Sat
   else if find_opt_ prover.Prover.unsat then Some Res.Unsat
