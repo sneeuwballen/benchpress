@@ -480,7 +480,6 @@ module Top_result = struct
       | Res.Sat -> "sat"
       | Res.Unsat -> "unsat"
     in
-    let line0 = [t.t_meta] in
     let header_line =
       "problem" ::
         t.t_provers @
@@ -494,7 +493,7 @@ module Top_result = struct
            @ List.map (fun (_,res,t) -> time_to_csv res t) r.tr_res)
         t.t_rows
     in
-    line0 :: header_line :: lines
+    header_line :: lines
 
   let to_csv t : Csv.t =
     table_to_csv (to_table t)
