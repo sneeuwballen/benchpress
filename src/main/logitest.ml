@@ -3,6 +3,8 @@
 
 (* run tests, or compare results *)
 
+open Logitest_lib
+
 module T = Test
 module E = CCResult
 
@@ -116,7 +118,10 @@ module Run = struct
       ?meta:_ ?summary ~config ?profile ?dir_file ?(irc=false) dirs () =
     let open E.Infix in
     let irc = irc || Config.get_or ~default:false config (Config.bool "irc") in
-    let notify = Notify.make ~irc config in
+    if irc then (
+      Notify.try_load ~lib:"logitest-irc" ~file:"logitest_irc";
+    );
+    let notify = Notify.make config in
     (* parse list of files, if need be *)
     let dirs = match dir_file with
       | None -> dirs

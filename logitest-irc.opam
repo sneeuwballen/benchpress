@@ -10,15 +10,12 @@ build: [
 ]
 depends: [
     "dune" {build}
-    "base-unix"
     "containers" { >= "1.0" }
-    "ocamlfind"
-    "re"
-    "junit"
-    "toml"
-    "olinq"
-    "csv"
     "cmdliner"
+    "base-unix"
+    "logitest"
+    "irc-client" { >= "0.6" }
+    "irc-client-unix"
     "ocaml" {>= "4.02" }
 ]
 homepage: "https://github.com/nunchaku-inria/logitest/"

@@ -1,0 +1,8 @@
+
+(library
+ (name logitest_lib)
+ (public_name logitest.lib)
+ (libraries containers containers.thread findlib
+            re re.perl junit csv containers.unix
+            result toml olinq dynlink)
+ (flags :standard -w -32 -safe-string))

@@ -11,3 +11,5 @@ setup.data
 setup.exe
 qtest*
 .merlin
+*.install
+*.exe

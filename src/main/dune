@@ -1,0 +1,8 @@
+
+(executable
+ (name logitest)
+ (public_name logitest)
+ (package logitest)
+ (modes native)
+ (libraries containers logitest.lib cmdliner)
+ (flags :standard -safe-string -linkall))
