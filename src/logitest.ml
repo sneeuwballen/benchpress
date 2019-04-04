@@ -48,7 +48,7 @@ module Run = struct
   let progress ~w_prover ~w_pb ?(dyn=false) n =
     let pp_bar = progress_dynamic n in
     (function res ->
-       if dyn then output_char stdout '\r';
+       if dyn then output_string stdout Misc.reset_line;
        Test_run.pp_result ~w_prover ~w_pb res;
        if dyn then pp_bar res;
        ())

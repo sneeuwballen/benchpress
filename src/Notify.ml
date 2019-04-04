@@ -16,7 +16,9 @@ let sync (n:t): unit = n.sync()
 
 let nil : t = mk_ (fun _ ->()) (fun _ -> ())
 
-let stdout : t = mk_ print_endline (fun _ -> flush stdout)
+let stdout : t =
+  mk_ (fun s -> output_string stdout Misc.reset_line; print_endline s)
+    (fun _ -> flush stdout)
 
 let combine a b : t =
   mk_ (fun x -> a.notify x; b.notify x) (fun () -> a.sync(); b.sync())

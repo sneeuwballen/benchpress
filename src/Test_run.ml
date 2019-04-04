@@ -114,7 +114,7 @@ let pp_result ~w_prover ~w_pb (res:Test.result): unit =
       prover_name pb_name (Res.to_string p_res) res.Run_event.raw.Run_event.rtime);
   Misc.synchronized
     (fun () ->
-       Format.printf "%-*s%-*s : %a (%.1fs)@." w_prover prover_name w_pb pb_name
+       Format.printf "%s%-*s%-*s : %a (%.1fs)@." Misc.reset_line w_prover prover_name w_pb pb_name
          pp_res () res.Run_event.raw.Run_event.rtime);
   ()
 

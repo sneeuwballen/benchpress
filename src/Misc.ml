@@ -5,6 +5,7 @@ module Str_map = CCMap.Make(String)
 
 let _lock = CCLock.create()
 
+let reset_line = "\x1b[2K\r"
 let synchronized f = CCLock.with_lock _lock f
 
 module Debug : sig
