@@ -41,8 +41,8 @@ module Run = struct
       let eta = time_elapsed *. 100. /. percent in
       Misc.synchronized
         (fun () ->
-           Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %.2fs]@?"
-             !count len percent (time_string time_elapsed) bar eta);
+           Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?"
+             !count len percent (time_string time_elapsed) bar (time_string eta));
       if !count = len then (
         Misc.synchronized (fun() -> Format.printf "@.")
       )
