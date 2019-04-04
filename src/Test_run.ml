@@ -98,14 +98,14 @@ let pp_result ~w_prover ~w_pb (res:Test.result): unit =
   let module F = CCFormat in
   let p_res = Run_event.analyze_p res in
   let pp_res out () : unit =
-    let str, c = match Problem.compare_res res.Run_event.problem p_res with
-      | `Same -> "ok", "Green"
-      | `Improvement -> "ok (improved)", "Blue"
-      | `Disappoint -> "disappoint", "Cyan"
-      | `Error -> "error", "Yellow"
-      | `Mismatch -> "bad", "Red"
+    let str = ""^^match Problem.compare_res res.Run_event.problem p_res with
+      | `Same -> "@{<Green>ok@}"
+      | `Improvement -> "@{<Green>ok@} @{<blue>(improved)@}"
+      | `Disappoint -> "@{<Cyan>disappoint@}"
+      | `Error -> "@{<Yellow>error@}"
+      | `Mismatch -> "@{<Red>bad@}"
     in
-    F.with_color c Format.pp_print_string out str
+    Format.fprintf out str
   in
   let prover = res.Run_event.program in
   let prover_name = Filename.basename prover.Prover.name in
