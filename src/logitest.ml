@@ -37,8 +37,8 @@ module Run = struct
       let bar = String.init len_bar
           (fun i -> if i * len <= len_bar * !count then '#' else '-') in
       let percent = if len=0 then 100. else (float_of_int !count *. 100.) /. float_of_int len in
-      (* elapsed=(percent/100)*total, so total=elapsed*100/percent *)
-      let eta = time_elapsed *. 100. /. percent in
+      (* elapsed=(percent/100)*total, so total=elapsed*100/percent; eta=total-elapsed *)
+      let eta = time_elapsed *. (100. -. percent) /. percent in
       Misc.synchronized
         (fun () ->
            Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?"
