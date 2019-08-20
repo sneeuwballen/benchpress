@@ -5,5 +5,5 @@
  (libraries containers containers.unix containers.thread
             re re.perl junit csv irc-client irc-client-unix
             cmdliner result toml olinq)
- (flags :standard -w +a-4-42-44-48-50-58-32-60@8 -safe-string)
+ (flags :standard -warn-error -3 -w +a-4-42-44-48-50-58-32-60@8 -safe-string)
  )
