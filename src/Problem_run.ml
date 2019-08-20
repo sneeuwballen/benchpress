@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 module E = CCResult
@@ -28,11 +27,11 @@ let find_expected_ ?default file =
   let content = CCIO.with_in file CCIO.read_all in
   begin match Re.exec_opt re_expect_ content with
     | Some g ->
-      if Re.marked g m_unsat_ then E.return Res.Unsat
-      else if Re.marked g m_sat_ then E.return Res.Sat
-      else if Re.marked g m_unknown_ then E.return Res.Unknown
-      else if Re.marked g m_timeout_ then E.return Res.Timeout
-      else if Re.marked g m_error_ then E.return Res.Error
+      if Re.Mark.test g m_unsat_ then E.return Res.Unsat
+      else if Re.Mark.test g m_sat_ then E.return Res.Sat
+      else if Re.Mark.test g m_unknown_ then E.return Res.Unknown
+      else if Re.Mark.test g m_timeout_ then E.return Res.Timeout
+      else if Re.Mark.test g m_error_ then E.return Res.Error
       else E.fail_fprintf "could not parse the content of the `expect:` field in `%s`" file
     | None ->
       begin match default with
