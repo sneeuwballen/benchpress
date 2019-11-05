@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Event Stored on Disk or Transmitted on Network} *)
@@ -25,6 +24,7 @@ type checker = unit
 type +'a result = {
   program : 'a;
   problem : Problem.t;
+  timeout: int;
   raw : raw_result;
 }
 
@@ -47,7 +47,10 @@ let analyze_p_opt t =
 let analyze_p t =
   match analyze_p_opt t with
   | Some x -> x
-  | None -> if t.raw.errcode = 0 then Res.Unknown else Res.Error
+  | None ->
+    if t.raw.errcode = 0 then Res.Unknown
+    else if t.raw.rtime > 0.1 +. float t.timeout then Res.Timeout
+    else Res.Error
 
 type t =
   | Prover_run of prover result

@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 module E = CCResult
@@ -39,4 +38,4 @@ let run_prover ?env ~timeout ~memory ~prover ~pb () =
   let file = pb.Problem.name in
   let cmd = mk_cmd ?env ~timeout ~memory ~prover ~file () in
   let raw = run_proc cmd in
-  { Run_event.program = prover; problem = pb; raw; }
+  { Run_event.program = prover; timeout; problem = pb; raw; }

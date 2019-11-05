@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Event Stored on Disk or Transmitted on Network} *)
@@ -23,6 +22,7 @@ type checker = unit
 type +'a result = {
   program : 'a;
   problem : Problem.t;
+  timeout: int;
   raw : raw_result;
 }
 
