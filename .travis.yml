@@ -13,3 +13,4 @@ env:
   - PACKAGE="logitest" OCAML_VERSION="4.04"
   - PACKAGE="logitest" OCAML_VERSION="4.05"
   - PACKAGE="logitest" OCAML_VERSION="4.06"
+  - PACKAGE="logitest" OCAML_VERSION="4.09"
