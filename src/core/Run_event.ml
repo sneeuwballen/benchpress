@@ -50,7 +50,7 @@ let analyze_p t =
   | Some x -> x
   | None ->
     if t.raw.errcode = 0 then Res.Unknown
-    else if t.raw.rtime > 0.1 +. float t.timeout then Res.Timeout
+    else if t.raw.rtime > float t.timeout then Res.Timeout
     else Res.Error
 
 type t =
