@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Notifications} *)
@@ -15,7 +14,7 @@ val stdout : t
 val combine : t -> t -> t
 val combine_l : t list -> t
 
-val make : ?irc:bool -> Config.t -> t
+val make : Config.t -> t
 (** Make a combination of notification systems *)
 
 val sync : t -> unit

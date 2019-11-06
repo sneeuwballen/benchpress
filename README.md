@@ -1,11 +1,11 @@
 # Logitest
 
+[![build status](https://travis-ci.org/nunchaku-inria/logitest.svg?branch=master "build status")](https://travis-ci.org/nunchaku-inria/logitest)
+
 Tool to run one or more logic programs, on a set of files, and collect the
 results.
 
 License: BSD.
-
-[![build status](https://travis-ci.org/nunchaku-inria/logitest.svg?branch=master "build status")](https://travis-ci.org/nunchaku-inria/logitest)
 
 ### Basic usage
 

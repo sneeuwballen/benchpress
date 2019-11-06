@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (* run tests, or compare results *)
@@ -114,11 +113,10 @@ module Run = struct
     )
 
   (* lwt main *)
-  let main ?j ?dyn ?timeout ?memory ?junit ?csv ?provers
-      ?meta:_ ?summary ~config ?profile ?dir_file ?(irc=false) dirs () =
+  let main ?j ?dyn ?timeout ?memory ?csv ?provers
+      ?meta:_ ?summary ~config ?profile ?dir_file dirs () =
     let open E.Infix in
-    let irc = irc || Config.get_or ~default:false config (Config.bool "irc") in
-    let notify = Notify.make ~irc config in
+    let notify = Notify.make config in
     (* parse list of files, if need be *)
     let dirs = match dir_file with
       | None -> dirs
@@ -143,17 +141,6 @@ module Run = struct
     Misc.Debug.debugf 1 (fun k->k  "merging %d top results…" (List.length l));
     E.return (T.Top_result.merge_l l)
     >>= fun (results:T.Top_result.t) ->
-    (* junit output *)
-    begin match junit with
-      | None -> ()
-      | Some file ->
-        Misc.Debug.debugf 1 (fun k->k "write results in Junit to file `%s`" file);
-        let suites =
-          Lazy.force results.T.analyze
-          |> Prover.Map_name.to_list
-          |> List.map (fun (_,a) -> JUnit_wrapper.test_analyze a) in
-        JUnit_wrapper.junit_to_file suites file;
-    end;
     (* CSV output *)
     begin match csv with
       | None ->  ()
@@ -240,11 +227,11 @@ let config_term =
 let term_run =
   let open Cmdliner in
   let aux j dyn dirs dir_file config profile timeout memory
-      meta provers junit csv summary no_color irc
+      meta provers csv summary no_color
     : (unit,string) E.t =
     if no_color then CCFormat.set_color_default false;
-    Run.main ~dyn ~j ?timeout ?memory ?junit ?csv ?provers
-      ~meta ?profile ?summary ~config ?dir_file ~irc dirs ()
+    Run.main ~dyn ~j ?timeout ?memory ?csv ?provers
+      ~meta ?profile ?summary ~config ?dir_file dirs ()
   in
   let config = config_term
   and dyn =
@@ -263,8 +250,6 @@ let term_run =
     Arg.(value & opt string "" & info ["meta"] ~doc:"additional metadata to save")
   and doc =
     "test a program on every file in a directory"
-  and junit =
-    Arg.(value & opt (some string) None & info ["junit"] ~doc:"junit output file")
   and csv =
     Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
   and dir =
@@ -276,11 +261,9 @@ let term_run =
     Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
   and summary =
     Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
-  and irc =
-    Arg.(value & flag & info ["irc"] ~doc:"connect to IRC")
   in
   Term.(pure aux $ j $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
-    $ meta $ provers $ junit $ csv $ summary $ no_color $ irc),
+    $ meta $ provers $ csv $ summary $ no_color),
   Term.info ~doc "run"
 
 let snapshot_name_term : string option Cmdliner.Term.t =

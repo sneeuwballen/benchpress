@@ -12,14 +12,11 @@ depends: [
     "dune" {build}
     "base-unix"
     "containers" { >= "1.0" }
-    "re"
-    "junit"
+    "re" { >= "1.8" & < "2.0" }
     "toml"
     "olinq"
     "csv"
     "cmdliner"
-    "irc-client" { >= "0.6" }
-    "irc-client-unix"
     "ocaml" {>= "4.02" }
 ]
 homepage: "https://github.com/nunchaku-inria/logitest/"
