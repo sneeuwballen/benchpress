@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Tools to test a prover} *)
@@ -116,6 +115,7 @@ end
 type top_result = private {
   timestamp: float; (* timestamp *)
   events: Run_event.t list;
+  total_wall_time: float;
   raw: Raw.t Prover.Map_name.t lazy_t;
   analyze: Analyze.t Prover.Map_name.t lazy_t;
 }
@@ -134,7 +134,7 @@ module Top_result : sig
 
   val merge : t -> t -> t
 
-  val merge_l : t list -> t
+  val merge_l : ?timestamp:float -> t list -> t
 
   val make : ?timestamp:float -> Run_event.t list -> t
 

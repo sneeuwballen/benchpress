@@ -9,6 +9,7 @@ type 'a or_error = ('a, string) E.t
 
 (** {2 Run} *)
 module Run = struct
+  (* FIXME: move into Misc *)
   (* callback that prints a result *)
   let nb_sec_minute = 60
   let nb_sec_hour = 60 * nb_sec_minute
@@ -56,7 +57,7 @@ module Run = struct
 
   (* run provers on the given dir, return a list [prover, dir, results] *)
   let test_dir
-      ?j ?dyn ?timeout ?memory ?provers ~config ~notify d
+      ?j ?timestamp ?dyn ?timeout ?memory ?provers ~config ~notify d
     : T.Top_result.t or_error =
     let open E.Infix in
     let dir = d.T.Config.directory in
@@ -83,7 +84,7 @@ module Run = struct
         progress ~w_prover ~w_pb ?dyn (len * List.length provers) in
       (* solve *)
       let main =
-        Test_run.run ?j ?timeout ?memory ~provers
+        Test_run.run ?timestamp ?j ?timeout ?memory ~provers
           ~expect:d.T.Config.expect ~on_solve ~config pbs
         |> E.add_ctxf "running %d tests" len
       in
@@ -116,6 +117,7 @@ module Run = struct
   let main ?j ?dyn ?timeout ?memory ?csv ?provers
       ?meta:_ ?summary ~config ?profile ?dir_file dirs () =
     let open E.Infix in
+    let timestamp = Unix.gettimeofday() in
     let notify = Notify.make config in
     (* parse list of files, if need be *)
     let dirs = match dir_file with
@@ -135,11 +137,11 @@ module Run = struct
     let problems = config.T.Config.problems in
     (* build problem set (exclude config file!) *)
     E.map_l
-      (test_dir ?j ?dyn ?timeout ?memory ?provers ~config ~notify)
+      (test_dir ?j ~timestamp ?dyn ?timeout ?memory ?provers ~config ~notify)
       problems
     >>= fun l ->
     Misc.Debug.debugf 1 (fun k->k  "merging %d top results…" (List.length l));
-    E.return (T.Top_result.merge_l l)
+    E.return (T.Top_result.merge_l ~timestamp l)
     >>= fun (results:T.Top_result.t) ->
     (* CSV output *)
     begin match csv with
@@ -160,6 +162,10 @@ module Run = struct
     (* now fail if results were bad *)
     let r = check_res notify results in
     Notify.sync notify;
+    (* try to send a desktop notification *)
+    (try CCUnix.call "notify-send 'benchmark done (%.2f seconds)'"
+           results.T.total_wall_time |> ignore
+     with _ -> ());
     r
 end
 

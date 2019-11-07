@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Run Tests} *)
@@ -20,6 +19,7 @@ val pp_result : w_prover:int -> w_pb:int -> Test.result -> unit
 
 val run :
   ?j:int ->
+  ?timestamp:float ->
   ?on_solve:(Test.result -> unit) ->
   ?on_done:(Test.top_result -> unit) ->
   ?timeout:int ->

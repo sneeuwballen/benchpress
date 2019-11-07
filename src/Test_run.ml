@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Run Tests} *)
@@ -120,7 +119,7 @@ let pp_result ~w_prover ~w_pb (res:Test.result): unit =
 
 let nop_ _ = ()
 
-let run ?(j=1) ?(on_solve = nop_) ?(on_done = nop_)
+let run ?(j=1) ?timestamp ?(on_solve = nop_) ?(on_done = nop_)
     ?timeout ?memory ~provers ~expect ~config (set:path list)
     : Test.top_result or_error =
   let open E.Infix in
@@ -128,7 +127,8 @@ let run ?(j=1) ?(on_solve = nop_) ?(on_done = nop_)
   E.map_l
     (fun pb_path ->
        (* transform into problem *)
-       Problem_run.find_expect ?default_expect:config.C.default_expect ~expect pb_path >|= fun expect ->
+       Problem_run.find_expect ?default_expect:config.C.default_expect
+         ~expect pb_path >|= fun expect ->
        pb_path, expect)
     set
   >>= fun l ->
@@ -155,6 +155,6 @@ let run ?(j=1) ?(on_solve = nop_) ?(on_done = nop_)
         Prover.pp_name prover Problem.pp pb)
   >>= E.map_l CCFun.id
   >>= fun res ->
-  let r = T.Top_result.make (List.map Run_event.mk_prover res) in
+  let r = T.Top_result.make ?timestamp (List.map Run_event.mk_prover res) in
   on_done r;
   E.return r

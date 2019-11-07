@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Tools to test a prover} *)
@@ -279,6 +278,7 @@ end
 type top_result = {
   timestamp: float; (* timestamp *)
   events: Run_event.t list;
+  total_wall_time: float;
   raw: Raw.t Prover.Map_name.t lazy_t;
   analyze: Analyze.t Prover.Map_name.t lazy_t;
 }
@@ -296,6 +296,7 @@ module Top_result = struct
       | None -> Unix.gettimeofday()
       | Some t -> t
     in
+    let total_wall_time = Unix.gettimeofday() -. timestamp in
     let raw = lazy (
       l
       |> List.fold_left
@@ -313,7 +314,7 @@ module Top_result = struct
     let analyze = lazy (
       Prover.Map_name.map Analyze.make (Lazy.force raw)
     ) in
-    { timestamp; events=l; raw; analyze; }
+    { timestamp; events=l; raw; analyze; total_wall_time; }
 
   let filter ~provers ~dir (t:t): t =
     (* predicates on events *)
@@ -340,9 +341,9 @@ module Top_result = struct
 
   let merge a b = make (List.rev_append a.events b.events)
 
-  let merge_l l =
+  let merge_l ?timestamp l =
     let events = List.map (fun t->t.events) l |> List.flatten in
-    make events
+    make ?timestamp events
 
   let pp_header out t =
     Format.fprintf out "(@[(date %a)@])"
