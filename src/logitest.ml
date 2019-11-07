@@ -9,24 +9,7 @@ type 'a or_error = ('a, string) E.t
 
 (** {2 Run} *)
 module Run = struct
-  (* FIXME: move into Misc *)
   (* callback that prints a result *)
-  let nb_sec_minute = 60
-  let nb_sec_hour = 60 * nb_sec_minute
-  let nb_sec_day = 24 * nb_sec_hour
-
-  let time_string f =
-    let n = int_of_float f in
-    let aux n div = n / div, n mod div in
-    let n_day, n = aux n nb_sec_day in
-    let n_hour, n = aux n nb_sec_hour in
-    let n_min, n = aux n nb_sec_minute in
-    let print_aux s n = if n <> 0 then (string_of_int n) ^ s else "" in
-    (print_aux "d" n_day) ^
-    (print_aux "h" n_hour) ^
-    (print_aux "m" n_min) ^
-    (string_of_int n) ^ "s"
-
   let progress_dynamic len =
     let start = Unix.gettimeofday () in
     let count = ref 0 in
@@ -42,7 +25,7 @@ module Run = struct
       Misc.synchronized
         (fun () ->
            Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?"
-             !count len percent (time_string time_elapsed) bar (time_string eta));
+             !count len percent (Misc.human_time time_elapsed) bar (Misc.human_time eta));
       if !count = len then (
         Misc.synchronized (fun() -> Format.printf "@.")
       )
@@ -163,8 +146,8 @@ module Run = struct
     let r = check_res notify results in
     Notify.sync notify;
     (* try to send a desktop notification *)
-    (try CCUnix.call "notify-send 'benchmark done (%.2f seconds)'"
-           results.T.total_wall_time |> ignore
+    (try CCUnix.call "notify-send 'benchmark done (%s)'"
+           (Misc.human_time results.T.total_wall_time) |> ignore
      with _ -> ());
     r
 end

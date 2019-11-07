@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 module Str_map = CCMap.Make(String)
@@ -38,6 +37,21 @@ let die_on_sigterm : unit -> unit =
             Unix.kill 0 15; (* kill children *)
             exit 1)))
   in fun () -> Lazy.force thunk
+
+let human_time (f:float) : string =
+  let nb_sec_minute = 60 in
+  let nb_sec_hour = 60 * nb_sec_minute in
+  let nb_sec_day = 24 * nb_sec_hour in
+  let n = int_of_float f in
+  let aux n div = n / div, n mod div in
+  let n_day, n = aux n nb_sec_day in
+  let n_hour, n = aux n nb_sec_hour in
+  let n_min, n = aux n nb_sec_minute in
+  let print_aux s n = if n <> 0 then (string_of_int n) ^ s else "" in
+  (print_aux "d" n_day) ^
+  (print_aux "h" n_hour) ^
+  (print_aux "m" n_min) ^
+  (string_of_int n) ^ "s"
 
 (** Parallel map *)
 module Par_map = struct
