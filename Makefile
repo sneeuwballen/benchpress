@@ -1,7 +1,7 @@
 
 
 build:
-	@dune build @all
+	@dune build @all @install
 
 all: build
 

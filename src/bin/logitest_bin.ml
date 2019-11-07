@@ -1,6 +1,7 @@
 (* This file is free software. See file "license" for more details. *)
 
 (* run tests, or compare results *)
+open Logitest
 
 module T = Test
 module E = CCResult

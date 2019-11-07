@@ -1,0 +1,7 @@
+(library
+ (name logitest)
+ (public_name logitest)
+ (wrapped true)
+ (libraries containers containers.unix containers.thread re re.perl csv
+   cmdliner result toml olinq)
+ (flags :standard -warn-error -3-32 -safe-string))
