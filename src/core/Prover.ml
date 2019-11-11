@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Run Prover} *)
@@ -88,3 +87,58 @@ end
 
 module Map = CCMap.Make(As_key)
 module Set = CCSet.Make(As_key)
+    
+module J = Misc.Json
+
+let encode_version v =
+  let open J.Encode in
+  match v with
+  | Tag s -> list string ["tag"; s]
+  | Git (br,commit) ->
+    list string ["git"; br; commit]
+
+let decode_version =
+  let open J.Decode in
+  string >>:: function
+  | "tag" -> (list1 string >|= fun s -> Tag s)
+  | "git" ->
+    (list string >>= function
+    | [br;commit] -> succeed (Git (br,commit))
+    | _ -> fail "need 2 arguments")
+  | _ -> fail "unknown constructor, expect tag/git"
+
+let encode p =
+  let open J.Encode in
+  let {
+    name;version;binary;binary_deps;cmd;
+    sat; unsat; unknown; timeout; memory;
+  } = p in
+  obj [
+    "name", string name;
+    "version", encode_version version;
+    "binary", string binary;
+    "binary_deps", list string binary_deps;
+    "cmd", string cmd;
+    "unsat", option string unsat;
+    "sat", option string sat;
+    "unknown", option string unknown;
+    "timeout", option string timeout;
+    "memory", option string memory;
+  ]
+
+let decode =
+  let open J.Decode in
+  field "name" string >>= fun name ->
+  field "cmd" string >>= fun cmd ->
+  field "binary" string >>= fun binary ->
+  field "binary_deps" (list string) >>= fun binary_deps ->
+  field "version" decode_version >>= fun version ->
+  field_opt "unsat" string >>= fun unsat ->
+  field_opt "sat" string >>= fun sat ->
+  field_opt "unknown" string >>= fun unknown ->
+  field_opt "timeout" string >>= fun timeout ->
+  field_opt "memory" string >>= fun memory ->
+  succeed {
+    name; cmd; binary; binary_deps; version;
+    sat; unsat; unknown; timeout; memory }
+

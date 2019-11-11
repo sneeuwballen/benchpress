@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 type t = {
@@ -34,6 +33,11 @@ val compare_res : t -> Res.t -> [`Same | `Improvement | `Mismatch | `Disappoint 
 *)
 
 val pp : t CCFormat.printer
+
+module J = Misc.Json
+
+val encode : t J.Encode.t
+val decode : t J.Decode.t
 
 (** {2 Proper table for storing problems} *)
 module Tbl : sig

@@ -5,6 +5,7 @@
 type 'a or_error = ('a, string) CCResult.t
 
 module MStr = Misc.Str_map
+module J = Misc.Json
 
 type result = Run_event.prover Run_event.result
 
@@ -29,6 +30,12 @@ module Raw : sig
   val stat : t -> stat
 
   val pp_stat : stat CCFormat.printer
+
+  val encode_stat : stat J.Encode.t
+  val decode_stat : stat J.Decode.t
+
+  val encode : t J.Encode.t
+  val decode : t J.Decode.t
 end
 
 (** {2 Result on a single problem} *)
@@ -71,7 +78,7 @@ module Config : sig
     j: int; (* number of concurrent processes *)
     timeout: int; (* timeout for each problem *)
     memory: int;
-    problems : problem_set list [@default []];
+    problems : problem_set list;
     provers: Prover.t list;
     default_expect: Res.t option;
   }
@@ -132,11 +139,11 @@ module Top_result : sig
   val pp_compact : t CCFormat.printer
   (** Print meta-informations + compact results *)
 
-  val merge : t -> t -> t
+  val merge : ?total_wall_time:float -> ?timestamp:float -> t -> t -> t
 
-  val merge_l : ?timestamp:float -> t list -> t
+  val merge_l : ?total_wall_time:float -> ?timestamp:float -> t list -> t
 
-  val make : ?timestamp:float -> Run_event.t list -> t
+  val make : ?total_wall_time:float -> ?timestamp:float -> Run_event.t list -> t
 
   val snapshot : ?meta:string -> t -> Run_event.Snapshot.t
 
@@ -181,6 +188,9 @@ module Top_result : sig
 
   val to_csv_file : string -> t -> unit
   (** Write as CSV into given file *)
+
+  val encode : t J.Encode.t
+  val decode : t J.Decode.t
 end
 
 (** {2 Benchmark, within one Top Result} *)

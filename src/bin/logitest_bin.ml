@@ -132,7 +132,8 @@ module Run = struct
       | None ->  ()
       | Some file ->
         Misc.Debug.debugf 1 (fun k->k "write results in CSV to file `%s`" file);
-        T.Top_result.to_csv_file file results
+        T.Top_result.to_csv_file file results;
+        (try ignore (Sys.command (Printf.sprintf "gzip '%s'" file):int) with _ -> ())
     end;
     (* write summary in some file *)
     begin match summary with
@@ -143,6 +144,29 @@ module Run = struct
              let out = Format.formatter_of_out_channel oc in
              Format.fprintf out "%a@." T.Top_result.pp_compact results);
     end;
+    (* save results *)
+    let dump_file =
+      let filename =
+        Printf.sprintf "res-%s-%s.json"
+          (ISO8601.Permissive.string_of_datetime_basic timestamp)
+          (Uuidm.v4_gen (Random.State.make_self_init()) () |> Uuidm.to_string)
+      in
+      let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
+      (try Unix.mkdir data_dir 0o744 with _ -> ());
+      Filename.concat data_dir filename
+    in
+    Misc.Debug.debugf 1 (fun k->k "write results in json to file `%s`" dump_file);
+    (try
+      CCIO.with_out ~flags:[Open_creat; Open_text] dump_file
+        (fun oc ->
+           let j = Misc.Json.Encode.encode_value T.Top_result.encode results in
+           Misc.Json.J.to_channel oc j; flush oc);
+      (* try to compress results *)
+      ignore (Sys.command (Printf.sprintf "gzip '%s'" dump_file) : int);
+     with e ->
+       Printf.eprintf "error when saving to %s: %s\n%!"
+         dump_file (Printexc.to_string e);
+    );
     (* now fail if results were bad *)
     let r = check_res notify results in
     Notify.sync notify;

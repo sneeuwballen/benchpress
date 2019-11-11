@@ -2,6 +2,8 @@
 
 (** {1 Event Stored on Disk or Transmitted on Network} *)
 
+module J = Misc.Json
+
 type 'a or_error = ('a, string) CCResult.t
 
 type raw_result = {
@@ -79,3 +81,11 @@ end
 
 val meta : snapshot -> snapshot_meta
 
+val encode_raw_result : raw_result J.Encode.t
+val decode_raw_result : raw_result J.Decode.t
+
+val encode_result : 'a J.Encode.t -> 'a result J.Encode.t
+val decode_result : 'a J.Decode.t -> 'a result J.Decode.t
+
+val encode : t J.Encode.t
+val decode : t J.Decode.t

@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Run Prover}
@@ -55,3 +54,9 @@ module Map_name : CCMap.S with type key = t
 module Map : CCMap.S with type key = t
 module Set : CCSet.S with type elt = t
 
+module J = Misc.Json
+
+val encode_version : version J.Encode.t
+val decode_version : version J.Decode.t
+val encode : t J.Encode.t
+val decode : t J.Decode.t

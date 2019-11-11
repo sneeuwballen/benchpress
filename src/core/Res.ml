@@ -1,4 +1,3 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 type t =
@@ -22,6 +21,13 @@ let of_string = function
   | "timeout" -> Timeout
   | "unknown" -> Unknown
   | s -> failwith ("unknown result: " ^ s)
+
+module J = Misc.Json
+let encode s = J.Encode.(string (to_string s))
+let decode = J.Decode.Infix.(
+    J.Decode.string >>= fun s ->
+    (try (J.Decode.succeed (of_string s)) with _ -> J.Decode.fail "invalid res")
+  )
 
 let print out s = Format.pp_print_string out (to_string s)
 

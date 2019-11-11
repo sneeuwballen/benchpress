@@ -11,7 +11,7 @@ type path = string
 let m_unsat_, unsat_ = Re.(str "unsat" |> no_case |> mark)
 let m_sat_, sat_ = Re.(str "sat" |> no_case |> mark)
 let m_unknown_, unknown_ = Re.(str "unknown" |> no_case |> mark)
-let m_timeout_, timeout__ = Re.(str "timeout" |> no_case |> mark)
+let m_timeout_, _timeout = Re.(str "timeout" |> no_case |> mark)
 let m_error_, error_ = Re.(alt [str "error"; str "fail"] |> no_case |> mark)
 
 (* "^ #expect: (unsat|sat|unknown|error)", basically *)

@@ -1,5 +1,6 @@
-
 (* This file is free software. See file "license" for more details. *)
+
+(** {1 Result of a single job} *)
 
 type t =
   | Sat
@@ -22,5 +23,10 @@ val compare: t -> t -> [`Same | `LeftBetter | `RightBetter | `Mismatch]
 
 val to_string : t -> string
 val of_string : string -> t
+
+module J = Misc.Json
+
+val encode : t J.Encode.t
+val decode : t J.Decode.t
 
 val print : t CCFormat.printer

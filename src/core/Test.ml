@@ -3,8 +3,8 @@
 (** {1 Tools to test a prover} *)
 
 module E = CCResult
-
 module MStr = Misc.Str_map
+module J = Misc.Json
 
 type result = Run_event.prover Run_event.result
 
@@ -48,7 +48,7 @@ module Raw = struct
     sat: int;
     errors: int;
     unknown: int;
-    timeout: (int [@default 0]);
+    timeout: int;
     total_time: float; (* for sat+unsat *)
   }
 
@@ -81,6 +81,39 @@ module Raw = struct
     in
     MStr.iter (fun _ r -> add_res (time_of_res r) (Run_event.analyze_p r)) r;
     !stat
+
+  let encode (r:t) =
+    let open J.Encode in
+    list
+      (Run_event.encode_result Prover.encode)
+      (MStr.values r |> Iter.to_rev_list)
+
+  let decode =
+    let open J.Decode in
+    list (Run_event.decode_result Prover.decode) >|= of_list
+
+  let encode_stat r =
+    let open J.Encode in
+    let {sat;unsat;errors;unknown;timeout;total_time} = r in
+    obj [
+      "sat", int sat;
+      "unsat", int unsat;
+      "unknown", int unknown;
+      "errors", int errors;
+      "timeout", int timeout;
+      "total_time", float total_time
+    ]
+
+  let decode_stat =
+    let open J.Decode in
+    field "sat" int >>= fun sat ->
+    field "unsat" int >>= fun unsat ->
+    field "unsat" int >>= fun unknown ->
+    field "errors" int >>= fun errors ->
+    field "timeout" int >>= fun timeout ->
+    field "total_time" float >>= fun total_time ->
+    succeed {sat;unsat;errors;unknown;timeout;total_time}
+
 end
 
 module Analyze = struct
@@ -183,7 +216,7 @@ module Config = struct
     j: int; (* number of concurrent processes *)
     timeout: int; (* timeout for each problem *)
     memory: int;
-    problems : problem_set list [@default []];
+    problems : problem_set list;
     provers: Prover.t list;
     default_expect: Res.t option;
   }
@@ -291,12 +324,14 @@ module Top_result = struct
   (* more recent first *)
   let compare_date a b: int = CCFloat.compare b.timestamp a.timestamp
 
-  let make ?timestamp l =
+  let make ?total_wall_time ?timestamp l =
     let timestamp = match timestamp with
       | None -> Unix.gettimeofday()
       | Some t -> t
     in
-    let total_wall_time = Unix.gettimeofday() -. timestamp in
+    let total_wall_time = match total_wall_time with
+      | Some f -> f
+      | None -> Unix.gettimeofday() -. timestamp in
     let raw = lazy (
       l
       |> List.fold_left
@@ -339,11 +374,12 @@ module Top_result = struct
   let of_snapshot s =
     make ~timestamp:s.Run_event.timestamp s.Run_event.events
 
-  let merge a b = make (List.rev_append a.events b.events)
+  let merge ?total_wall_time ?timestamp a b =
+    make ?total_wall_time ?timestamp (List.rev_append a.events b.events)
 
-  let merge_l ?timestamp l =
+  let merge_l ?total_wall_time ?timestamp l =
     let events = List.map (fun t->t.events) l |> List.flatten in
-    make ?timestamp events
+    make ?total_wall_time ?timestamp events
 
   let pp_header out t =
     Format.fprintf out "(@[(date %a)@])"
@@ -513,6 +549,23 @@ module Top_result = struct
     let ch = Csv.to_buffer buf in
     Csv.output_all ch (to_csv t);
     Buffer.contents buf
+
+  let encode (self:t) =
+    let open J.Encode in
+    let {timestamp; events; total_wall_time; raw=_; analyze=_} = self in
+    obj [
+      "timestamp", float timestamp;
+      "total_wall_time", float total_wall_time;
+      "events", list Run_event.encode events;
+    ]
+
+  let decode : t J.Decode.t =
+    let open J.Decode in
+    field "timestamp" float >>= fun timestamp ->
+    field_opt "total_wall_time" float >>= fun total_wall_time ->
+    let total_wall_time = CCOpt.get_or ~default:0. total_wall_time in
+    field "events" (list Run_event.decode) >>= fun events ->
+    succeed (make ~timestamp ~total_wall_time events)
 end
 
 (** {2 Benchmark, within one Top Result} *)

@@ -1,5 +1,5 @@
 (executable
  (name logitest_bin)
  (public_name logitest)
- (libraries logitest containers cmdliner result toml olinq)
+ (libraries logitest containers cmdliner result toml olinq uuidm)
  (flags :standard -warn-error -3-32 -safe-string))

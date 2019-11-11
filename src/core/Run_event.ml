@@ -3,6 +3,7 @@
 (** {1 Event Stored on Disk or Transmitted on Network} *)
 
 module E = CCResult
+module J = Misc.Json
 
 type 'a or_error = ('a, string) CCResult.t
 
@@ -140,3 +141,56 @@ let meta s = {
   s_provers=Snapshot.provers s;
   s_len=List.length s.events;
 }
+
+let encode_raw_result r =
+  let open J.Encode in
+  let {errcode;stdout;stderr;rtime;utime;stime} = r in
+  obj [
+    "errcode", int errcode;
+    "stdout", string stdout;
+    "stderr", string stderr;
+    "rtime", float rtime;
+    "stime", float stime;
+    "utime", float utime;
+  ]
+
+let decode_raw_result =
+  let open J.Decode in
+  field "errcode" int >>= fun errcode ->
+  field "stdout" string >>= fun stdout ->
+  field "stderr" string >>= fun stderr ->
+  field "rtime" float >>= fun rtime ->
+  field "stime" float >>= fun stime ->
+  field "utime" float >>= fun utime ->
+  succeed {stderr;stdout; errcode; stime; rtime; utime}
+
+let encode_result f self =
+  let open J.Encode in
+  let {program; problem; timeout; raw} = self in
+  obj [
+    "program", f program;
+    "problem", Problem.encode problem;
+    "timeout", int timeout;
+    "raw", encode_raw_result raw;
+  ]
+
+let decode_result f =
+  let open J.Decode in
+  field "problem" Problem.decode >>= fun problem ->
+  field "timeout" int >>= fun timeout ->
+  field "program" f >>= fun program ->
+  field "raw" decode_raw_result >>= fun raw ->
+  succeed {problem;timeout;program;raw}
+
+let encode self =
+  let open J.Encode in
+  match self with
+  | Prover_run r -> list value [string "prover"; encode_result Prover.encode r]
+  | Checker_run r -> list value [string "prover"; encode_result (fun ()->null) r]
+
+let decode =
+  let open J.Decode in
+  string >>:: function
+  | "prover" -> (list1 (decode_result Prover.decode) >|= fun r -> Prover_run r)
+  | "checker" -> (list1 (decode_result @@ succeed ()) >|= fun r -> Checker_run r)
+  | _ -> fail "expected prover/checker run event"

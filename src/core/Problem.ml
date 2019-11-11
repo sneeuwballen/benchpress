@@ -1,15 +1,13 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 module E = CCResult
 module StrMap = Misc.Str_map
+module J = Misc.Json
 
-[@@@warning "-39"]
 type t = {
   name: string;  (* filename *)
   expected: Res.t; (* result expected *)
-} [@@deriving yojson,eq]
-[@@@warning "+39"]
+}
 
 type problem = t
 type problem_set = t list
@@ -43,6 +41,20 @@ let pp out p =
   Format.fprintf out "@[<h>%s (expect: %a)@]" p.name Res.print p.expected
 
 let to_string = CCFormat.to_string pp
+
+let encode self =
+  let open J.Encode in
+  let {name; expected} = self in
+  obj [
+    "name", string name;
+    "expected", Res.encode expected;
+  ]
+
+let decode =
+  let open J.Decode in
+  field "name" string >>= fun name ->
+  field "expected" Res.decode >>= fun expected ->
+  succeed {name; expected}
 
 module Tbl = struct
   type t = problem StrMap.t
