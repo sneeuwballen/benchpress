@@ -30,6 +30,7 @@ module Raw : sig
   val stat : t -> stat
 
   val pp_stat : stat CCFormat.printer
+  val printbox_stat : stat -> PrintBox.t
 
   val encode_stat : stat J.Encode.t
   val decode_stat : stat J.Decode.t
@@ -52,6 +53,8 @@ module Analyze : sig
   }
 
   val make : Raw.t -> t
+
+  val to_printbox : t -> PrintBox.t
 
   val is_ok : t -> bool
 

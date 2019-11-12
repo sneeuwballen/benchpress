@@ -5,6 +5,7 @@
 module E = CCResult
 module MStr = Misc.Str_map
 module J = Misc.Json
+module PB = PrintBox
 
 type result = Run_event.prover Run_event.result
 
@@ -28,6 +29,11 @@ let pp_hvlist_ p =
        (CCFormat.(list ~sep:(return "@ ") p)))
 
 let time_of_res e = e.Run_event.raw.Run_event.rtime
+
+let printbox_record l =
+  let fields, vals = List.split l in
+  PB.grid (* TODO: when fixed in printbox ~pad:PB.align_right *)
+    [|Array.of_list @@ List.map PB.text fields; Array.of_list vals|]
 
 module Raw = struct
   type t = result MStr.t
@@ -54,6 +60,16 @@ module Raw = struct
 
   let stat_empty =
     {unsat=0; sat=0; errors=0; unknown=0; timeout=0; total_time=0.; }
+
+  let as_printbox_record s : _ list =
+    let open PB in
+    [ "sat", int s.sat; "unsat", int s.unsat; "errors", int s.errors;
+      "unknown", int s.unknown; "timeout", int s.timeout;
+      "total_time", float s.total_time ]
+
+
+  let printbox_stat (s:stat) : PrintBox.t =
+    printbox_record @@ as_printbox_record s
 
   let add_sat_ t s = {s with sat=s.sat+1; total_time=s.total_time+. t; }
   let add_unsat_ t s = {s with unsat=s.unsat+1; total_time=s.total_time+. t; }
@@ -153,6 +169,17 @@ module Analyze = struct
 
   let is_ok r = r.bad = []
   let num_failed r = List.length r.bad
+
+  let to_printbox (r:t) : PrintBox.t =
+    let fields = [
+      "improved", PB.int @@ List.length r.improved;
+      "ok", PB.int @@ List.length r.ok;
+      "disappoint", PB.int @@ List.length r.disappoint;
+      "errors", PB.int @@ List.length r.errors;
+      "bad", PB.int @@ List.length r.bad;
+
+    ] @ Raw.as_printbox_record r.stat in
+    printbox_record fields
 
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"

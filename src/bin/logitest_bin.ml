@@ -97,6 +97,17 @@ module Run = struct
       E.fail_fprintf "FAIL (%d failures)" n_fail
     )
 
+  let printbox_results (results:T.top_result) : unit =
+    let lazy map = results.T.analyze in
+    let box =
+      let open PrintBox in
+      Prover.Map_name.to_list map
+      |> List.map (fun (p,r) -> hlist [hpad 1 @@ text p.Prover.name; T.Analyze.to_printbox r])
+      |> vlist |> frame |> pad
+    in
+    Printf.printf "%s\n%!" (PrintBox_text.to_string box);
+    ()
+
   (* lwt main *)
   let main ?j ?dyn ?timeout ?memory ?csv ?provers
       ?meta:_ ?summary ~config ?profile ?dir_file dirs () =
@@ -170,6 +181,7 @@ module Run = struct
     (* now fail if results were bad *)
     let r = check_res notify results in
     Notify.sync notify;
+    printbox_results results;
     (* try to send a desktop notification *)
     (try CCUnix.call "notify-send 'benchmark done (%s)'"
            (Misc.human_time results.T.total_wall_time) |> ignore
