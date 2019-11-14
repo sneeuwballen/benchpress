@@ -8,6 +8,97 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
+let printbox_results (results:T.top_result) : unit =
+  let lazy map = results.T.analyze in
+  let box =
+    let open PrintBox in
+    Prover.Map_name.to_list map
+    |> List.map (fun (p,r) -> hlist [hpad 1 @@ text p.Prover.name; T.Analyze.to_printbox r])
+    |> vlist |> frame
+  in
+  Printf.printf "%s\n%!" (PrintBox_text.to_string box);
+  ()
+
+let config_term =
+  let open Cmdliner in
+  let aux config debug =
+    if debug then (
+      Misc.Debug.set_level 5;
+    );
+    let default_conf = "$HOME/.logitest.toml" in
+    let conf_files = match config with None -> [] | Some c -> [c] in
+    let conf_files =
+      if Sys.file_exists (Config.interpolate_home default_conf)
+      then conf_files @ [default_conf] else conf_files
+    in
+    let conf_files = List.map Config.interpolate_home conf_files in
+    Misc.Debug.debugf 1 (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
+    begin match Config.parse_files conf_files with
+      | Result.Ok x -> `Ok x
+      | Result.Error e -> `Error (false, e)
+    end
+  in
+  let arg =
+    Arg.(value & opt (some string) None &
+         info ["c"; "config"] ~doc:"configuration file (in target directory)")
+  and debug =
+    let doc = "Enable debug (verbose) output" in
+    Arg.(value & flag & info ["d"; "debug"] ~doc)
+  in
+  Term.(ret (pure aux $ arg $ debug))
+
+let snapshot_name_term : string option Cmdliner.Term.t =
+  let open Cmdliner in
+  Arg.(value & pos 0 (some string) None
+       & info [] ~docv:"FILE" ~doc:"file/name containing results (default: last)")
+
+(* CSV output *)
+let dump_csv ~csv results : unit =
+  begin match csv with
+    | None -> ()
+    | Some file ->
+      Misc.Debug.debugf 1 (fun k->k "write results in CSV to file `%s`" file);
+      T.Top_result.to_csv_file file results;
+      (try ignore (Sys.command (Printf.sprintf "gzip '%s'" file):int) with _ -> ())
+  end
+
+let dump_summary ~summary results : unit =
+  (* write summary in some file *)
+  begin match summary with
+    | None -> ()
+    | Some file ->
+      CCIO.with_out file
+        (fun oc ->
+           let out = Format.formatter_of_out_channel oc in
+           Format.fprintf out "%a@." T.Top_result.pp_compact results);
+  end
+
+let dump_results_json ~timestamp results : unit =
+  (* save results *)
+  let dump_file =
+    let filename =
+      Printf.sprintf "res-%s-%s.json"
+        (ISO8601.Permissive.string_of_datetime_basic timestamp)
+        (Uuidm.v4_gen (Random.State.make_self_init()) () |> Uuidm.to_string)
+    in
+    let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
+    (try Unix.mkdir data_dir 0o744 with _ -> ());
+    Filename.concat data_dir filename
+  in
+  Misc.Debug.debugf 1 (fun k->k "write results in json to file `%s`" dump_file);
+  (try
+    CCIO.with_out ~flags:[Open_creat; Open_text] dump_file
+      (fun oc ->
+         let j = Misc.Json.Encode.encode_value T.Top_result.encode results in
+         Misc.Json.J.to_channel oc j; flush oc);
+    (* try to compress results *)
+    ignore (Sys.command (Printf.sprintf "gzip '%s'" dump_file) : int);
+   with e ->
+     Printf.eprintf "error when saving to %s: %s\n%!"
+       dump_file (Printexc.to_string e);
+  );
+  ()
+
 (** {2 Run} *)
 module Run = struct
   (* callback that prints a result *)
@@ -39,6 +130,7 @@ module Run = struct
        if dyn then pp_bar res;
        ())
 
+  (* TODO: just do all the dirs at once *)
   (* run provers on the given dir, return a list [prover, dir, results] *)
   let test_dir
       ?j ?timestamp ?dyn ?timeout ?memory ?provers ~config ~notify d
@@ -97,18 +189,6 @@ module Run = struct
       E.fail_fprintf "FAIL (%d failures)" n_fail
     )
 
-  let printbox_results (results:T.top_result) : unit =
-    let lazy map = results.T.analyze in
-    let box =
-      let open PrintBox in
-      Prover.Map_name.to_list map
-      |> List.map (fun (p,r) -> hlist [hpad 1 @@ text p.Prover.name; T.Analyze.to_printbox r])
-      |> vlist |> frame
-    in
-    Printf.printf "%s\n%!" (PrintBox_text.to_string box);
-    ()
-
-  (* lwt main *)
   let main ?j ?dyn ?timeout ?memory ?csv ?provers
       ?meta:_ ?summary ~config ?profile ?dir_file dirs () =
     let open E.Infix in
@@ -138,46 +218,9 @@ module Run = struct
     Misc.Debug.debugf 1 (fun k->k  "merging %d top results…" (List.length l));
     E.return (T.Top_result.merge_l ~timestamp l)
     >>= fun (results:T.Top_result.t) ->
-    (* CSV output *)
-    begin match csv with
-      | None ->  ()
-      | Some file ->
-        Misc.Debug.debugf 1 (fun k->k "write results in CSV to file `%s`" file);
-        T.Top_result.to_csv_file file results;
-        (try ignore (Sys.command (Printf.sprintf "gzip '%s'" file):int) with _ -> ())
-    end;
-    (* write summary in some file *)
-    begin match summary with
-      | None -> ()
-      | Some file ->
-        CCIO.with_out file
-          (fun oc ->
-             let out = Format.formatter_of_out_channel oc in
-             Format.fprintf out "%a@." T.Top_result.pp_compact results);
-    end;
-    (* save results *)
-    let dump_file =
-      let filename =
-        Printf.sprintf "res-%s-%s.json"
-          (ISO8601.Permissive.string_of_datetime_basic timestamp)
-          (Uuidm.v4_gen (Random.State.make_self_init()) () |> Uuidm.to_string)
-      in
-      let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
-      (try Unix.mkdir data_dir 0o744 with _ -> ());
-      Filename.concat data_dir filename
-    in
-    Misc.Debug.debugf 1 (fun k->k "write results in json to file `%s`" dump_file);
-    (try
-      CCIO.with_out ~flags:[Open_creat; Open_text] dump_file
-        (fun oc ->
-           let j = Misc.Json.Encode.encode_value T.Top_result.encode results in
-           Misc.Json.J.to_channel oc j; flush oc);
-      (* try to compress results *)
-      ignore (Sys.command (Printf.sprintf "gzip '%s'" dump_file) : int);
-     with e ->
-       Printf.eprintf "error when saving to %s: %s\n%!"
-         dump_file (Printexc.to_string e);
-    );
+    dump_csv ~csv results;
+    dump_summary ~summary results;
+    dump_results_json ~timestamp results;
     (* now fail if results were bad *)
     let r = check_res notify results in
     Notify.sync notify;
@@ -187,6 +230,134 @@ module Run = struct
            (Misc.human_time results.T.total_wall_time) |> ignore
      with _ -> ());
     r
+
+  (* sub-command for running tests *)
+  let cmd =
+    let open Cmdliner in
+    let aux j dyn dirs dir_file config profile timeout memory
+        meta provers csv summary no_color
+      : (unit,string) E.t =
+      if no_color then CCFormat.set_color_default false;
+      main ~dyn ~j ?timeout ?memory ?csv ?provers
+        ~meta ?profile ?summary ~config ?dir_file dirs ()
+    in
+    let config = config_term
+    and dyn =
+      Arg.(value & flag & info ["progress"] ~doc:"print progress bar")
+    and dir_file =
+      Arg.(value & opt (some string) None & info ["F"] ~doc:"file containing a list of files")
+    and profile =
+      Arg.(value & opt (some string) None & info ["profile"] ~doc:"pick test profile (default 'test')")
+    and timeout =
+      Arg.(value & opt (some int) None & info ["t"; "timeout"] ~doc:"timeout (in s)")
+    and j =
+      Arg.(value & opt int 1 & info ["j"] ~doc:"level of parallelism")
+    and memory =
+      Arg.(value & opt (some int) None & info ["m"; "memory"] ~doc:"memory (in MB)")
+    and meta =
+      Arg.(value & opt string "" & info ["meta"] ~doc:"additional metadata to save")
+    and doc =
+      "test a program on every file in a directory"
+    and csv =
+      Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
+    and dir =
+      Arg.(value & pos_all string [] &
+           info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
+    and provers =
+      Arg.(value & opt (some (list string)) None & info ["p"; "provers"] ~doc:"select provers")
+    and no_color =
+      Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
+    and summary =
+      Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
+    in
+    Term.(pure aux $ j $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
+      $ meta $ provers $ csv $ summary $ no_color),
+    Term.info ~doc "run"
+end
+
+module List_files = struct
+  let main () =
+    try
+      let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
+      let entries =
+        CCIO.File.walk_l data_dir
+        |> CCList.filter_map
+          (function
+            | (`File, s)
+              when (Filename.check_suffix s ".json.gz" ||
+                    Filename.check_suffix s ".json") ->
+              let size = (Unix.stat s).Unix.st_size in
+              Some (s,size)
+            | _ -> None)
+        |> List.sort CCOrd.compare
+      in
+      List.iter
+        (fun (s,size) ->
+           Printf.printf "%s (%s)\n" (Filename.basename s) (Misc.human_size size))
+        entries;
+      Ok ()
+    with e ->
+      E.of_exn_trace e
+
+  (* sub-command to sample a directory *)
+  let cmd =
+    let open Cmdliner in
+    let doc = "list benchmark files" in
+    Term.(pure main $ pure () ), Term.info ~doc "list-files"
+end
+
+module Show = struct
+  let load_file (f:string) : (T.Top_result.t, _) E.t =
+    try
+      let dir = Filename.concat (Xdg.data_dir()) "logitest" in
+      let file = Filename.concat dir f in
+      if not @@ Sys.file_exists file then (
+        Error ("cannot find file " ^ f)
+      ) else (
+        if Filename.check_suffix f ".gz" then (
+          (* use [zcat] to decompress *)
+          let p = Unix.open_process_in (Printf.sprintf "zcat '%s'" file) in
+          let v = Misc.Json.J.from_channel p in
+          (* Format.printf "%a@." (Misc.Json.J.pretty_print ?std:None) v; *)
+          Misc.Json.Decode.decode_value T.Top_result.decode v
+          |> E.map_err Misc.Json.Decode.string_of_error
+        ) else (
+          Misc.Json.Decode.decode_file T.Top_result.decode file
+          |> E.map_err Misc.Json.Decode.string_of_error
+        )
+      )
+    with e ->
+      E.of_exn_trace e
+
+  let main ?csv ?summary files =
+    let open E.Infix in
+    E.map_l load_file files >>= fun res ->
+    let results = T.Top_result.merge_l res in
+    dump_csv ~csv results;
+    dump_summary ~summary results;
+    printbox_results results;
+    E.return ()
+
+  (* sub-command for showing results *)
+  let cmd =
+    let open Cmdliner in
+    let aux csv summary no_color files : _ E.t = 
+      if no_color then CCFormat.set_color_default false;
+      main ?csv ?summary files
+    in
+    let csv =
+      Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
+    and files =
+      Arg.(value & pos_all string [] &
+           info [] ~docv:"FILES" ~doc:"files to read")
+    and no_color =
+      Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
+    and summary =
+      Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
+    in
+    let doc = "show benchmark results" in
+    Term.(pure aux $ csv $ summary $ no_color $ files),
+    Term.info ~doc "show"
 end
 
 (** {2 Sample} *)
@@ -217,97 +388,22 @@ module Sample = struct
     (* print sample *)
     Misc.synchronized (fun () -> List.iter (Printf.printf "%s\n%!") sample);
     E.return ()
+
+  (* sub-command to sample a directory *)
+  let cmd =
+    let open Cmdliner in
+    let aux n dir = run ~n dir in
+    let dir =
+      Arg.(value & pos_all string [] &
+           info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
+    and n =
+      Arg.(value & opt int 1 & info ["n"] ~docv:"N" ~doc:"number of files to sample")
+    and doc = "sample N files in the directories" in
+    Term.(pure aux $ n $ dir), Term.info ~doc "sample"
 end
 
 (** {2 Main: Parse CLI} *)
 
-let config_term =
-  let open Cmdliner in
-  let aux config debug =
-    if debug then (
-      Misc.Debug.set_level 5;
-    );
-    let default_conf = "$HOME/.logitest.toml" in
-    let conf_files = match config with None -> [] | Some c -> [c] in
-    let conf_files =
-      if Sys.file_exists (Config.interpolate_home default_conf)
-      then conf_files @ [default_conf] else conf_files
-    in
-    let conf_files = List.map Config.interpolate_home conf_files in
-    Misc.Debug.debugf 1 (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
-    begin match Config.parse_files conf_files with
-      | Result.Ok x -> `Ok x
-      | Result.Error e -> `Error (false, e)
-    end
-  in
-  let arg =
-    Arg.(value & opt (some string) None &
-         info ["c"; "config"] ~doc:"configuration file (in target directory)")
-  and debug =
-    let doc = "Enable debug (verbose) output" in
-    Arg.(value & flag & info ["d"; "debug"] ~doc)
-  in
-  Term.(ret (pure aux $ arg $ debug))
-
-(* sub-command for running tests *)
-let term_run =
-  let open Cmdliner in
-  let aux j dyn dirs dir_file config profile timeout memory
-      meta provers csv summary no_color
-    : (unit,string) E.t =
-    if no_color then CCFormat.set_color_default false;
-    Run.main ~dyn ~j ?timeout ?memory ?csv ?provers
-      ~meta ?profile ?summary ~config ?dir_file dirs ()
-  in
-  let config = config_term
-  and dyn =
-    Arg.(value & flag & info ["progress"] ~doc:"print progress bar")
-  and dir_file =
-    Arg.(value & opt (some string) None & info ["F"] ~doc:"file containing a list of files")
-  and profile =
-    Arg.(value & opt (some string) None & info ["profile"] ~doc:"pick test profile (default 'test')")
-  and timeout =
-    Arg.(value & opt (some int) None & info ["t"; "timeout"] ~doc:"timeout (in s)")
-  and j =
-    Arg.(value & opt int 1 & info ["j"] ~doc:"level of parallelism")
-  and memory =
-    Arg.(value & opt (some int) None & info ["m"; "memory"] ~doc:"memory (in MB)")
-  and meta =
-    Arg.(value & opt string "" & info ["meta"] ~doc:"additional metadata to save")
-  and doc =
-    "test a program on every file in a directory"
-  and csv =
-    Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
-  and dir =
-    Arg.(value & pos_all string [] &
-         info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
-  and provers =
-    Arg.(value & opt (some (list string)) None & info ["p"; "provers"] ~doc:"select provers")
-  and no_color =
-    Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
-  and summary =
-    Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
-  in
-  Term.(pure aux $ j $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
-    $ meta $ provers $ csv $ summary $ no_color),
-  Term.info ~doc "run"
-
-let snapshot_name_term : string option Cmdliner.Term.t =
-  let open Cmdliner in
-  Arg.(value & pos 0 (some string) None
-       & info [] ~docv:"FILE" ~doc:"file/name containing results (default: last)")
-
-(* sub-command to sample a directory *)
-let term_sample =
-  let open Cmdliner in
-  let aux n dir = Sample.run ~n dir in
-  let dir =
-    Arg.(value & pos_all string [] &
-         info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
-  and n =
-    Arg.(value & opt int 1 & info ["n"] ~docv:"N" ~doc:"number of files to sample")
-  and doc = "sample N files in the directories" in
-  Term.(pure aux $ n $ dir), Term.info ~doc "sample"
 
 let parse_opt () =
   let open Cmdliner in
@@ -323,7 +419,12 @@ let parse_opt () =
     Term.(ret (pure (fun () -> `Help (`Pager, None)) $ pure ())),
     Term.info ~version:"dev" ~man ~doc "logitest"
   in
-  Cmdliner.Term.eval_choice help [ term_run; term_sample; ]
+  Cmdliner.Term.eval_choice help [
+    Run.cmd;
+    Sample.cmd;
+    List_files.cmd;
+    Show.cmd;
+  ]
 
 let () =
   CCFormat.set_color_default true;

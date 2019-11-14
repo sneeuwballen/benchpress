@@ -38,6 +38,7 @@ let die_on_sigterm : unit -> unit =
             exit 1)))
   in fun () -> Lazy.force thunk
 
+(** Human readable duration *)
 let human_time (f:float) : string =
   let nb_sec_minute = 60 in
   let nb_sec_hour = 60 * nb_sec_minute in
@@ -52,6 +53,12 @@ let human_time (f:float) : string =
   (print_aux "h" n_hour) ^
   (print_aux "m" n_min) ^
   (string_of_int n) ^ "s"
+
+(** Human readable size *)
+let human_size (x:int) : string =
+  if x >= 1_000_000 then Printf.sprintf "%d.%dM" (x / 1_000_000) ((x/1000) mod 1_000)
+  else if x >= 1_000 then Printf.sprintf "%d.%dK" (x/1000) ((x/100) mod 10)
+  else string_of_int x
 
 (** Parallel map *)
 module Par_map = struct
