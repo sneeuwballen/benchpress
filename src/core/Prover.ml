@@ -128,16 +128,19 @@ let encode p =
 
 let decode =
   let open J.Decode in
+  let f_opt_null f_name =
+    field_opt f_name (nullable string) >|= CCOpt.flatten
+  in
   field "name" string >>= fun name ->
   field "cmd" string >>= fun cmd ->
   field "binary" string >>= fun binary ->
   field "binary_deps" (list string) >>= fun binary_deps ->
   field "version" decode_version >>= fun version ->
-  field_opt "unsat" string >>= fun unsat ->
-  field_opt "sat" string >>= fun sat ->
-  field_opt "unknown" string >>= fun unknown ->
-  field_opt "timeout" string >>= fun timeout ->
-  field_opt "memory" string >>= fun memory ->
+  f_opt_null "unsat" >>= fun unsat ->
+  f_opt_null "sat" >>= fun sat ->
+  f_opt_null "unknown" >>= fun unknown ->
+  f_opt_null "timeout" >>= fun timeout ->
+  f_opt_null "memory" >>= fun memory ->
   succeed {
     name; cmd; binary; binary_deps; version;
     sat; unsat; unknown; timeout; memory }
