@@ -65,7 +65,7 @@ module Raw = struct
     let open PB in
     [ "sat", int s.sat; "unsat", int s.unsat; "errors", int s.errors;
       "unknown", int s.unknown; "timeout", int s.timeout;
-      "total_time", float s.total_time ]
+      "total_time", line (Misc.human_time s.total_time) ]
 
 
   let printbox_stat (s:stat) : PrintBox.t =
