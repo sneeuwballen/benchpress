@@ -188,14 +188,16 @@ module Analyze = struct
       (CCFormat.with_color color Res.print) (Run_event.analyze_p r)
       r.Run_event.raw.Run_event.rtime
 
+  let pp_bad out t =
+    if t.bad <> [] then (
+      Format.fprintf out "(@[<hv1>bad@ %a@])"
+        (pp_list_ (pp_raw_res_ ~color:"red")) t.bad
+    )
+
   let pp_summary out t: unit =
     let pp_z_or_err out d =
       if d=0 then CCFormat.int out d
       else CCFormat.(with_color "Red" int) out d
-    and pp_bad out t =
-      if t.bad=[] then ()
-      else Format.fprintf out "(@[<hv1>bad@ %a@])"
-          (pp_list_ (pp_raw_res_ ?color:None)) t.bad
     in
     Format.fprintf out
       "(@[<hv>:ok %d@ :improved %d@ :disappoint %d@ :bad %a@ :errors %a@ :total %d@])%a"
@@ -416,6 +418,15 @@ module Top_result = struct
     let pp_tup out (p,res) =
       Format.fprintf out "@[<2>%a:@ @[%a@]@]"
         Prover.pp_name p Analyze.pp_compact res
+    in
+    let {analyze=lazy a; _} = r in
+    Format.fprintf out "(@[<2>%a@ %a@])"
+      pp_header r (pp_list_ pp_tup) (Prover.Map_name.to_list a)
+
+  let pp_bad out (r:t) =
+    let pp_tup out (p,res) =
+      Format.fprintf out "@[<2>%a:@ @[%a@]@]"
+        Prover.pp_name p Analyze.pp_bad res
     in
     let {analyze=lazy a; _} = r in
     Format.fprintf out "(@[<2>%a@ %a@])"

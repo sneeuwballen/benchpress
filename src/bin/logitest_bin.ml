@@ -99,6 +99,20 @@ let dump_results_json ~timestamp results : unit =
   );
   ()
 
+let check_res notify (results:T.top_result) : unit or_error =
+  let lazy map = results.T.analyze in
+  if Prover.Map_name.for_all (fun _ r -> T.Analyze.is_ok r) map
+  then (
+    Notify.send notify "OK";
+    E.return ()
+  ) else (
+    let n_fail =
+      Prover.Map_name.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0
+    in
+    Notify.sendf notify "FAIL (%d failures)" n_fail;
+    E.fail_fprintf "FAIL (%d failures)" n_fail
+  )
+
 (** {2 Run} *)
 module Run = struct
   (* callback that prints a result *)
@@ -174,20 +188,6 @@ module Run = struct
         (Lazy.force results.T.analyze);
       E.return results
     end |> E.add_ctxf "running tests in dir `%s`" dir
-
-  let check_res notify (results:T.top_result) : unit or_error =
-    let lazy map = results.T.analyze in
-    if Prover.Map_name.for_all (fun _ r -> T.Analyze.is_ok r) map
-    then (
-      Notify.send notify "OK";
-      E.return ()
-    ) else (
-      let n_fail =
-        Prover.Map_name.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0
-      in
-      Notify.sendf notify "FAIL (%d failures)" n_fail;
-      E.fail_fprintf "FAIL (%d failures)" n_fail
-    )
 
   let main ?j ?dyn ?timeout ?memory ?csv ?provers
       ?meta:_ ?summary ~config ?profile ?dir_file dirs () =
@@ -329,22 +329,22 @@ module Show = struct
     with e ->
       E.of_exn_trace e
 
-  let main ?csv ?summary files =
+  let main ?(check=true) ?(bad=true) ?csv ?summary files =
     let open E.Infix in
     E.map_l load_file files >>= fun res ->
     let results = T.Top_result.merge_l res in
     dump_csv ~csv results;
     dump_summary ~summary results;
     printbox_results results;
-    E.return ()
+    if bad then (
+      Format.printf "@[<2>bad: %a@]@." T.Top_result.pp_bad results;
+    );
+    if check then check_res Notify.nil results else E.return ()
+
 
   (* sub-command for showing results *)
   let cmd =
     let open Cmdliner in
-    let aux csv summary no_color files : _ E.t = 
-      if no_color then CCFormat.set_color_default false;
-      main ?csv ?summary files
-    in
     let csv =
       Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
     and files =
@@ -352,11 +352,19 @@ module Show = struct
            info [] ~docv:"FILES" ~doc:"files to read")
     and no_color =
       Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
+    and check =
+      Arg.(value & opt ~vopt:true bool true & info ["check"] ~doc:"check results")
+    and bad =
+      Arg.(value & opt ~vopt:true bool true & info ["bad"] ~doc:"list bad results")
     and summary =
       Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
     in
+    let aux check bad csv summary no_color files : _ E.t = 
+      if no_color then CCFormat.set_color_default false;
+      main ~check ~bad ?csv ?summary files
+    in
     let doc = "show benchmark results" in
-    Term.(pure aux $ csv $ summary $ no_color $ files),
+    Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ files),
     Term.info ~doc "show"
 end
 

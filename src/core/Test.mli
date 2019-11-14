@@ -142,6 +142,8 @@ module Top_result : sig
   val pp_compact : t CCFormat.printer
   (** Print meta-informations + compact results *)
 
+  val pp_bad : t CCFormat.printer
+
   (* FIXME:
      use meta everywhere;
      request a Uuid as a unique name (along with timestamp), provided
