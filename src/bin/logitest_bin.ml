@@ -276,7 +276,7 @@ module Run = struct
 end
 
 module List_files = struct
-  let main () =
+  let main ?(abs=false) () =
     try
       let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
       let entries =
@@ -293,7 +293,8 @@ module List_files = struct
       in
       List.iter
         (fun (s,size) ->
-           Printf.printf "%s (%s)\n" (Filename.basename s) (Misc.human_size size))
+           let s = if abs then s else Filename.basename s in
+           Printf.printf "%s (%s)\n" s (Misc.human_size size))
         entries;
       Ok ()
     with e ->
@@ -302,8 +303,12 @@ module List_files = struct
   (* sub-command to sample a directory *)
   let cmd =
     let open Cmdliner in
+    let abs =
+      Arg.(value & opt ~vopt:true bool false & info ["abs"] ~doc:"show absolute paths")
+    in
     let doc = "list benchmark files" in
-    Term.(pure main $ pure () ), Term.info ~doc "list-files"
+    let aux abs () = main ~abs () in
+    Term.(pure aux $ abs $ pure () ), Term.info ~doc "list-files"
 end
 
 module Show = struct
