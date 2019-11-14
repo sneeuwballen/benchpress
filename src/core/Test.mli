@@ -142,6 +142,11 @@ module Top_result : sig
   val pp_compact : t CCFormat.printer
   (** Print meta-informations + compact results *)
 
+  (* FIXME:
+     use meta everywhere;
+     request a Uuid as a unique name (along with timestamp), provided
+     from main. *)
+
   val merge : ?total_wall_time:float -> ?timestamp:float -> t -> t -> t
 
   val merge_l : ?total_wall_time:float -> ?timestamp:float -> t list -> t

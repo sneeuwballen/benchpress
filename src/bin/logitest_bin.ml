@@ -103,7 +103,7 @@ module Run = struct
       let open PrintBox in
       Prover.Map_name.to_list map
       |> List.map (fun (p,r) -> hlist [hpad 1 @@ text p.Prover.name; T.Analyze.to_printbox r])
-      |> vlist |> frame |> pad
+      |> vlist |> frame
     in
     Printf.printf "%s\n%!" (PrintBox_text.to_string box);
     ()
