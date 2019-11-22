@@ -30,12 +30,10 @@ let rec merge_l = function
   | [c] -> c
   | c :: tail -> merge c (merge_l tail)
 
+(*  FIXME: use Xdg instead *)
 (* obtain $HOME *)
 let get_home () =
-  let ic = Unix.open_process_in "echo $HOME" in
-  let home = input_line ic in
-  close_in ic;
-  home
+  try Sys.getenv "HOME" with _ -> failwith "variable $HOME not defined"
 
 let interpolate_home s =
   let h = lazy (get_home ()) in
