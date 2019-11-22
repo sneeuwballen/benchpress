@@ -19,7 +19,7 @@ depends: [
     "cmdliner"
     "iter" { >= "1.0" }
     "uuidm"
-    "printbox"
+    "printbox" { >= "0.3" & < "0.4" }
     "decoders" { >= "0.3.0" & < "0.4" }
     "decoders-yojson" { >= "0.3.0" & < "0.4" }
     "ocaml" {>= "4.02" }

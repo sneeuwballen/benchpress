@@ -2,6 +2,7 @@
  (name logitest)
  (public_name logitest)
  (wrapped true)
- (libraries containers containers.unix containers.thread re re.perl csv
-   cmdliner result toml olinq iter decoders printbox decoders-yojson)
+ (libraries containers containers.unix containers.thread containers.sexp re
+   re.perl csv cmdliner result toml olinq iter decoders printbox yojson
+   decoders-yojson)
  (flags :standard -warn-error -3-32 -safe-string))
