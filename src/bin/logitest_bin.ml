@@ -423,88 +423,43 @@ module Serve = struct
   module H = Tiny_httpd
   module U = Tiny_httpd_util
 
+  module Html = Tyxml_html
+
   (* start from http://bettermotherfuckingwebsite.com/ and added some *)
   let basic_css = {|
-    body{margin:40px auto;font-family: courier;
-    max-width:1024px;line-height:1.6;font-size:18px;color:#444;padding:0
-    10px}h1,h2,h3{line-height:1.2} .framed {border-line:3px; border-style: solid}
+    body{margin:44px auto;font-family: courier;
+    max-width:1024px;font-size:18px;color:#444;padding:10px}
+    h1,h2,h3{line-height:1.2} table {width: 100%; line-height: .1rem} .framed {border-width:3px; border-style: solid}
     |}
 
-  module type HTML = sig
-    val css : string -> unit
-    val ul : (unit -> unit) -> unit
-    val list : f:('a -> unit) -> 'a list -> unit
-    val a : href:string -> (unit -> unit) -> unit
-    val p : (unit -> unit) -> unit
-    val txt : string -> unit
-    val txt_f : ('a, Buffer.t, unit) format -> 'a
-    val pre : (unit -> unit) -> unit
-    val raw : string -> unit (* add raw HTML *)
-    val h1 : string -> unit
-    val h2 : string -> unit
-    val h3 : string -> unit
-    val form : id:string -> action:string -> meth:string -> (unit->unit) -> unit
-    val label : string -> (unit->unit) -> unit
-    val input : typ:string -> name:string -> unit
-    val button : typ:string -> (unit->unit) -> unit
-
-    val render : unit -> string
-  end
-
-  let html () : (module HTML) =
-    let module H = struct
-      let head=Buffer.create 32
-      let body= Buffer.create 256
-      let render () : string =
-        "<head>"^Buffer.contents head^"</head><body>\n"^Buffer.contents body^"</body>"
-      let pr_head fmt = Printf.bprintf head fmt
-      let pr fmt = Printf.bprintf body fmt
-
-      let css s = pr_head "<style type=\"text/css\">%s</style>\n" s; ()
-      let ul f = pr "<ul>\n"; f (); pr "</ul>\n"; ()
-      let li f = pr "<li>\n"; f (); pr "</li>\n"; ()
-      let list ~f l = pr "<ul>\n"; List.iter (fun x -> li (fun () -> f x)) l; pr "</ul>\n"; ()
-      let a ~href f = pr "<a href=\"%s\">" href; f (); pr "</a>"; ()
-      let p f = pr "<p>"; f (); pr "</p>\n"; ()
-      let txt s = pr "%s" s; ()
-      let txt_f s = Printf.bprintf body s
-      let pre f = pr "<pre>"; f(); pr "</pre>\n";()
-      let raw x = pr "%s" x; ()
-      let h1 x = pr "<h1>%s</h1>\n" x; ()
-      let h2 x = pr "<h2>%s</h2>\n" x; ()
-      let h3 x = pr "<h3>%s</h3>\n" x; ()
-      let form ~id ~action ~meth f =
-        pr "<form action=\"%s\" method=\"%s\" id=\"%s\">" action meth id;
-        f(); pr "</form>"; ()
-      let label s f = pr "<label> %s" s; f(); pr "</label>\n"; ()
-      let input ~typ ~name =
-        pr "<input name=\"%s\" type=\"%s\">\n" name typ; ()
-      let button ~typ f =
-        pr "<button type=\"%s\">" typ; f(); pr "</button>\n"; ()
-    end
-    in
-    (module H)
+  let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 
   (* show individual files *)
-  let handle_file server : unit =
+  let handle_show server : unit =
     H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
         match Show.load_file file with
         | Error e ->
           H.Response.fail ~code:500 "could not load %S:\n%s" file e
         | Ok res ->
-          let (module Html) = html() in
-          Html.css basic_css;
-          Html.a ~href:"/" (fun() -> Html.txt "back to root");
-          Html.h3 file;
           let box = Test.Top_result.(to_printbox res) in
-          Html.raw (PrintBox_html.to_string box);
-          H.Response.make_string (Ok (Html.render()))
+          let h =
+            let open Html in
+            html
+              (head (title (txt "show")) [style [txt basic_css]])
+              (body [
+                  a ~a:[a_href "/"] [txt "back to root"];
+                  h3 [txt file];
+                  div [PrintBox_html.to_html box];
+              ])
+          in
+          H.Response.make_string (Ok (string_of_html h))
       )
 
   (* compare files *)
   let handle_compare server : unit =
     H.add_path_handler server ~meth:`POST "/compare" (fun req ->
         let body = H.Request.body req |> String.trim in
+        Misc.Debug.debugf 4 (fun k->k "/compare: body is %s" body);
         let names =
           CCString.split_on_char '&' body
           |> CCList.filter_map
@@ -512,6 +467,7 @@ module Serve = struct
                | Some (name, "on") -> Some name
                | _ -> None)
         in
+        Misc.Debug.debugf 2 (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
         if List.length names>=2 then (
           let files =
             names
@@ -530,12 +486,17 @@ module Serve = struct
                   Test.Top_result.comparison_to_printbox ~short:true c])
             |> vlist
           in
-          let (module Html) = html() in
-          Html.css basic_css;
-          Html.a ~href:"/" (fun() -> Html.txt "back to root");
-          Html.h3 "comparison";
-          Html.raw (PrintBox_html.to_string box_compare_l);
-          H.Response.make_string (Ok (Html.render ()))
+          let h =
+            let open Html in
+            html
+              (head (title (txt "compare")) [style [txt basic_css]])
+              (body [
+                  a ~a:[a_href "/"] [txt "back to root"];
+                  h3 [txt "comparison"];
+                  div [PrintBox_html.to_html box_compare_l];
+                ])
+          in
+          H.Response.make_string (Ok (string_of_html h))
         ) else (
           H.Response.fail ~code:412 "precondition failed: select at least 2 files"
         )
@@ -545,30 +506,46 @@ module Serve = struct
   let handle_root server data_dir : unit =
     H.add_path_handler server ~meth:`GET "/%!" (fun _req ->
         let entries = list_entries data_dir in
-        let (module Html) = html() in
-        Html.css basic_css;
-        Html.form ~id:"compare" ~action:"/compare/" ~meth:"POST" (fun () ->
-            Html.button ~typ:"submit" (fun () -> Html.txt "compare selected");
-            Html.list entries
-              ~f:(fun (s,size) ->
-                  let s = Filename.basename s in
-                  let href =
-                    Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
-                  in
-                  Html.a ~href (fun () -> Html.txt s);
-                  Html.txt_f "(%s)" (Misc.human_size size);
-                  Html.input ~typ:"checkbox" ~name:s;
-                ));
-        H.Response.make_string (Ok (Html.render ()))
+        let h =
+          let open Html in
+          html
+            (head(title (txt "list")) [style [txt basic_css]])
+            (body [
+                h3 [txt "list of results"];
+                let l = 
+                  List.map
+                    (fun (s,size) ->
+                       let s = Filename.basename s in
+                       let href =
+                         Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
+                       in
+                       li [
+                         a ~a:[a_href href] [txt s];
+                         txt (Printf.sprintf "(%s)" (Misc.human_size size));
+                         input ~a:[a_input_type `Checkbox; a_name s] ()
+                       ])
+                    entries
+                in
+                form ~a:[a_id (uri_of_string "compare");
+                         a_action (uri_of_string "/compare/");
+                         a_method `Post]
+                  [button ~a:[a_button_type `Submit] [txt "compare selected"]; ul l];
+              ])
+        in
+        H.Response.make_string (Ok (string_of_html h))
       )
 
-  let main ?port () =
+  let main ~debug ?port () =
     try
       let server = H.create ?port () in
+      if debug >0 then (
+        H._enable_debug true;
+        Misc.Debug.set_level debug;
+      );
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
       handle_root server data_dir;
-      handle_file server;
+      handle_show server;
       handle_compare server;
       H.run server |> E.map_err Printexc.to_string
     with e ->
@@ -579,10 +556,12 @@ module Serve = struct
     let open Cmdliner in
     let port =
       Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
+    and debug =
+      Arg.(value & opt int 0 & info ["d"; "debug"] ~doc:"enable debug")
     in
     let doc = "server on given port" in
-    let aux port () = main ?port () in
-    Term.(pure aux $ port $ pure () ), Term.info ~doc "serve"
+    let aux debug port () = main ~debug ?port () in
+    Term.(pure aux $ debug $ port $ pure () ), Term.info ~doc "serve"
 
 end
 
