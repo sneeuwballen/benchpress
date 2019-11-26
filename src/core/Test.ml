@@ -30,9 +30,14 @@ let pp_hvlist_ p =
 
 let time_of_res e = e.Run_event.raw.Run_event.rtime
 
-let v_record ?bars l =
+let pb_v_record ?bars l =
   PB.grid_l ?bars
     (List.map (fun (field,value) -> [PB.text field; value]) l)
+
+let pb_int_color c n =
+  let open PB in
+  if n=0 then int n
+  else text_with_style (Style.set_bold true c) (string_of_int n)
 
 module Raw = struct
   type t = result MStr.t
@@ -68,7 +73,7 @@ module Raw = struct
 
 
   let printbox_stat (s:stat) : PrintBox.t =
-    v_record @@ as_printbox_record s
+    pb_v_record @@ as_printbox_record s
 
   let add_sat_ t s = {s with sat=s.sat+1; total_time=s.total_time+. t; }
   let add_unsat_ t s = {s with unsat=s.unsat+1; total_time=s.total_time+. t; }
@@ -170,14 +175,15 @@ module Analyze = struct
   let num_failed r = List.length r.bad
 
   let to_printbox (r:t) : PrintBox.t =
+    let open PB in
     let fields = [
-      "improved", PB.int @@ List.length r.improved;
-      "ok", PB.int @@ List.length r.ok;
-      "disappoint", PB.int @@ List.length r.disappoint;
-      "errors", PB.int @@ List.length r.errors;
-      "bad", PB.int @@ List.length r.bad;
+      "improved", pb_int_color Style.(fg_color Green) @@ List.length r.improved;
+      "ok", pb_int_color Style.(fg_color Green) @@ List.length r.ok;
+      "disappoint", pb_int_color Style.(fg_color Blue) @@ List.length r.disappoint;
+      "errors", pb_int_color Style.(fg_color Yellow) @@ List.length r.errors;
+      "bad", pb_int_color Style.(fg_color Red) @@ List.length r.bad;
     ] @ Raw.as_printbox_record r.stat in
-    v_record ~bars:true fields
+    pb_v_record ~bars:true fields
 
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
@@ -346,24 +352,24 @@ module ResultsComparison = struct
 
   let to_printbox (self:t) : PB.t =
     let open PB in
-    v_record [
-      "appeared", grid_l @@ List.map to_pb_res1 self.appeared;
-      "disappeared", grid_l @@ List.map to_pb_res1 self.disappeared;
-      "same", grid_l @@ List.map (fun (pb,res,_,_) -> to_pb_res1 (pb,res)) self.same;
+    pb_v_record [
       "mismatch", grid_l @@ List.map to_pb_res2 self.mismatch;
       "improved", grid_l @@ List.map to_pb_res2 self.improved;
       "regressed", grid_l @@ List.map to_pb_res2 self.regressed;
+      "appeared", grid_l @@ List.map to_pb_res1 self.appeared;
+      "disappeared", grid_l @@ List.map to_pb_res1 self.disappeared;
+      "same", grid_l @@ List.map (fun (pb,res,_,_) -> to_pb_res1 (pb,res)) self.same;
     ]
 
   let to_printbox_short (self:t) : PB.t =
     let open PB in
-    v_record [
+    pb_v_record [
       "appeared", int (List.length self.appeared);
       "disappeared", int (List.length self.disappeared);
       "same", int (List.length self.same);
-      "mismatch", int (List.length self.mismatch);
-      "improved", int (List.length self.improved);
-      "regressed", int (List.length self.regressed);
+      "mismatch", pb_int_color Style.(fg_color Red) (List.length self.mismatch);
+      "improved", pb_int_color Style.(fg_color Green) (List.length self.improved);
+      "regressed", pb_int_color Style.(fg_color Cyan) (List.length self.regressed);
       "mismatch-list", grid_l @@ List.map to_pb_res2 self.mismatch;
       "improved-list", grid_l @@ List.map to_pb_res2 self.improved;
       "regressed-list", grid_l @@ List.map to_pb_res2 self.regressed;
@@ -637,7 +643,7 @@ module Top_result = struct
       PB.hlist [PB.text "table"; table_to_printbox @@ to_table self];
     ]
 
-  let comparison_to_printbox (self:comparison_result) : PB.t =
+  let comparison_to_printbox ?(short=true) (self:comparison_result) : PB.t =
     let open PB in
     let pm side m =
       Prover.Map_name.to_list m
@@ -652,7 +658,10 @@ module Top_result = struct
         |> List.map
           (fun (p,c) ->
              hlist [text_with_style Style.bold (Prover.name p ^" (both)");
-                    ResultsComparison.to_printbox c])
+                    if short
+                    then ResultsComparison.to_printbox_short c
+                    else ResultsComparison.to_printbox c;
+                   ])
       ];
       pm "left" self.left;
       pm "right" self.right;

@@ -526,7 +526,7 @@ module Serve = struct
                 let c = Test.Top_result.compare r1 r2 in
                 vlist ~bars:false [
                   text f1; text f2;
-                  Test.Top_result.comparison_to_printbox c])
+                  Test.Top_result.comparison_to_printbox ~short:true c])
             |> vlist
           in
           let (module Html) = html() in
