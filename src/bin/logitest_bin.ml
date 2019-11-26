@@ -322,8 +322,9 @@ module Show = struct
       ) else (
         if Filename.check_suffix f ".gz" then (
           (* use [zcat] to decompress *)
-          let p = Unix.open_process_in (Printf.sprintf "zcat '%s'" file) in
-          let v = Misc.Json.J.from_channel p in
+          let v =
+            CCUnix.with_process_in (Printf.sprintf "zcat '%s'" file)
+              ~f:Misc.Json.J.from_channel in
           (* Format.printf "%a@." (Misc.Json.J.pretty_print ?std:None) v; *)
           Misc.Json.Decode.decode_value T.Top_result.decode v
           |> E.map_err Misc.Json.Decode.string_of_error
@@ -505,7 +506,7 @@ module Serve = struct
     H.add_path_handler server ~meth:`POST "/compare" (fun req ->
         let body = H.Request.body req |> String.trim in
         let names =
-          String.split_on_char '&' body
+          CCString.split_on_char '&' body
           |> CCList.filter_map
             (fun s -> match CCString.Split.left ~by:"=" (String.trim s) with
                | Some (name, "on") -> Some name

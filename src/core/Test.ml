@@ -180,7 +180,7 @@ module Analyze = struct
       "improved", pb_int_color Style.(fg_color Green) @@ List.length r.improved;
       "ok", pb_int_color Style.(fg_color Green) @@ List.length r.ok;
       "disappoint", pb_int_color Style.(fg_color Blue) @@ List.length r.disappoint;
-      "errors", pb_int_color Style.(fg_color Yellow) @@ List.length r.errors;
+      "errors", pb_int_color Style.(fg_color Cyan) @@ List.length r.errors;
       "bad", pb_int_color Style.(fg_color Red) @@ List.length r.bad;
     ] @ Raw.as_printbox_record r.stat in
     pb_v_record ~bars:true fields
