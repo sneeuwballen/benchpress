@@ -30,10 +30,9 @@ let pp_hvlist_ p =
 
 let time_of_res e = e.Run_event.raw.Run_event.rtime
 
-let printbox_record ?bars l =
-  let fields, vals = List.split l in
-  PB.grid ?bars (* TODO: when fixed in printbox ~pad:PB.align_right *)
-    [|Array.of_list @@ List.map PB.text fields; Array.of_list vals|]
+let v_record ?bars l =
+  PB.grid_l ?bars
+    (List.map (fun (field,value) -> [PB.text field; value]) l)
 
 module Raw = struct
   type t = result MStr.t
@@ -69,7 +68,7 @@ module Raw = struct
 
 
   let printbox_stat (s:stat) : PrintBox.t =
-    printbox_record @@ as_printbox_record s
+    v_record @@ as_printbox_record s
 
   let add_sat_ t s = {s with sat=s.sat+1; total_time=s.total_time+. t; }
   let add_unsat_ t s = {s with unsat=s.unsat+1; total_time=s.total_time+. t; }
@@ -178,7 +177,7 @@ module Analyze = struct
       "errors", PB.int @@ List.length r.errors;
       "bad", PB.int @@ List.length r.bad;
     ] @ Raw.as_printbox_record r.stat in
-    printbox_record ~bars:true fields
+    v_record ~bars:true fields
 
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
@@ -336,40 +335,38 @@ module ResultsComparison = struct
       (List.length t.regressed) (pp_hvlist_ (pp_pb_res2 ~bold:true ~color:"yellow")) t.regressed
 
   let to_pb_res1 (pb,res) =
-    PB.(hlist [
-        text (Problem.name pb);
-        text (Res.to_string res);
-      ])
+    let open PB in
+    [ text (Problem.name pb); text (Res.to_string res); ]
 
   let to_pb_res2 (pb,res1,res2) =
-    PB.(hlist [
-        text (Problem.name pb);
-        text (Res.to_string res1);
-        text (Res.to_string res2)])
+    let open PB in
+    [ text (Problem.name pb);
+      text (Res.to_string res1);
+      text (Res.to_string res2)]
 
   let to_printbox (self:t) : PB.t =
     let open PB in
-    record [
-      "appeared", vlist_map to_pb_res1 self.appeared;
-      "disappeared", vlist_map to_pb_res1 self.disappeared;
-      "same", vlist_map (fun (pb,res,_,_) -> to_pb_res1 (pb,res)) self.same;
-      "mismatch", vlist_map to_pb_res2 self.mismatch;
-      "improved", vlist_map to_pb_res2 self.improved;
-      "regressed", vlist_map to_pb_res2 self.regressed;
+    v_record [
+      "appeared", grid_l @@ List.map to_pb_res1 self.appeared;
+      "disappeared", grid_l @@ List.map to_pb_res1 self.disappeared;
+      "same", grid_l @@ List.map (fun (pb,res,_,_) -> to_pb_res1 (pb,res)) self.same;
+      "mismatch", grid_l @@ List.map to_pb_res2 self.mismatch;
+      "improved", grid_l @@ List.map to_pb_res2 self.improved;
+      "regressed", grid_l @@ List.map to_pb_res2 self.regressed;
     ]
 
   let to_printbox_short (self:t) : PB.t =
     let open PB in
-    record [
+    v_record [
       "appeared", int (List.length self.appeared);
       "disappeared", int (List.length self.disappeared);
       "same", int (List.length self.same);
       "mismatch", int (List.length self.mismatch);
       "improved", int (List.length self.improved);
       "regressed", int (List.length self.regressed);
-      "mismatch-list", vlist_map to_pb_res2 self.mismatch;
-      "improved-list", vlist_map to_pb_res2 self.improved;
-      "regressed-list", vlist_map to_pb_res2 self.regressed;
+      "mismatch-list", grid_l @@ List.map to_pb_res2 self.mismatch;
+      "improved-list", grid_l @@ List.map to_pb_res2 self.improved;
+      "regressed-list", grid_l @@ List.map to_pb_res2 self.regressed;
     ]
 end
 
@@ -611,6 +608,7 @@ module Top_result = struct
 
   let table_to_printbox (self:table) : PB.t =
     let header_line =
+      List.map PB.(text_with_style Style.bold) @@
       "problem" ::
         self.t_provers @
         (List.map (fun p -> p ^ ".time") self.t_provers)
@@ -618,23 +616,46 @@ module Top_result = struct
     let lines =
       List.map
         (fun r ->
-           r.tr_problem
-           :: List.map (fun (_,res,_) ->  res_to_csv res) r.tr_res
-           @ List.map (fun (_,res,t) -> time_to_csv res t) r.tr_res)
+           PB.text r.tr_problem
+           :: List.map (fun (_,res,_) -> PB.text @@ res_to_csv res) r.tr_res
+           @ List.map (fun (_,res,t) -> PB.text @@ time_to_csv res t) r.tr_res)
         self.t_rows
     in
-    PB.grid_text_l (header_line::lines)
+    PB.grid_l (header_line::lines)
 
   let to_printbox (self:t) : PB.t =
+    let open PB in
     let {analyze=lazy a; _} = self in
-    PB.vlist [
-      PB.hlist [
-        PB.text "summary";
-        PB.record (
+    vlist [
+      hlist [
+        text "summary";
+        vlist (
           Prover.Map_name.to_list a
-          |> List.map (fun (p, a) -> Prover.name p, Analyze.to_printbox a)
+          |> List.map (fun (p, a) ->
+              hlist [text_with_style Style.bold (Prover.name p); Analyze.to_printbox a])
         )];
       PB.hlist [PB.text "table"; table_to_printbox @@ to_table self];
+    ]
+
+  let comparison_to_printbox (self:comparison_result) : PB.t =
+    let open PB in
+    let pm side m =
+      Prover.Map_name.to_list m
+      |> List.map
+        (fun (p,c) ->
+           [text_with_style Style.bold (Prover.name p ^ " ("^side^")");
+            Analyze.to_printbox c])
+    in
+    grid_l @@ List.flatten [
+      [
+        Prover.Map_name.to_list self.both
+        |> List.map
+          (fun (p,c) ->
+             hlist [text_with_style Style.bold (Prover.name p ^" (both)");
+                    ResultsComparison.to_printbox c])
+      ];
+      pm "left" self.left;
+      pm "right" self.right;
     ]
 
   let to_csv_chan oc t =

@@ -177,6 +177,7 @@ module Top_result : sig
   val compare : t -> t -> comparison_result
 
   val pp_comparison : comparison_result CCFormat.printer
+  val comparison_to_printbox : comparison_result -> PrintBox.t
 
   type table_row = {
     tr_problem: string;

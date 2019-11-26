@@ -439,6 +439,13 @@ module Serve = struct
     val txt_f : ('a, Buffer.t, unit) format -> 'a
     val pre : (unit -> unit) -> unit
     val raw : string -> unit (* add raw HTML *)
+    val h1 : string -> unit
+    val h2 : string -> unit
+    val h3 : string -> unit
+    val form : id:string -> action:string -> meth:string -> (unit->unit) -> unit
+    val label : string -> (unit->unit) -> unit
+    val input : typ:string -> name:string -> unit
+    val button : typ:string -> (unit->unit) -> unit
 
     val render : unit -> string
   end
@@ -457,48 +464,111 @@ module Serve = struct
       let li f = pr "<li>\n"; f (); pr "</li>\n"; ()
       let list ~f l = pr "<ul>\n"; List.iter (fun x -> li (fun () -> f x)) l; pr "</ul>\n"; ()
       let a ~href f = pr "<a href=\"%s\">" href; f (); pr "</a>"; ()
-      let p f = pr "<p>"; f (); pr "</p>"; ()
+      let p f = pr "<p>"; f (); pr "</p>\n"; ()
       let txt s = pr "%s" s; ()
       let txt_f s = Printf.bprintf body s
-      let pre f = pr "<pre>"; f(); pr "</pre>";()
+      let pre f = pr "<pre>"; f(); pr "</pre>\n";()
       let raw x = pr "%s" x; ()
+      let h1 x = pr "<h1>%s</h1>\n" x; ()
+      let h2 x = pr "<h2>%s</h2>\n" x; ()
+      let h3 x = pr "<h3>%s</h3>\n" x; ()
+      let form ~id ~action ~meth f =
+        pr "<form action=\"%s\" method=\"%s\" id=\"%s\">" action meth id;
+        f(); pr "</form>"; ()
+      let label s f = pr "<label> %s" s; f(); pr "</label>\n"; ()
+      let input ~typ ~name =
+        pr "<input name=\"%s\" type=\"%s\">\n" name typ; ()
+      let button ~typ f =
+        pr "<button type=\"%s\">" typ; f(); pr "</button>\n"; ()
     end
     in
     (module H)
+
+  (* show individual files *)
+  let handle_file server : unit =
+    H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
+        match Show.load_file file with
+        | Error e ->
+          H.Response.fail ~code:500 "could not load %S:\n%s" file e
+        | Ok res ->
+          let (module Html) = html() in
+          Html.css basic_css;
+          Html.a ~href:"/" (fun() -> Html.txt "back to root");
+          Html.h3 file;
+          let box = Test.Top_result.(to_printbox res) in
+          Html.raw (PrintBox_html.to_string box);
+          H.Response.make_string (Ok (Html.render()))
+      )
+
+  (* compare files *)
+  let handle_compare server : unit =
+    H.add_path_handler server ~meth:`POST "/compare" (fun req ->
+        let body = H.Request.body req |> String.trim in
+        let names =
+          String.split_on_char '&' body
+          |> CCList.filter_map
+            (fun s -> match CCString.Split.left ~by:"=" (String.trim s) with
+               | Some (name, "on") -> Some name
+               | _ -> None)
+        in
+        if List.length names>=2 then (
+          let files =
+            names
+            |> List.map
+              (fun s -> match Show.load_file s with
+                 | Error e -> H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
+                 | Ok x -> s, x)
+          in
+          let box_compare_l =
+            let open PrintBox in
+            CCList.diagonal files
+            |> List.map (fun ((f1,r1),(f2,r2)) ->
+                let c = Test.Top_result.compare r1 r2 in
+                vlist ~bars:false [
+                  text f1; text f2;
+                  Test.Top_result.comparison_to_printbox c])
+            |> vlist
+          in
+          let (module Html) = html() in
+          Html.css basic_css;
+          Html.a ~href:"/" (fun() -> Html.txt "back to root");
+          Html.h3 "comparison";
+          Html.raw (PrintBox_html.to_string box_compare_l);
+          H.Response.make_string (Ok (Html.render ()))
+        ) else (
+          H.Response.fail ~code:412 "precondition failed: select at least 2 files"
+        )
+      )
+
+  (* index *)
+  let handle_root server data_dir : unit =
+    H.add_path_handler server ~meth:`GET "/%!" (fun _req ->
+        let entries = list_entries data_dir in
+        let (module Html) = html() in
+        Html.css basic_css;
+        Html.form ~id:"compare" ~action:"/compare/" ~meth:"POST" (fun () ->
+            Html.button ~typ:"submit" (fun () -> Html.txt "compare selected");
+            Html.list entries
+              ~f:(fun (s,size) ->
+                  let s = Filename.basename s in
+                  let href =
+                    Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
+                  in
+                  Html.a ~href (fun () -> Html.txt s);
+                  Html.txt_f "(%s)" (Misc.human_size size);
+                  Html.input ~typ:"checkbox" ~name:s;
+                ));
+        H.Response.make_string (Ok (Html.render ()))
+      )
 
   let main ?port () =
     try
       let server = H.create ?port () in
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
-      (* index *)
-      H.add_path_handler server ~meth:`GET "/%!" (fun _req ->
-          let entries = list_entries data_dir in
-          let (module Html) = html() in
-          Html.css basic_css;
-          Html.list entries
-            ~f:(fun (s,size) ->
-                let s = Filename.basename s in
-                let href =
-                  Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
-                in
-                Html.a ~href (fun () -> Html.txt s);
-                Html.txt_f "(%s)" (Misc.human_size size));
-          H.Response.make_string (Ok (Html.render ()))
-        );
-      (* show individual files *)
-      H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
-          match Show.load_file file with
-          | Error e ->
-            H.Response.fail ~code:500 "could not load %S:\n%s" file e
-          | Ok res ->
-            let (module Html) = html() in
-            Html.css basic_css;
-            Html.a ~href:"/" (fun() -> Html.txt "back to root");
-            let box = Test.Top_result.(to_printbox res) in
-            Html.raw (PrintBox_html.to_string box);
-            H.Response.make_string (Ok (Html.render()))
-        );
+      handle_root server data_dir;
+      handle_file server;
+      handle_compare server;
       H.run server |> E.map_err Printexc.to_string
     with e ->
       E.of_exn_trace e
