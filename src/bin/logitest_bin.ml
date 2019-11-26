@@ -275,22 +275,23 @@ module Run = struct
     Term.info ~doc "run"
 end
 
+let list_entries data_dir =
+  CCIO.File.walk_l data_dir
+  |> CCList.filter_map
+    (function
+      | (`File, s)
+        when (Filename.check_suffix s ".json.gz" ||
+              Filename.check_suffix s ".json") ->
+        let size = (Unix.stat s).Unix.st_size in
+        Some (s,size)
+      | _ -> None)
+  |> List.sort (fun x y->CCOrd.compare y x)
+
 module List_files = struct
   let main ?(abs=false) () =
     try
       let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
-      let entries =
-        CCIO.File.walk_l data_dir
-        |> CCList.filter_map
-          (function
-            | (`File, s)
-              when (Filename.check_suffix s ".json.gz" ||
-                    Filename.check_suffix s ".json") ->
-              let size = (Unix.stat s).Unix.st_size in
-              Some (s,size)
-            | _ -> None)
-        |> List.sort CCOrd.compare
-      in
+      let entries = list_entries data_dir in
       List.iter
         (fun (s,size) ->
            let s = if abs then s else Filename.basename s in
@@ -415,6 +416,105 @@ module Sample = struct
     Term.(pure aux $ n $ dir), Term.info ~doc "sample"
 end
 
+(** {2 Embedded web server} *)
+
+module Serve = struct
+  module H = Tiny_httpd
+  module U = Tiny_httpd_util
+
+  (* start from http://bettermotherfuckingwebsite.com/ and added some *)
+  let basic_css = {|
+    body{margin:40px auto;font-family: courier;
+    max-width:1024px;line-height:1.6;font-size:18px;color:#444;padding:0
+    10px}h1,h2,h3{line-height:1.2} .framed {border-line:3px; border-style: solid}
+    |}
+
+  module type HTML = sig
+    val css : string -> unit
+    val ul : (unit -> unit) -> unit
+    val list : f:('a -> unit) -> 'a list -> unit
+    val a : href:string -> (unit -> unit) -> unit
+    val p : (unit -> unit) -> unit
+    val txt : string -> unit
+    val txt_f : ('a, Buffer.t, unit) format -> 'a
+    val pre : (unit -> unit) -> unit
+    val raw : string -> unit (* add raw HTML *)
+
+    val render : unit -> string
+  end
+
+  let html () : (module HTML) =
+    let module H = struct
+      let head=Buffer.create 32
+      let body= Buffer.create 256
+      let render () : string =
+        "<head>"^Buffer.contents head^"</head><body>\n"^Buffer.contents body^"</body>"
+      let pr_head fmt = Printf.bprintf head fmt
+      let pr fmt = Printf.bprintf body fmt
+
+      let css s = pr_head "<style type=\"text/css\">%s</style>\n" s; ()
+      let ul f = pr "<ul>\n"; f (); pr "</ul>\n"; ()
+      let li f = pr "<li>\n"; f (); pr "</li>\n"; ()
+      let list ~f l = pr "<ul>\n"; List.iter (fun x -> li (fun () -> f x)) l; pr "</ul>\n"; ()
+      let a ~href f = pr "<a href=\"%s\">" href; f (); pr "</a>"; ()
+      let p f = pr "<p>"; f (); pr "</p>"; ()
+      let txt s = pr "%s" s; ()
+      let txt_f s = Printf.bprintf body s
+      let pre f = pr "<pre>"; f(); pr "</pre>";()
+      let raw x = pr "%s" x; ()
+    end
+    in
+    (module H)
+
+  let main ?port () =
+    try
+      let server = H.create ?port () in
+      Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
+      let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
+      (* index *)
+      H.add_path_handler server ~meth:`GET "/%!" (fun _req ->
+          let entries = list_entries data_dir in
+          let (module Html) = html() in
+          Html.css basic_css;
+          Html.list entries
+            ~f:(fun (s,size) ->
+                let s = Filename.basename s in
+                let href =
+                  Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
+                in
+                Html.a ~href (fun () -> Html.txt s);
+                Html.txt_f "(%s)" (Misc.human_size size));
+          H.Response.make_string (Ok (Html.render ()))
+        );
+      (* show individual files *)
+      H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
+          match Show.load_file file with
+          | Error e ->
+            H.Response.fail ~code:500 "could not load %S:\n%s" file e
+          | Ok res ->
+            let (module Html) = html() in
+            Html.css basic_css;
+            Html.a ~href:"/" (fun() -> Html.txt "back to root");
+            let box = Test.Top_result.(to_printbox res) in
+            Html.raw (PrintBox_html.to_string box);
+            H.Response.make_string (Ok (Html.render()))
+        );
+      H.run server |> E.map_err Printexc.to_string
+    with e ->
+      E.of_exn_trace e
+
+  (* sub-command to sample a directory *)
+  let cmd =
+    let open Cmdliner in
+    let port =
+      Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
+    in
+    let doc = "server on given port" in
+    let aux port () = main ?port () in
+    Term.(pure aux $ port $ pure () ), Term.info ~doc "serve"
+
+end
+
 (** {2 Main: Parse CLI} *)
 
 
@@ -437,6 +537,7 @@ let parse_opt () =
     Sample.cmd;
     List_files.cmd;
     Show.cmd;
+    Serve.cmd;
   ]
 
 let () =

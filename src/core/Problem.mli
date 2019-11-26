@@ -33,6 +33,8 @@ val compare_res : t -> Res.t -> [`Same | `Improvement | `Mismatch | `Disappoint 
 *)
 
 val pp : t CCFormat.printer
+val name : t -> string
+val to_string : t -> string
 
 module J = Misc.Json
 

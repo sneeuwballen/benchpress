@@ -115,6 +115,9 @@ module ResultsComparison : sig
 
   val pp_short : t CCFormat.printer
   (** Display comparison in a compact way *)
+
+  val to_printbox : t -> PrintBox.t
+  val to_printbox_short : t -> PrintBox.t
 end
 
 (** {2 Top Result}
@@ -189,6 +192,10 @@ module Top_result : sig
   val to_table : t -> table
 
   val table_to_csv : table -> Csv.t
+
+  val table_to_printbox : table -> PrintBox.t
+
+  val to_printbox : t -> PrintBox.t
 
   val to_csv : t -> Csv.t
 

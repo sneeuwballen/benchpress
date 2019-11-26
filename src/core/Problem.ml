@@ -40,6 +40,7 @@ let compare_res pb res = match pb.expected, res with
 let pp out p =
   Format.fprintf out "@[<h>%s (expect: %a)@]" p.name Res.print p.expected
 
+let name p = p.name
 let to_string = CCFormat.to_string pp
 
 let encode self =

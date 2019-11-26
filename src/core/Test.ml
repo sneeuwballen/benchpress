@@ -30,9 +30,9 @@ let pp_hvlist_ p =
 
 let time_of_res e = e.Run_event.raw.Run_event.rtime
 
-let printbox_record l =
+let printbox_record ?bars l =
   let fields, vals = List.split l in
-  PB.grid (* TODO: when fixed in printbox ~pad:PB.align_right *)
+  PB.grid ?bars (* TODO: when fixed in printbox ~pad:PB.align_right *)
     [|Array.of_list @@ List.map PB.text fields; Array.of_list vals|]
 
 module Raw = struct
@@ -177,9 +177,8 @@ module Analyze = struct
       "disappoint", PB.int @@ List.length r.disappoint;
       "errors", PB.int @@ List.length r.errors;
       "bad", PB.int @@ List.length r.bad;
-
     ] @ Raw.as_printbox_record r.stat in
-    printbox_record fields
+    printbox_record ~bars:true fields
 
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
@@ -335,6 +334,43 @@ module ResultsComparison = struct
       (List.length t.mismatch) (pp_hvlist_ (pp_pb_res2 ~bold:true ~color:"reset")) t.mismatch
       (List.length t.improved) (pp_hvlist_ (pp_pb_res2 ~bold:false ~color:"green")) t.improved
       (List.length t.regressed) (pp_hvlist_ (pp_pb_res2 ~bold:true ~color:"yellow")) t.regressed
+
+  let to_pb_res1 (pb,res) =
+    PB.(hlist [
+        text (Problem.name pb);
+        text (Res.to_string res);
+      ])
+
+  let to_pb_res2 (pb,res1,res2) =
+    PB.(hlist [
+        text (Problem.name pb);
+        text (Res.to_string res1);
+        text (Res.to_string res2)])
+
+  let to_printbox (self:t) : PB.t =
+    let open PB in
+    record [
+      "appeared", vlist_map to_pb_res1 self.appeared;
+      "disappeared", vlist_map to_pb_res1 self.disappeared;
+      "same", vlist_map (fun (pb,res,_,_) -> to_pb_res1 (pb,res)) self.same;
+      "mismatch", vlist_map to_pb_res2 self.mismatch;
+      "improved", vlist_map to_pb_res2 self.improved;
+      "regressed", vlist_map to_pb_res2 self.regressed;
+    ]
+
+  let to_printbox_short (self:t) : PB.t =
+    let open PB in
+    record [
+      "appeared", int (List.length self.appeared);
+      "disappeared", int (List.length self.disappeared);
+      "same", int (List.length self.same);
+      "mismatch", int (List.length self.mismatch);
+      "improved", int (List.length self.improved);
+      "regressed", int (List.length self.regressed);
+      "mismatch-list", vlist_map to_pb_res2 self.mismatch;
+      "improved-list", vlist_map to_pb_res2 self.improved;
+      "regressed-list", vlist_map to_pb_res2 self.regressed;
+    ]
 end
 
 type top_result = {
@@ -546,15 +582,15 @@ module Top_result = struct
     in
     {t_meta=line0; t_provers=List.map Prover.name provers; t_rows}
 
+  let time_to_csv (_:Res.t) f = Printf.sprintf "%.2f" f
+  let res_to_csv (r:Res.t) = match r with
+    | Res.Error -> "error"
+    | Res.Timeout -> "timeout"
+    | Res.Unknown -> "unknown"
+    | Res.Sat -> "sat"
+    | Res.Unsat -> "unsat"
+
   let table_to_csv (t:table): Csv.t =
-    let time_to_csv (_:Res.t) f = Printf.sprintf "%.2f" f
-    and res_to_csv (r:Res.t) = match r with
-      | Res.Error -> "error"
-      | Res.Timeout -> "timeout"
-      | Res.Unknown -> "unknown"
-      | Res.Sat -> "sat"
-      | Res.Unsat -> "unsat"
-    in
     let header_line =
       "problem" ::
         t.t_provers @
@@ -572,6 +608,34 @@ module Top_result = struct
 
   let to_csv t : Csv.t =
     table_to_csv (to_table t)
+
+  let table_to_printbox (self:table) : PB.t =
+    let header_line =
+      "problem" ::
+        self.t_provers @
+        (List.map (fun p -> p ^ ".time") self.t_provers)
+    in
+    let lines =
+      List.map
+        (fun r ->
+           r.tr_problem
+           :: List.map (fun (_,res,_) ->  res_to_csv res) r.tr_res
+           @ List.map (fun (_,res,t) -> time_to_csv res t) r.tr_res)
+        self.t_rows
+    in
+    PB.grid_text_l (header_line::lines)
+
+  let to_printbox (self:t) : PB.t =
+    let {analyze=lazy a; _} = self in
+    PB.vlist [
+      PB.hlist [
+        PB.text "summary";
+        PB.record (
+          Prover.Map_name.to_list a
+          |> List.map (fun (p, a) -> Prover.name p, Analyze.to_printbox a)
+        )];
+      PB.hlist [PB.text "table"; table_to_printbox @@ to_table self];
+    ]
 
   let to_csv_chan oc t =
     let chan = Csv.to_channel oc in
