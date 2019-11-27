@@ -59,7 +59,7 @@ let dump_csv ~csv results : unit =
     | Some file ->
       Misc.Debug.debugf 1 (fun k->k "write results in CSV to file `%s`" file);
       T.Top_result.to_csv_file file results;
-      (try ignore (Sys.command (Printf.sprintf "gzip '%s'" file):int) with _ -> ())
+      (try ignore (Sys.command (Printf.sprintf "gzip -f '%s'" file):int) with _ -> ())
   end
 
 let dump_summary ~summary results : unit =
@@ -92,7 +92,7 @@ let dump_results_json ~timestamp results : unit =
          let j = Misc.Json.Encode.encode_value T.Top_result.encode results in
          Misc.Json.J.to_channel oc j; flush oc);
     (* try to compress results *)
-    ignore (Sys.command (Printf.sprintf "gzip '%s'" dump_file) : int);
+    ignore (Sys.command (Printf.sprintf "gzip -f '%s'" dump_file) : int);
    with e ->
      Printf.eprintf "error when saving to %s: %s\n%!"
        dump_file (Printexc.to_string e);
