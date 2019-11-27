@@ -1,0 +1,6 @@
+
+(library
+  (name logitest_sql)
+  (public_name logitest.sql)
+  (libraries sqlite3)
+  (flags :standard -warn-error -3))
