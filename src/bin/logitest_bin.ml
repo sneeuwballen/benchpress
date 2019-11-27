@@ -427,7 +427,7 @@ module Serve = struct
 
   (* start from http://bettermotherfuckingwebsite.com/ and added some *)
   let basic_css = {|
-    body{margin:44px auto;font-family: courier;
+    body{margin:44px auto;font-family: monospace;
     max-width:1024px;font-size:18px;color:#444;padding:10px}
     h1,h2,h3{line-height:1.2} table {width: 100%; line-height: .1rem} .framed {border-width:3px; border-style: solid}
     |}
