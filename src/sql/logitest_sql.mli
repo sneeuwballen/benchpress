@@ -4,7 +4,10 @@
 @see < http://mmottl.bitbucket.org/projects/sqlite3-ocaml/api/Sqlite3.html > Sqlite3 (sqlite3-ocaml documentation)
 *)
 
-include module type of Sqlite3
+module Sqlite3 = Sqlite3
+
+module Data = Sqlite3.Data
+module Rc = Sqlite3.Rc
 
 (** raised whenever an SQLite operation returns an unsuccessful return code *)
 exception Rc of Rc.t
@@ -56,35 +59,64 @@ val atomically : t -> (t -> 'a) -> 'a
     separated by a semicolon. *)
 val exec : t -> string -> unit
 
+(* TODO: one shot query *)
+
 (** as [Sqlite3.last_insert_rowid] *)
 val last_insert_rowid : t -> Int64.t
 
 (** as [Sqlite3.changes] *)
 val changes : t -> int
 
-(** a compiled statement, can be either imperative or a query *)
-type statement
+(** Values representing types to pass to a statement, or to extract from 
+    a row *)
+module Ty : sig
+  type ('a, 'res) t
+
+  val return : ('res, 'res) t
+  val int : ('a, 'res) t -> (int -> 'a, 'res) t
+  val int64 : ('a, 'res) t -> (int64 -> 'a, 'res) t
+  val float : ('a, 'res) t -> (float -> 'a, 'res) t
+  val string : ('a, 'res) t -> (string -> 'a, 'res) t
+  val data : ('a, 'res) t -> (Data.t -> 'a, 'res) t
+end
+
+(** a compiled statement, can be either imperative or a query.
+    @param 'a is the first argument of the {!Ty.t} used for the parameters
+    of the query.
+    @param 'b is the first argument of the {!Ty.t} used to extract data from
+    the rows returned by the query.
+*)
+type ('a, 'b, 'res) statement
 
 (** prepare a statement from the SQL text. The given string must contain only
     one SQL statement. The statement can be used multiple times (calls to
     [Sqlite3.reset] are handled automatically). The statement is not actually
     compiled until its first use. *)
-val make_statement : t -> string -> statement
+val make_statement : t -> string ->
+  ('a, 'res) Ty.t ->
+  ('b, 'res) Ty.t ->
+  ('a,'b,'res) statement
 
 (** bind the given parameters and execute an imperative statement. An
     exception is raised if the statement attempts to return result rows. *)
-val statement_exec : statement -> Data.t array -> unit
+val statement_exec : ('a,unit,unit) statement -> 'a
+
+(** [statement_query stmt ~f ~init params] binds the given parameters
+    and executes a query. Each result row is passed to [f], along with the
+    accumulator that starts at [init]. *)
+val statement_query_fold :
+  f:'cb -> ('q, 'cb, init:'res -> 'res) statement -> 'q
 
 (** [statement_query stmt params cons fold init] binds the given parameters
     and executes a query. Each result row is first passed to [cons], which will
     usually construct a value from the data. This value is then passed to [fold]
     along with an intermediate value, which is [init] for the first row. This can
     used to build a list or other data structure from all the results. *)
-val statement_query : statement -> Data.t array -> (Data.t array -> 'a) -> ('a -> 'b -> 'b) -> 'b -> 'b
+val statement_query_iter : f:'cb -> ('q,'cb,unit) statement -> 'q
 
 (** immediately finalize the statement, releasing any associated resources.
     The statement will otherwise be finalized when garbage-collected. *)
-val statement_finalize : statement -> unit
+val statement_finalize : _ statement -> unit
 
 (**/**)
 val db_handle : t -> Sqlite3.db
