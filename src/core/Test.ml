@@ -82,12 +82,7 @@ module Raw = struct
   let add_timeout_ s = {s with timeout=s.timeout+1}
 
   let pp_stat out s =
-    fpf out
-      "(@[<hv>:unsat %d@ :sat %d@ :solved %d@ :errors %d@ :unknown %d@ \
-       :timeout %d@ :total %d@ :total_time %.2f@])"
-      s.unsat s.sat (s.sat + s.unsat) s.errors s.unknown s.timeout
-      (s.unsat + s.sat + s.errors + s.unknown + s.timeout)
-      s.total_time
+    PrintBox_text.pp out (printbox_stat s)
 
   let stat r =
     (* stats *)
@@ -111,6 +106,61 @@ module Raw = struct
   let decode =
     let open J.Decode in
     list (Run_event.decode_result Prover.decode) >|= of_list
+
+  let encode_stat r =
+    let open J.Encode in
+    let {sat;unsat;errors;unknown;timeout;total_time} = r in
+    obj [
+      "sat", int sat;
+      "unsat", int unsat;
+      "unknown", int unknown;
+      "errors", int errors;
+      "timeout", int timeout;
+      "total_time", float total_time
+    ]
+
+  let decode_stat =
+    let open J.Decode in
+    field "sat" int >>= fun sat ->
+    field "unsat" int >>= fun unsat ->
+    field "unsat" int >>= fun unknown ->
+    field "errors" int >>= fun errors ->
+    field "timeout" int >>= fun timeout ->
+    field "total_time" float >>= fun total_time ->
+    succeed {sat;unsat;errors;unknown;timeout;total_time}
+
+end
+
+module Stat = struct
+  type stat = {
+    unsat: int;
+    sat: int;
+    errors: int;
+    unknown: int;
+    timeout: int;
+    total_time: float; (* for sat+unsat *)
+  }
+
+  let empty =
+    {unsat=0; sat=0; errors=0; unknown=0; timeout=0; total_time=0.; }
+
+  let as_printbox_record s : _ list =
+    let open PB in
+    [ "sat", int s.sat; "unsat", int s.unsat; "errors", int s.errors;
+      "unknown", int s.unknown; "timeout", int s.timeout;
+      "total_time", line (Misc.human_time s.total_time) ]
+
+  let printbox_stat (s:stat) : PrintBox.t =
+    pb_v_record @@ as_printbox_record s
+
+  let add_sat_ t s = {s with sat=s.sat+1; total_time=s.total_time+. t; }
+  let add_unsat_ t s = {s with unsat=s.unsat+1; total_time=s.total_time+. t; }
+  let add_unknown_ s = {s with unknown=s.unknown+1}
+  let add_error_ s = {s with errors=s.errors+1}
+  let add_timeout_ s = {s with timeout=s.timeout+1}
+
+  let pp_stat out s =
+    PrintBox_text.pp out (printbox_stat s)
 
   let encode_stat r =
     let open J.Encode in

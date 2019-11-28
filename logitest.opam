@@ -14,16 +14,15 @@ depends: [
     "containers" { >= "1.0" }
     "re" { >= "1.8" & < "2.0" }
     "toml"
-    "olinq"
     "csv"
     "cmdliner"
     "iter" { >= "1.0" }
     "uuidm"
     "tiny_httpd" { >= "0.2" & < "0.4" }
+    "sqlite3"
     "printbox" { >= "0.3" & < "0.4" }
     "tyxml"  # for printbox.tyxml
     "decoders" { >= "0.3.0" & < "0.4" }
-    "decoders-yojson" { >= "0.3.0" & < "0.4" }
     "ocaml" {>= "4.02" }
 ]
 homepage: "https://github.com/nunchaku-inria/logitest/"
