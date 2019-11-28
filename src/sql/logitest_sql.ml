@@ -59,29 +59,29 @@ module Ty = struct
 
   (* translate results *)
   let rec tr_row
-  : type a res. Sqlite3.stmt -> int -> (a,res) t -> a -> res
-  = fun stmt i ty f -> match ty with
+  : type a res. (int->Data.t) -> int -> (a,res) t -> a -> res
+  = fun get i ty f -> match ty with
     | Return -> f
     | Data k ->
-      let data = Sqlite3.column stmt i in
-      tr_row stmt (i+1) k (f data)
+      let data = get i in
+      tr_row get (i+1) k (f data)
     | Int64 k ->
-      (match Sqlite3.column stmt i with
-       | Data.INT x -> tr_row stmt (i+1) k (f x)
+      (match get i with
+       | Data.INT x -> tr_row get (i+1) k (f x)
        | d -> raise (Bad_ty d))
     | Int k ->
-      (match Sqlite3.column stmt i with
+      (match get i with
        | Data.INT x as d -> 
          let x = try Int64.to_int x with _ -> raise (Bad_ty d) in
-         tr_row stmt (i+1) k (f x)
+         tr_row get (i+1) k (f x)
        | d -> raise (Bad_ty d))
     | Float k ->
-      (match Sqlite3.column stmt i with
-       | Data.FLOAT x -> tr_row stmt (i+1) k (f x)
+      (match get i with
+       | Data.FLOAT x -> tr_row get (i+1) k (f x)
        | d -> raise (Bad_ty d))
     | String k ->
-      (match Sqlite3.column stmt i with
-       | Data.BLOB x | Data.TEXT x -> tr_row stmt (i+1) k (f x)
+      (match get i with
+       | Data.BLOB x | Data.TEXT x -> tr_row get (i+1) k (f x)
        | d -> raise (Bad_ty d))
 end
 
@@ -168,13 +168,13 @@ let statement_query_iter (type a b) ~(f:b) (statement:(a,b,unit) statement) : a 
     (fun () ->
        try_finally ~h:(exit_statement_ instance) statement
          (fun () ->
-           let rc = ref Rc.OK in
+            let rc = ref (Sqlite3.step instance.stmt) in
            while !rc = Rc.ROW do
              let k = Sqlite3.data_count instance.stmt in
              if k <> Ty.count statement.res then (
                failwith "Sqlite3EZ.statement_query: varying number of result columns"
              );
-             Ty.tr_row instance.stmt 0 statement.res f;
+             Ty.tr_row (Sqlite3.column instance.stmt) 0 statement.res f;
              rc := Sqlite3.step instance.stmt;
            done;
            check_rc !rc;
@@ -189,13 +189,13 @@ let statement_query_fold (type a b res)
        try_finally ~h:(exit_statement_ instance) statement
          (fun () ~init ->
             let x = ref init in
-           let rc = ref Rc.OK in
+            let rc = ref (Sqlite3.step instance.stmt) in
            while !rc = Rc.ROW do
              let k = Sqlite3.data_count instance.stmt in
              if k <> Ty.count statement.res then (
                failwith "Sqlite3EZ.statement_query: varying number of result columns"
              );
-             x := Ty.tr_row instance.stmt 0 statement.res f ~init:!x;
+             x := Ty.tr_row (Sqlite3.column instance.stmt)  0 statement.res f ~init:!x;
              rc := Sqlite3.step instance.stmt;
            done;
            check_rc !rc;
@@ -270,6 +270,26 @@ let with_open ?mode ?mutex ?cache ?vfs fn f =
 let db_handle { h;_ } = h
 
 let exec { h;_ } (sql:string) = check_rc (Sqlite3.exec h sql)
+
+let exec { h;_ } (sql:string) = check_rc (Sqlite3.exec h sql)
+
+let exec_iter {h;_} sql (ty:_ Ty.t) ~f : unit =
+  let rc =
+    Sqlite3.exec_no_headers
+      ~cb:(fun row ->
+          Ty.tr_row (Array.get row) 0 ty f)
+    h sql in
+  check_rc rc
+
+let exec_fold {h;_} sql (ty:_ Ty.t) ~f ~init =
+  let res = ref init in
+  let rc =
+    Sqlite3.exec_no_headers
+      ~cb:(fun row ->
+          res := Ty.tr_row (Sqlite3. Array.get row) 0 ty f !res)
+    h sql in
+  check_rc rc;
+  !res
 
 let transact db f =
   statement_exec db.statement_begin;

@@ -55,18 +55,6 @@ val transact : t -> (t -> 'a) -> 'a
     is no need to name savepoints. *)
 val atomically : t -> (t -> 'a) -> 'a
 
-(** execute some imperative SQL statement(s). Multiple statements may be
-    separated by a semicolon. *)
-val exec : t -> string -> unit
-
-(* TODO: one shot query *)
-
-(** as [Sqlite3.last_insert_rowid] *)
-val last_insert_rowid : t -> Int64.t
-
-(** as [Sqlite3.changes] *)
-val changes : t -> int
-
 (** Values representing types to pass to a statement, or to extract from 
     a row *)
 module Ty : sig
@@ -79,6 +67,22 @@ module Ty : sig
   val string : ('a, 'res) t -> (string -> 'a, 'res) t
   val data : ('a, 'res) t -> (Data.t -> 'a, 'res) t
 end
+
+(** execute some imperative SQL statement(s). Multiple statements may be
+    separated by a semicolon. *)
+val exec : t -> string -> unit
+
+(** execute a SQL statement, and iterate over the results. *)
+val exec_iter : t -> string -> ('a, unit) Ty.t -> f:'a -> unit
+
+(** execute a SQL statement, and fold over the results. *)
+val exec_fold : t -> string -> ('a, 'res) Ty.t -> f:'a -> init:'res -> 'res
+
+(** as [Sqlite3.last_insert_rowid] *)
+val last_insert_rowid : t -> Int64.t
+
+(** as [Sqlite3.changes] *)
+val changes : t -> int
 
 (** a compiled statement, can be either imperative or a query.
     @param 'a is the first argument of the {!Ty.t} used for the parameters
