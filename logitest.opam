@@ -9,7 +9,7 @@ build: [
   ["dune" "build" "@doc" "-p" name] {with-doc}
 ]
 depends: [
-    "dune" { >= "1.1" & < "2.0" }
+    "dune" { >= "1.1" }
     "base-unix"
     "containers" { >= "1.0" }
     "re" { >= "1.8" & < "2.0" }
