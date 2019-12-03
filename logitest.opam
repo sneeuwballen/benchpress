@@ -19,7 +19,7 @@ depends: [
     "cmdliner"
     "iter" { >= "1.0" }
     "uuidm"
-    "tiny_httpd" { >= "0.2" & < "0.3" }
+    "tiny_httpd" { >= "0.2" & < "0.4" }
     "printbox" { >= "0.3" & < "0.4" }
     "tyxml"  # for printbox.tyxml
     "decoders" { >= "0.3.0" & < "0.4" }
