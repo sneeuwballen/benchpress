@@ -19,9 +19,6 @@ val merge : t -> t -> t
 val merge_l : t list -> t
 (** Same as {!merge} *)
 
-val interpolate_home : string -> file
-(** Interpolate $HOME in the given string *)
-
 val parse_file : file -> t or_error
 
 val parse_or_empty : file -> t

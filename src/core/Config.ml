@@ -30,21 +30,6 @@ let rec merge_l = function
   | [c] -> c
   | c :: tail -> merge c (merge_l tail)
 
-(*  FIXME: use Xdg instead *)
-(* obtain $HOME *)
-let get_home () =
-  try Sys.getenv "HOME" with _ -> failwith "variable $HOME not defined"
-
-let interpolate_home s =
-  let h = lazy (get_home ()) in
-  let buf = Buffer.create (String.length s) in
-  Buffer.add_substitute buf
-    (function
-      | "HOME" | "home" -> Lazy.force h
-      | s -> failwith ("couldn't find variable: " ^ s))
-    s;
-  Buffer.contents buf
-
 (* try to parse a config file *)
 let parse_file file =
   begin match Toml.Parser.from_filename file with

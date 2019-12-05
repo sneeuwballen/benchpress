@@ -25,13 +25,14 @@ let config_term =
     if debug then (
       Misc.Debug.set_level 5;
     );
-    let default_conf = "$HOME/.logitest.toml" in
+    let (//) = Filename.concat in
+    let default_conf = Xdg.config_dir() // "logitest" // "conf.sexp" in
     let conf_files = match config with None -> [] | Some c -> [c] in
     let conf_files =
-      if Sys.file_exists (Config.interpolate_home default_conf)
+      if Sys.file_exists (Xdg.interpolate_home default_conf)
       then conf_files @ [default_conf] else conf_files
     in
-    let conf_files = List.map Config.interpolate_home conf_files in
+    let conf_files = List.map Xdg.interpolate_home conf_files in
     Misc.Debug.debugf 1 (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
     begin match Config.parse_files conf_files with
       | Result.Ok x -> `Ok x

@@ -7,6 +7,9 @@ val name_of_project : string ref
 
 val get_home : unit -> string
 
+val interpolate_home : string -> string
+(** Replace [$HOME] by the home directory in this string *)
+
 val config_dir : unit -> string
 (** Where to search for configuration *)
 
