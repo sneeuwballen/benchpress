@@ -38,7 +38,7 @@ let compare_res pb res = match pb.expected, res with
     `Improvement
 
 let pp out p =
-  Format.fprintf out "@[<h>%s (expect: %a)@]" p.name Res.print p.expected
+  Format.fprintf out "@[<h>%s (expect: %a)@]" p.name Res.pp p.expected
 
 let name p = p.name
 let to_string = CCFormat.to_string pp

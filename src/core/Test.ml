@@ -188,8 +188,8 @@ module Analyze = struct
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
       CCFormat.(with_color color string) r.Run_event.problem.Problem.name
-      (CCFormat.with_color color Res.print) r.Run_event.problem.Problem.expected
-      (CCFormat.with_color color Res.print) (Run_event.analyze_p r)
+      (CCFormat.with_color color Res.pp) r.Run_event.problem.Problem.expected
+      (CCFormat.with_color color Res.pp) (Run_event.analyze_p r)
       r.Run_event.raw.Run_event.rtime
 
   let pp_bad out t =
@@ -310,14 +310,14 @@ module ResultsComparison = struct
     { appeared; disappeared; mismatch; same; regressed; improved; }
 
   let fpf = Format.fprintf
-  let pp_pb_res out (pb,res) = fpf out "@[<h>%s: %a@]" pb.Problem.name Res.print res
+  let pp_pb_res out (pb,res) = fpf out "@[<h>%s: %a@]" pb.Problem.name Res.pp res
   let pp_pb_same out (pb,res,t1,t2) =
-    fpf out "@[<h>%s: %a (%.2f vs %.2f)@]" pb.Problem.name Res.print res t1 t2
+    fpf out "@[<h>%s: %a (%.2f vs %.2f)@]" pb.Problem.name Res.pp res t1 t2
   let pp_pb_res2 ?(color="reset") ~bold out (pb,res1,res2) =
     let module F = CCFormat in
     fpf out "@[<h>%s: %a@]" pb.Problem.name
       ((if bold then F.with_color (CCString.capitalize_ascii color) else F.with_color color)
-         (fun out () -> fpf out "%a -> %a" Res.print res1 Res.print res2))
+         (fun out () -> fpf out "%a -> %a" Res.pp res1 Res.pp res2))
       ()
 
   let pp out (t:t) =

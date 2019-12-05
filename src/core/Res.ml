@@ -1,5 +1,7 @@
 (* This file is free software. See file "license" for more details. *)
 
+module Fmt = CCFormat
+
 type t =
   | Sat
   | Unsat
@@ -29,7 +31,7 @@ let decode = J.Decode.Infix.(
     (try (J.Decode.succeed (of_string s)) with _ -> J.Decode.fail "invalid res")
   )
 
-let print out s = Format.pp_print_string out (to_string s)
+let pp out s = Fmt.string out (to_string s)
 
 let compare a b = match a, b with
   | Unsat, Unsat

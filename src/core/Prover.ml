@@ -2,9 +2,14 @@
 
 (** {1 Run Prover} *)
 
+module Fmt = CCFormat
+
 type version =
   | Tag of string
-  | Git of string * string  (* branch & commit hash *)
+  | Git of {
+      branch: string;
+      commit: string;  (* branch & commit hash *)
+    }
 
 type t = {
   (* Prover identification *)
@@ -31,11 +36,15 @@ let equal p1 p2 = p1.name = p2.name
 
 let version_to_string = function
   | Tag s -> s
-  | Git (b, c) -> Printf.sprintf "%s#%s" b c
+  | Git {branch=b; commit=c} -> Printf.sprintf "%s#%s" b c
 
 let name p = p.name
 
-let pp_name out p = Format.pp_print_string out p.name
+let pp_name out p = Fmt.string out p.name
+let pp_version out = function
+  | Tag s -> Fmt.fprintf out "(tag %s)" s
+  | Git {branch=b; commit=c} ->
+    Fmt.fprintf out "(@[git@ branch=%S@ commit=%s@])" b c
 
 exception Subst_not_found of string
 
@@ -94,8 +103,8 @@ let encode_version v =
   let open J.Encode in
   match v with
   | Tag s -> list string ["tag"; s]
-  | Git (br,commit) ->
-    list string ["git"; br; commit]
+  | Git {branch;commit} ->
+    list string ["git"; branch; commit]
 
 let decode_version =
   let open J.Decode in
@@ -103,7 +112,7 @@ let decode_version =
   | "tag" -> (list1 string >|= fun s -> Tag s)
   | "git" ->
     (list string >>= function
-    | [br;commit] -> succeed (Git (br,commit))
+    | [branch;commit] -> succeed (Git {branch;commit})
     | _ -> fail "need 2 arguments")
   | _ -> fail "unknown constructor, expect tag/git"
 

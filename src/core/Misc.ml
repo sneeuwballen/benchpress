@@ -1,5 +1,6 @@
 (* This file is free software. See file "license" for more details. *)
 
+module Fmt = CCFormat
 module Str_map = CCMap.Make(String)
 
 let _lock = CCLock.create()
@@ -27,6 +28,10 @@ end = struct
 
   let debug l msg = debugf l (fun k->k "%s" msg)
 end
+
+let pp_list ?(sep=" ") f out l =
+  let sep out () = Fmt.fprintf out "%s@," sep in
+  Fmt.list ~sep f out l
 
 let die_on_sigterm : unit -> unit =
   let thunk = lazy (

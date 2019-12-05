@@ -72,7 +72,7 @@ let build_from_config config name =
        >|= fun s ->
        begin match CCString.Split.left_exn ~by:":" s with
          | "git", dir ->
-           Git (get_branch dir, get_commit dir)
+           Git {branch=get_branch dir; commit=get_commit dir}
          | "cmd", cmd ->
            begin try
                Tag (get_cmd_out @@ mk_cmd ~binary cmd)

@@ -198,6 +198,27 @@ module Serve = struct
     Term.(pure aux $ debug $ port $ pure () ), Term.info ~doc "serve"
 end
 
+(** {2 Check config} *)
+
+module Check_config = struct
+  let run f =
+    match Stanzas.parse_files f with
+    | Ok c ->
+      Format.printf "@[<v>%a@]@." Stanzas.(pp_l pp) c;
+      Ok ()
+    | Error e -> Error e
+
+  (* sub-command to sample a directory *)
+  let cmd =
+    let open Cmdliner in
+    let file =
+      Arg.(value & pos_all string [] & info [] ~doc:"file(s) to check")
+    in
+    let doc = "check configuration file(s)" in
+    let aux file () = run file in
+    Term.(pure aux $ file $ pure () ), Term.info ~doc "check-config"
+end
+
 (** {2 Main: Parse CLI} *)
 
 
@@ -221,6 +242,7 @@ let parse_opt () =
     List_files.cmd;
     Show.cmd;
     Serve.cmd;
+    Check_config.cmd;
   ]
 
 let () =

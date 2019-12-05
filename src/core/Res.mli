@@ -21,6 +21,7 @@ val compare: t -> t -> [`Same | `LeftBetter | `RightBetter | `Mismatch]
     }
 *)
 
+val pp : t CCFormat.printer
 val to_string : t -> string
 val of_string : string -> t
 
@@ -29,4 +30,3 @@ module J = Misc.Json
 val encode : t J.Encode.t
 val decode : t J.Decode.t
 
-val print : t CCFormat.printer

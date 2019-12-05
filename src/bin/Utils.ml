@@ -4,6 +4,39 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
+let config_term =
+  let open Cmdliner in
+  let aux config config_toml debug =
+    if debug then (
+      Misc.Debug.set_level 5;
+    );
+    let (//) = Filename.concat in
+    let default_conf = Xdg.config_dir() // "logitest" // "conf.sexp" in
+    let conf_files = match config with None -> [] | Some c -> [c] in
+    let conf_files =
+      if Sys.file_exists (Xdg.interpolate_home default_conf)
+      then conf_files @ [default_conf] else conf_files
+    in
+    let conf_files = List.map Xdg.interpolate_home conf_files in
+    let toml_files = match config_toml with None -> [] | Some c -> [c] in
+    Misc.Debug.debugf 1 (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
+    begin match Stanzas.parse_files conf_files, Config.parse_files toml_files with
+      | Ok _x, Ok y -> `Ok y (* FIXME: convert Toml config into stanzas *)
+      | Error e, _ | _, Error e -> `Error (false, e)
+    end
+  in
+  let arg_toml =
+    Arg.(value & opt (some string) None &
+         info ["ct"; "config-toml"] ~doc:"configuration file (toml; in target directory)")
+  and arg =
+    Arg.(value & opt (some string) None &
+         info ["c"; "config"] ~doc:"configuration file (sexp)")
+  and debug =
+    let doc = "Enable debug (verbose) output" in
+    Arg.(value & flag & info ["d"; "debug"] ~doc)
+  in
+  Term.(ret (pure aux $ arg $ arg_toml $ debug))
+
 (* CSV output *)
 let dump_csv ~csv results : unit =
   begin match csv with

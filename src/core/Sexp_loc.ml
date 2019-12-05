@@ -8,7 +8,8 @@ type loc = {
   stop: pos;
 }
 
-let noloc = {file=""; start={line=1;col=1}; stop={line=1;col=1}}
+let cur_file_ = ref "<none>"
+let noloc = {file="<none>"; start={line=1;col=1}; stop={line=1;col=1}}
 
 let pp_loc out (loc:loc) : unit =
   if loc.start.line=loc.stop.line then (
@@ -26,6 +27,8 @@ and view =
   | Atom of string
   | List of t list
 
+let atom s = {loc=noloc; view=Atom s}
+
 (** {2 Serialization and helpers} *)
 
 include (CCSexp.Make(struct
@@ -34,6 +37,7 @@ include (CCSexp.Make(struct
 
     let make_loc =
       Some (fun (l1,c1)(l2,c2) file : loc ->
+          let file = if file="" then !cur_file_ else file in
           {file; start={line=l1;col=c1};stop={line=l2;col=c2}})
 
     let atom_with_loc ~loc s : t= {loc; view=Atom s}
@@ -49,7 +53,8 @@ include (CCSexp.Make(struct
 
 (** {2 Decoder} *)
 
-module D = Decoders.Decode.Make(struct
+module D = struct
+  include Decoders.Decode.Make(struct
     type value = t
     let to_list = of_list
     let pp = pp
@@ -76,12 +81,21 @@ module D = Decoders.Decode.Make(struct
       | Atom _ -> None
   end)
 
+  let (>>::) e f = uncons f e
+  let list0 = list value >>= function [] -> succeed () | _ -> fail "need empty list"
+  let list1 s = list s >>= function [x] -> succeed x | _ -> fail "need unary list"
+  let list2 s1 s2 =
+    list value >>= function
+    | [x;y] -> s1 x >>= fun x -> s2 y >|= fun y -> x,y
+    | _ -> fail "need binary list"
+end
+
 (** {2 Encoder} *)
 
 module E = Decoders.Encode.Make(struct
     type value = t
     let to_string = to_string
-    let of_string s = {loc=noloc; view=Atom s}
+    let of_string = atom
     let of_int = of_int
     let of_float = of_float
     let of_bool = of_bool

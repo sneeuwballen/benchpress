@@ -5,11 +5,16 @@
     Utils to run a theorem prover (or a similar tool) and extract its result
 *)
 
+module Fmt = CCFormat
+
 (** {2 Prover configurations} *)
 
 type version =
   | Tag of string
-  | Git of string * string  (* branch & commit hash *)
+  | Git of {
+      branch: string;
+      commit: string;  (* branch & commit hash *)
+    }
 
 type t = {
   (* Prover identification *)
@@ -34,7 +39,8 @@ type t = {
 val name : t -> string
 (** Prover name *)
 
-val pp_name : Format.formatter -> t -> unit
+val pp_name : t Fmt.printer
+val pp_version : version Fmt.printer
 
 val equal : t -> t -> bool
 (** Equality (by name) *)
