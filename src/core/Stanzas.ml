@@ -58,7 +58,7 @@ let pp_opt_ what f out = function
   | None -> ()
   | Some x -> Fmt.fprintf out "@ (@[%s@ %a@])" what f x
 let pp_str out s = Sexp_loc.pp out (Sexp_loc.atom s)
-let pp_regex out r = Fmt.fprintf out "(re %a)" pp_str r
+let pp_regex out r = Fmt.fprintf out "%S" r
 
 let rec pp_expect out = function
   | E_auto -> Fmt.string out "auto"
@@ -94,6 +94,7 @@ let pp out = function
 
 (** {2 Decoding} *)
 
+let fail_f fmt = Format.kasprintf (fun s -> Se.D.fail s) fmt
 let fail_sexp_f fmt =
   Format.kasprintf
     (fun s ->
@@ -107,6 +108,15 @@ let dec_res =
   string >>= fun s ->
   (try succeed (Res.of_string s)
    with _ -> fail_sexp_f "expected a `Res.t`, not %S" s)
+
+let dec_regex : regex Se.D.decoder =
+  let valid_re s =
+    try ignore (Re.Perl.compile_pat s); true
+    with _ -> false
+  in
+  let open Se.D in
+  string >>= fun s ->
+  if valid_re s then succeed s else fail "expected a valid Perl regex"
 
 let dec_expect : _ Se.D.decoder =
   let open Se.D in
@@ -141,23 +151,24 @@ let dec : t Se.D.decoder =
   | "dir" ->
     field "path" string >>= fun path ->
     field_opt "expect" dec_expect >>= fun expect ->
-    field_opt "pattern" string >>= fun pattern ->
+    field_opt "pattern" dec_regex >>= fun pattern ->
     succeed (Add_dir {path;expect;pattern})
   | "prover" ->
     field "name" string >>= fun name ->
     field "cmd" string >>= fun cmd ->
     field_opt "version" dec_version >>= fun version ->
-    field_opt "sat" string >>= fun sat ->
-    field_opt "unsat" string >>= fun unsat ->
-    field_opt "unknown" string >>= fun unknown ->
-    field_opt "timeout" string >>= fun timeout ->
-    field_opt "memory" string >>= fun memory ->
+    field_opt "sat" dec_regex >>= fun sat ->
+    field_opt "unsat" dec_regex >>= fun unsat ->
+    field_opt "unknown" dec_regex >>= fun unknown ->
+    field_opt "timeout" dec_regex >>= fun timeout ->
+    field_opt "memory" dec_regex >>= fun memory ->
     succeed @@
     Add_prover {
       name; cmd; version; sat; unsat; unknown; timeout; memory;
       binary=None; binary_deps=[]; (* TODO *)
     }
   | "task" ->
+    (* TODO *)
     assert false
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
