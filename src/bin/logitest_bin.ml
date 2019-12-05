@@ -8,17 +8,6 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
-let printbox_results (results:T.top_result) : unit =
-  let lazy map = results.T.analyze in
-  let box =
-    let open PrintBox in
-    Prover.Map_name.to_list map
-    |> List.map (fun (p,r) -> hlist [hpad 1 @@ text p.Prover.name; T.Analyze.to_printbox r])
-    |> vlist |> frame
-  in
-  Printf.printf "%s\n%!" (PrintBox_text.to_string box);
-  ()
-
 let config_term =
   let open Cmdliner in
   let aux config debug =
@@ -53,185 +42,8 @@ let snapshot_name_term : string option Cmdliner.Term.t =
   Arg.(value & pos 0 (some string) None
        & info [] ~docv:"FILE" ~doc:"file/name containing results (default: last)")
 
-(* CSV output *)
-let dump_csv ~csv results : unit =
-  begin match csv with
-    | None -> ()
-    | Some file ->
-      Misc.Debug.debugf 1 (fun k->k "write results in CSV to file `%s`" file);
-      T.Top_result.to_csv_file file results;
-      (try ignore (Sys.command (Printf.sprintf "gzip -f '%s'" file):int) with _ -> ())
-  end
-
-let dump_summary ~summary results : unit =
-  (* write summary in some file *)
-  begin match summary with
-    | None -> ()
-    | Some file ->
-      CCIO.with_out file
-        (fun oc ->
-           let out = Format.formatter_of_out_channel oc in
-           Format.fprintf out "%a@." T.Top_result.pp_compact results);
-  end
-
-let dump_results_json ~timestamp results : unit =
-  (* save results *)
-  let dump_file =
-    let filename =
-      Printf.sprintf "res-%s-%s.json"
-        (ISO8601.Permissive.string_of_datetime_basic timestamp)
-        (Uuidm.v4_gen (Random.State.make_self_init()) () |> Uuidm.to_string)
-    in
-    let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
-    (try Unix.mkdir data_dir 0o744 with _ -> ());
-    Filename.concat data_dir filename
-  in
-  Misc.Debug.debugf 1 (fun k->k "write results in json to file `%s`" dump_file);
-  (try
-    CCIO.with_out ~flags:[Open_creat; Open_text] dump_file
-      (fun oc ->
-         let j = Misc.Json.Encode.encode_value T.Top_result.encode results in
-         Misc.Json.J.to_channel oc j; flush oc);
-    (* try to compress results *)
-    ignore (Sys.command (Printf.sprintf "gzip -f '%s'" dump_file) : int);
-   with e ->
-     Printf.eprintf "error when saving to %s: %s\n%!"
-       dump_file (Printexc.to_string e);
-  );
-  ()
-
-let check_res notify (results:T.top_result) : unit or_error =
-  let lazy map = results.T.analyze in
-  if Prover.Map_name.for_all (fun _ r -> T.Analyze.is_ok r) map
-  then (
-    Notify.send notify "OK";
-    E.return ()
-  ) else (
-    let n_fail =
-      Prover.Map_name.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0
-    in
-    Notify.sendf notify "FAIL (%d failures)" n_fail;
-    E.fail_fprintf "FAIL (%d failures)" n_fail
-  )
-
 (** {2 Run} *)
 module Run = struct
-  (* callback that prints a result *)
-  let progress_dynamic len =
-    let start = Unix.gettimeofday () in
-    let count = ref 0 in
-    fun _ ->
-      let time_elapsed = Unix.gettimeofday () -. start in
-      incr count;
-      let len_bar = 50 in
-      let bar = String.init len_bar
-          (fun i -> if i * len <= len_bar * !count then '#' else '-') in
-      let percent = if len=0 then 100. else (float_of_int !count *. 100.) /. float_of_int len in
-      (* elapsed=(percent/100)*total, so total=elapsed*100/percent; eta=total-elapsed *)
-      let eta = time_elapsed *. (100. -. percent) /. percent in
-      Misc.synchronized
-        (fun () ->
-           Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?"
-             !count len percent (Misc.human_time time_elapsed) bar (Misc.human_time eta));
-      if !count = len then (
-        Misc.synchronized (fun() -> Format.printf "@.")
-      )
-
-  let progress ~w_prover ~w_pb ?(dyn=false) n =
-    let pp_bar = progress_dynamic n in
-    (function res ->
-       if dyn then output_string stdout Misc.reset_line;
-       Test_run.pp_result ~w_prover ~w_pb res;
-       if dyn then pp_bar res;
-       ())
-
-  (* TODO: just do all the dirs at once *)
-  (* run provers on the given dir, return a list [prover, dir, results] *)
-  let test_dir
-      ?j ?timestamp ?dyn ?timeout ?memory ?provers ~config ~notify d
-    : T.Top_result.t or_error =
-    let open E.Infix in
-    let dir = d.T.Config.directory in
-    begin
-      Notify.sendf notify "testing dir `%s`…" dir;
-      Problem_run.of_dir dir
-        ~filter:(Re.execp (Re.Perl.compile_pat d.T.Config.pattern))
-      >>= fun pbs ->
-      let len = List.length pbs in
-      Notify.sendf notify "run %d tests in %s" len dir;
-      let provers = match provers with
-        | None -> config.T.Config.provers
-        | Some l ->
-          List.filter
-            (fun p -> List.mem (Prover.name p) l)
-            config.T.Config.provers
-      in
-      let on_solve =
-        let w_prover =
-          List.fold_left (fun m p -> max m (String.length (Prover.name p)+1)) 0 provers
-        and w_pb =
-          List.fold_left (fun m pb -> max m (String.length pb+1)) 0 pbs
-        in
-        progress ~w_prover ~w_pb ?dyn (len * List.length provers) in
-      (* solve *)
-      let main =
-        Test_run.run ?timestamp ?j ?timeout ?memory ~provers
-          ~expect:d.T.Config.expect ~on_solve ~config pbs
-        |> E.add_ctxf "running %d tests" len
-      in
-      main
-      >>= fun results ->
-      Prover.Map_name.iter
-        (fun p r ->
-           Misc.synchronized (fun () ->
-           Format.printf "(@[<2>:prover %s :on %S@ @[<2>:results@ %a@]@])@."
-             (Prover.name p) dir T.Analyze.pp r))
-        (Lazy.force results.T.analyze);
-      E.return results
-    end |> E.add_ctxf "running tests in dir `%s`" dir
-
-  let main ?j ?dyn ?timeout ?memory ?csv ?provers
-      ?meta:_ ?summary ~config ?profile ?dir_file dirs () =
-    let open E.Infix in
-    let timestamp = Unix.gettimeofday() in
-    let notify = Notify.make config in
-    (* parse list of files, if need be *)
-    let dirs = match dir_file with
-      | None -> dirs
-      | Some f ->
-        let f_lines = CCIO.with_in f CCIO.read_lines_l in
-        List.rev_append f_lines dirs
-    in
-    (* parse config *)
-    begin
-      Test_run.config_of_config ?profile config dirs
-      |> E.add_ctxf "parsing config for files (@[%a@])"
-        CCFormat.(list ~sep:(return "@ ") string) dirs
-    end
-    >>= fun config ->
-    (* pick default directory if needed *)
-    let problems = config.T.Config.problems in
-    (* build problem set (exclude config file!) *)
-    E.map_l
-      (test_dir ?j ~timestamp ?dyn ?timeout ?memory ?provers ~config ~notify)
-      problems
-    >>= fun l ->
-    Misc.Debug.debugf 1 (fun k->k  "merging %d top results…" (List.length l));
-    E.return (T.Top_result.merge_l ~timestamp l)
-    >>= fun (results:T.Top_result.t) ->
-    dump_csv ~csv results;
-    dump_summary ~summary results;
-    dump_results_json ~timestamp results;
-    (* now fail if results were bad *)
-    let r = check_res notify results in
-    Notify.sync notify;
-    printbox_results results;
-    (* try to send a desktop notification *)
-    (try CCUnix.call "notify-send 'benchmark done (%s)'"
-           (Misc.human_time results.T.total_wall_time) |> ignore
-     with _ -> ());
-    r
-
   (* sub-command for running tests *)
   let cmd =
     let open Cmdliner in
@@ -239,7 +51,7 @@ module Run = struct
         meta provers csv summary no_color
       : (unit,string) E.t =
       if no_color then CCFormat.set_color_default false;
-      main ~dyn ~j ?timeout ?memory ?csv ?provers
+      Run_main.main ~dyn ~j ?timeout ?memory ?csv ?provers
         ~meta ?profile ?summary ~config ?dir_file dirs ()
     in
     let config = config_term
@@ -276,23 +88,11 @@ module Run = struct
     Term.info ~doc "run"
 end
 
-let list_entries data_dir =
-  CCIO.File.walk_l data_dir
-  |> CCList.filter_map
-    (function
-      | (`File, s)
-        when (Filename.check_suffix s ".json.gz" ||
-              Filename.check_suffix s ".json") ->
-        let size = (Unix.stat s).Unix.st_size in
-        Some (s,size)
-      | _ -> None)
-  |> List.sort (fun x y->CCOrd.compare y x)
-
 module List_files = struct
   let main ?(abs=false) () =
     try
       let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
-      let entries = list_entries data_dir in
+      let entries = Utils.list_entries data_dir in
       List.iter
         (fun (s,size) ->
            let s = if abs then s else Filename.basename s in
@@ -314,42 +114,6 @@ module List_files = struct
 end
 
 module Show = struct
-  let load_file (f:string) : (T.Top_result.t, _) E.t =
-    try
-      let dir = Filename.concat (Xdg.data_dir()) "logitest" in
-      let file = Filename.concat dir f in
-      if not @@ Sys.file_exists file then (
-        Error ("cannot find file " ^ f)
-      ) else (
-        if Filename.check_suffix f ".gz" then (
-          (* use [zcat] to decompress *)
-          let v =
-            CCUnix.with_process_in (Printf.sprintf "zcat '%s'" file)
-              ~f:Misc.Json.J.from_channel in
-          (* Format.printf "%a@." (Misc.Json.J.pretty_print ?std:None) v; *)
-          Misc.Json.Decode.decode_value T.Top_result.decode v
-          |> E.map_err Misc.Json.Decode.string_of_error
-        ) else (
-          Misc.Json.Decode.decode_file T.Top_result.decode file
-          |> E.map_err Misc.Json.Decode.string_of_error
-        )
-      )
-    with e ->
-      E.of_exn_trace e
-
-  let main ?(check=true) ?(bad=true) ?csv ?summary files =
-    let open E.Infix in
-    E.map_l load_file files >>= fun res ->
-    let results = T.Top_result.merge_l res in
-    dump_csv ~csv results;
-    dump_summary ~summary results;
-    printbox_results results;
-    if bad then (
-      Format.printf "@[<2>bad: %a@]@." T.Top_result.pp_bad results;
-    );
-    if check then check_res Notify.nil results else E.return ()
-
-
   (* sub-command for showing results *)
   let cmd =
     let open Cmdliner in
@@ -369,7 +133,7 @@ module Show = struct
     in
     let aux check bad csv summary no_color files : _ E.t = 
       if no_color then CCFormat.set_color_default false;
-      main ~check ~bad ?csv ?summary files
+      Show.main ~check ~bad ?csv ?summary files
     in
     let doc = "show benchmark results" in
     Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ files),
@@ -421,137 +185,6 @@ end
 (** {2 Embedded web server} *)
 
 module Serve = struct
-  module H = Tiny_httpd
-  module U = Tiny_httpd_util
-
-  module Html = Tyxml_html
-
-  (* start from http://bettermotherfuckingwebsite.com/ and added some *)
-  let basic_css = {|
-    body{margin:44px auto;font-family: monospace;
-    max-width:1024px;font-size:18px;color:#444;padding:10px}
-    h1,h2,h3{line-height:1.2} table {width: 100%; line-height: .1rem} .framed {border-width:3px; border-style: solid}
-    |}
-
-  let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
-
-  (* show individual files *)
-  let handle_show server : unit =
-    H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
-        match Show.load_file file with
-        | Error e ->
-          H.Response.fail ~code:500 "could not load %S:\n%s" file e
-        | Ok res ->
-          let box = Test.Top_result.(to_printbox res) in
-          let h =
-            let open Html in
-            html
-              (head (title (txt "show")) [style [txt basic_css]])
-              (body [
-                  a ~a:[a_href "/"] [txt "back to root"];
-                  h3 [txt file];
-                  div [PrintBox_html.to_html box];
-              ])
-          in
-          H.Response.make_string (Ok (string_of_html h))
-      )
-
-  (* compare files *)
-  let handle_compare server : unit =
-    H.add_path_handler server ~meth:`POST "/compare" (fun req ->
-        let body = H.Request.body req |> String.trim in
-        Misc.Debug.debugf 4 (fun k->k "/compare: body is %s" body);
-        let names =
-          CCString.split_on_char '&' body
-          |> CCList.filter_map
-            (fun s -> match CCString.Split.left ~by:"=" (String.trim s) with
-               | Some (name, "on") -> Some name
-               | _ -> None)
-        in
-        Misc.Debug.debugf 2 (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
-        if List.length names>=2 then (
-          let files =
-            names
-            |> List.map
-              (fun s -> match Show.load_file s with
-                 | Error e -> H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
-                 | Ok x -> s, x)
-          in
-          let box_compare_l =
-            let open PrintBox in
-            CCList.diagonal files
-            |> List.map (fun ((f1,r1),(f2,r2)) ->
-                let c = Test.Top_result.compare r1 r2 in
-                vlist ~bars:false [
-                  text f1; text f2;
-                  Test.Top_result.comparison_to_printbox ~short:true c])
-            |> vlist
-          in
-          let h =
-            let open Html in
-            html
-              (head (title (txt "compare")) [style [txt basic_css]])
-              (body [
-                  a ~a:[a_href "/"] [txt "back to root"];
-                  h3 [txt "comparison"];
-                  div [PrintBox_html.to_html box_compare_l];
-                ])
-          in
-          H.Response.make_string (Ok (string_of_html h))
-        ) else (
-          H.Response.fail ~code:412 "precondition failed: select at least 2 files"
-        )
-      )
-
-  (* index *)
-  let handle_root server data_dir : unit =
-    H.add_path_handler server ~meth:`GET "/%!" (fun _req ->
-        let entries = list_entries data_dir in
-        let h =
-          let open Html in
-          html
-            (head(title (txt "list")) [style [txt basic_css]])
-            (body [
-                h3 [txt "list of results"];
-                let l = 
-                  List.map
-                    (fun (s,size) ->
-                       let s = Filename.basename s in
-                       let href =
-                         Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
-                       in
-                       li [
-                         a ~a:[a_href href] [txt s];
-                         txt (Printf.sprintf "(%s)" (Misc.human_size size));
-                         input ~a:[a_input_type `Checkbox; a_name s] ()
-                       ])
-                    entries
-                in
-                form ~a:[a_id (uri_of_string "compare");
-                         a_action (uri_of_string "/compare/");
-                         a_method `Post]
-                  [button ~a:[a_button_type `Submit] [txt "compare selected"]; ul l];
-              ])
-        in
-        H.Response.make_string (Ok (string_of_html h))
-      )
-
-  let main ~debug ?port () =
-    try
-      let server = H.create ?port () in
-      if debug >0 then (
-        H._enable_debug true;
-        Misc.Debug.set_level debug;
-      );
-      Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
-      let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
-      handle_root server data_dir;
-      handle_show server;
-      handle_compare server;
-      H.run server |> E.map_err Printexc.to_string
-    with e ->
-      E.of_exn_trace e
-
   (* sub-command to sample a directory *)
   let cmd =
     let open Cmdliner in
@@ -561,9 +194,8 @@ module Serve = struct
       Arg.(value & opt int 0 & info ["d"; "debug"] ~doc:"enable debug")
     in
     let doc = "server on given port" in
-    let aux debug port () = main ~debug ?port () in
+    let aux debug port () = Serve.main ~debug ?port () in
     Term.(pure aux $ debug $ port $ pure () ), Term.info ~doc "serve"
-
 end
 
 (** {2 Main: Parse CLI} *)
