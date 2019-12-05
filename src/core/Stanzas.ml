@@ -44,6 +44,7 @@ type t =
       pattern: regex option; (** Pattern of problems in this directory *)
     }
   | Add_task of {
+      name: string; (* name of this task *)
       dirs: string list; (* list of directories to examine *)
       provers: string list;
       timeout: int option;
@@ -85,8 +86,9 @@ let pp out = function
       (pp_opt_ "unknown" pp_regex) unknown
       (pp_opt_ "timeout" pp_regex) timeout
       (pp_opt_ "memory" pp_regex) memory
-  | Add_task {dirs; provers; timeout; memory; } ->
-    Fmt.fprintf out "(@[<hv1>task%a%a%a%a@])"
+  | Add_task {name; dirs; provers; timeout; memory; } ->
+    Fmt.fprintf out "(@[<hv1>task%a%a%a%a%a@])"
+      (pp_f_ "name" pp_str) name
       (pp_f_ "dirs" (pp_l pp_str)) dirs
       (pp_f_ "provers" (pp_l pp_str)) provers
       (pp_opt_ "timeout" Fmt.int) timeout
@@ -144,6 +146,16 @@ let dec_version : _ Se.D.decoder =
         succeed (Prover.Git {branch; commit})
       | s -> fail_sexp_f "invalid `version` constructor: %s" s)
   ]
+
+let list_or_singleton d =
+  let open Se.D in
+  value >>= fun s ->
+  (* turn atoms into lists *)
+  let l = match s.Se.view with
+    | Atom _ -> Se.of_list [s]
+    | List _ -> s
+  in
+  from_result (decode_value (list d) l)
   
 let dec : t Se.D.decoder =
   let open Se.D in
@@ -168,8 +180,12 @@ let dec : t Se.D.decoder =
       binary=None; binary_deps=[]; (* TODO *)
     }
   | "task" ->
-    (* TODO *)
-    assert false
+    field "name" string >>= fun name ->
+    field "dirs" (list_or_singleton string) >>= fun dirs ->
+    field "provers" (list_or_singleton string) >>= fun provers ->
+    field_opt "timeout" int >>= fun timeout ->
+    field_opt "memory" int >>= fun memory ->
+    succeed @@ Add_task {name;dirs;provers;timeout;memory}
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
 

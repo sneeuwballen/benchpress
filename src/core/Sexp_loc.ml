@@ -75,7 +75,10 @@ module D = struct
         (try
            Some
              (List.map
-                (function {view=List [k; v];_} -> k,v | _ -> raise Exit)
+                (fun kv -> match kv.view with
+                   | List [k;v] -> k, v
+                   | List (k :: vs) -> k, of_list vs (* support "(foo a b c)" *)
+                   | _ -> raise Exit)
                 l)
          with Exit -> None)
       | Atom _ -> None
