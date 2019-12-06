@@ -185,6 +185,24 @@ module Analyze = struct
     ] @ Raw.as_printbox_record r.stat in
     pb_v_record ~bars:true fields
 
+  let to_printbox_bad r : PrintBox.t =
+    let open PB in
+    if r.bad <> [] then (
+      let l =
+        List.map
+          (fun r -> 
+             [ text (Problem.name r.Run_event.problem);
+               text (Res.to_string @@ Run_event.analyze_p r);
+               text (Res.to_string r.problem.Problem.expected);
+             ])
+          r.bad
+      in
+      let header =
+        let tb = text_with_style Style.bold in
+        [tb "problem"; tb "res"; tb "expected"] in
+      grid_l (header :: l)
+    ) else empty
+
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
       CCFormat.(with_color color string) r.Run_event.problem.Problem.name
@@ -629,19 +647,19 @@ module Top_result = struct
     in
     PB.grid_l (header_line::lines)
 
-  let to_printbox (self:t) : PB.t =
-    let open PB in
+  let to_printbox_summary (self:t) : (_ * PB.t) list =
     let {analyze=lazy a; _} = self in
-    vlist [
-      hlist [
-        text "summary";
-        vlist (
-          Prover.Map_name.to_list a
-          |> List.map (fun (p, a) ->
-              hlist [text_with_style Style.bold (Prover.name p); Analyze.to_printbox a])
-        )];
-      PB.hlist [PB.text "table"; table_to_printbox @@ to_table self];
-    ]
+    Prover.Map_name.to_list a
+    |> List.map (fun (p, a) -> Prover.name p, Analyze.to_printbox a)
+
+  let to_printbox_table self = table_to_printbox @@ to_table self
+  let to_printbox_bad self =
+    let {analyze=lazy a; _} = self in
+    Prover.Map_name.to_list a
+    |> CCList.filter_map
+      (fun (p, a) ->
+         if a.Analyze.bad =[] then None
+         else Some (p.Prover.name, Analyze.to_printbox_bad a))
 
   let comparison_to_printbox ?(short=true) (self:comparison_result) : PB.t =
     let open PB in

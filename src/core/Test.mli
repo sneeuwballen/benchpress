@@ -55,6 +55,7 @@ module Analyze : sig
   val make : Raw.t -> t
 
   val to_printbox : t -> PrintBox.t
+  val to_printbox_bad : t -> PrintBox.t
 
   val is_ok : t -> bool
 
@@ -196,7 +197,9 @@ module Top_result : sig
 
   val table_to_printbox : table -> PrintBox.t
 
-  val to_printbox : t -> PrintBox.t
+  val to_printbox_summary : t -> (string * PrintBox.t) list
+  val to_printbox_table : t -> PrintBox.t
+  val to_printbox_bad : t -> (string * PrintBox.t) list
 
   val to_csv : t -> Csv.t
 

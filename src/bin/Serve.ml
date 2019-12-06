@@ -24,15 +24,25 @@ let handle_show server : unit =
       | Error e ->
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
-        let box = Test.Top_result.(to_printbox res) in
+        let box_summary = Test.Top_result.to_printbox_summary res in
+        let bad = Test.Top_result.to_printbox_bad res in
+        let full_table = Test.Top_result.to_printbox_table res in
         let h =
           let open Html in
+          let pb_html pb = PrintBox_html.to_html pb in
           html
             (head (title (txt "show")) [style [txt basic_css]])
-            (body [
-                a ~a:[a_href "/"] [txt "back to root"];
-                h3 [txt file];
-                div [PrintBox_html.to_html box];
+            (body @@ List.flatten [
+                [a ~a:[a_href "/"] [txt "back to root"];
+                 h3 [txt file]];
+                (CCList.flat_map 
+                  (fun (n,p) -> [h3 [txt ("summary for " ^ n)]; div [pb_html p]])
+                  box_summary);
+                CCList.flat_map
+                  (fun (n,p) -> [h3 [txt ("bad for " ^ n)]; div [pb_html p]])
+                  bad;
+                [h3 [txt "full results"];
+                 div [pb_html full_table]];
             ])
         in
         H.Response.make_string (Ok (string_of_html h))
