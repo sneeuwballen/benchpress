@@ -12,6 +12,7 @@ module Html = Tyxml_html
 let basic_css = {|
   body{margin:44px auto;font-family: monospace;
   max-width:1024px;font-size:18px;color:#444;padding:10px}
+  .stick{position: sticky; top: 20px; background-color: lightblue; padding: 1.2rem; opacity: 90%}
   h1,h2,h3{line-height:1.2} table {width: 100%;} .framed {border-width:3px; border-style: solid}
   |}
 
@@ -33,7 +34,7 @@ let handle_show server : unit =
           html
             (head (title (txt "show")) [style [txt basic_css]])
             (body @@ List.flatten [
-                [a ~a:[a_href "/"] [txt "back to root"];
+                [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  h3 [txt file]];
                 (CCList.flat_map 
                   (fun (n,p) -> [h3 [txt ("summary for " ^ n)]; div [pb_html p]])
@@ -84,7 +85,7 @@ let handle_compare server : unit =
           html
             (head (title (txt "compare")) [style [txt basic_css]])
             (body [
-                a ~a:[a_href "/"] [txt "back to root"];
+                a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                 h3 [txt "comparison"];
                 div [PrintBox_html.to_html box_compare_l];
               ])
@@ -121,8 +122,9 @@ let handle_root server data_dir : unit =
               in
               form ~a:[a_id (uri_of_string "compare");
                        a_action (uri_of_string "/compare/");
-                       a_method `Post]
-                [button ~a:[a_button_type `Submit] [txt "compare selected"]; ul l];
+                       a_method `Post;]
+                [button ~a:[a_button_type `Submit; a_class ["stick"]]
+                   [txt "compare selected"]; ul l];
             ])
       in
       H.Response.make_string (Ok (string_of_html h))
