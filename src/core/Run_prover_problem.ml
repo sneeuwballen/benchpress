@@ -51,8 +51,8 @@ let pp_result ~w_prover ~w_pb out (res:Test.result): unit =
       prover_name pb_name (Res.to_string p_res) res.Run_event.raw.rtime);
   Format.fprintf out 
     "%-*s%-*s : %a (%.1fs)@."
-    w_prover (Misc.truncate_at w_prover prover_name)
-    w_pb (Misc.truncate_at w_pb pb_name)
+    w_prover (Misc.truncate_right w_prover prover_name)
+    w_pb (Misc.truncate_left w_pb pb_name)
     pp_res () res.Run_event.raw.rtime;
   ()
 

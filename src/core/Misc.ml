@@ -79,7 +79,9 @@ let human_size (x:int) : string =
   else string_of_int x
 
 (* ensure [s] is not too long *)
-let truncate_at (n:int) (s:string) : string =
+let truncate_left (n:int) (s:string) : string =
+  if String.length s > n then "…" ^ String.sub s 1 (n-1) else s
+let truncate_right (n:int) (s:string) : string =
   if String.length s > n then String.sub s 0 (n-1) ^ "…" else s
       
 let get_cmd_out cmd =
