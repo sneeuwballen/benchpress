@@ -4,18 +4,20 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
+let default_conf () = 
+  let (//) = Filename.concat in
+  Xdg.config_dir() // "logitest" // "conf.sexp"
+
 let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in
   let aux config config_toml debug =
-    if debug then (
-      Misc.Debug.set_level 5;
-    );
-    let (//) = Filename.concat in
-    let default_conf = Xdg.config_dir() // "logitest" // "conf.sexp" in
+    CCOpt.iter Misc.Debug.set_level debug;
     let conf_files = match config with None -> [] | Some c -> [c] in
     let conf_files =
+      let default_conf = default_conf () in
+      (* always add default config file if it exists *)
       if Sys.file_exists (Xdg.interpolate_home default_conf)
-      then conf_files @ [default_conf] else conf_files
+      then default_conf :: conf_files else conf_files
     in
     let conf_files = List.map Xdg.interpolate_home conf_files in
     let toml_files = match config_toml with None -> [] | Some c -> [c] in
@@ -23,6 +25,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
     begin match Stanza.parse_files conf_files, Config.parse_files toml_files with
       | Ok x, Ok y ->
         (* combine configs *)
+        Misc.Debug.debugf 4 (fun k->k "combine configs…");
         begin match E.(
           Definitions.of_config y >>= fun defs ->
           Definitions.add_stanza_l x defs
@@ -41,7 +44,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
          info ["c"; "config"] ~doc:"configuration file (sexp)")
   and debug =
     let doc = "Enable debug (verbose) output" in
-    Arg.(value & flag & info ["d"; "debug"] ~doc)
+    Arg.(value & opt (some int) None & info ["d"; "debug"] ~doc)
   in
   Term.(ret (pure aux $ arg $ arg_toml $ debug))
 

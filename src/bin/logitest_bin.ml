@@ -8,11 +8,6 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
-let default_conf () = 
-  let (//) = Filename.concat in
-  Xdg.config_dir() // "logitest" // "conf.sexp"
-
-
 let snapshot_name_term : string option Cmdliner.Term.t =
   let open Cmdliner in
   Arg.(value & pos 0 (some string) None
@@ -187,7 +182,7 @@ end
 
 module Check_config = struct
   let run f =
-    let f = if f=[] then [default_conf()] else f in
+    let f = if f=[] then [Utils.default_conf()] else f in
     match Stanza.parse_files f with
     | Ok c ->
       Format.printf "@[<v>%a@]@." Stanza.pp_l c;

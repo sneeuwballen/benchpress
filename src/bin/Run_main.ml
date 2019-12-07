@@ -73,6 +73,8 @@ let execute_run_prover_action
 let main ?j ?dyn ?timeout ?memory ?csv ?provers
     ?meta:_ ?summary ?task ?dir_file (defs:Definitions.t) paths () =
   let open E.Infix in
+  Misc.Debug.debugf 2
+    (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
   let timestamp = Unix.gettimeofday() in
   let notify = Notify.make defs in
   (* parse list of files, if need be *)

@@ -110,13 +110,28 @@ let find_task self name : Task.t or_error =
   | Some _ -> E.fail_fprintf "%S is not a task" name
   | _ -> E.fail_fprintf "task %S is not defined" name
 
-(* TODO: use a smarter subdirectory prefix check *)
+let norm_path s =
+  s |> Xdg.interpolate_home |> Misc.mk_abs_path
+
 (* find a known directory for [path] *)
 let mk_subdir self path : Subdir.t or_error =
-  let path = Misc.mk_abs_path path in
+  let path = norm_path path in
+  (* helper *)
+  let is_parent (dir:string) (f:string) : bool =
+    let fd_dir = (Unix.stat dir).Unix.st_dev in
+    let same_file f = (Unix.stat f).Unix.st_dev = fd_dir in
+    (* check f and its parents *)
+    let rec check f =
+      same_file f ||
+      (let parent = Filename.dirname f in
+       parent <> f && check parent)
+    in
+    check f
+  in
   CCList.find_map
     (fun dir ->
-       if CCString.prefix ~pre:dir.Dir.path path
+       Misc.Debug.debugf 3 (fun k->k"check prefix dir=%S for %S" dir.Dir.path path);
+       if is_parent dir.Dir.path path
        then Some {Subdir.path; inside=dir}
        else None)
     self.dirs
@@ -144,10 +159,13 @@ let mk_action (self:t) (a:Stanza.action) : _ or_error =
     >|= fun a -> Action.Act_run_provers a
 
 let add_stanza (st:Stanza.t ) self : t or_error =
+  Misc.Debug.debugf 5 (fun k->k "add-stanza %a" Stanza.pp st);
   let open Stanza in
   match st with
   | St_dir {path;expect;pattern} ->
-    let path = Misc.mk_abs_path path in
+    let path = norm_path path in
+    (if Sys.file_exists path && Sys.is_directory path then Ok ()
+     else E.fail_fprintf "%S is not a directory" path) >>= fun () ->
     begin match expect with
       | None -> Ok Dir.E_comment
       | Some e -> conv_expect self e
