@@ -41,9 +41,24 @@ val name : t -> string
 
 val pp_name : t Fmt.printer
 val pp_version : version Fmt.printer
+val version_to_string : version -> string
 
 val equal : t -> t -> bool
 (** Equality (by name) *)
+
+exception Subst_not_found of string
+
+val interpolate_cmd :
+  ?env:(string * string) array ->
+  ?binary:string ->
+  ?timeout:int -> ?memory:int -> ?file:string ->
+  ?f:(string -> string option) ->
+  string -> string
+(** Interpolate the given parameters (env, timeout, memory, etc.)
+    in the given string.
+    @param f called for other interpolations
+    @raise Subst_not_found if a variable is found, that is not substituted
+    into any of the parameters nor by [f] *)
 
 val make_command :
   ?env:(string * string) array ->
@@ -52,6 +67,17 @@ val make_command :
   memory:int ->
   file:string ->
   string
+
+val run :
+  ?env:(string * string) array ->
+  timeout:int ->
+  memory:int ->
+  file:string ->
+  t ->
+  Proc_run_result.t
+
+val analyze_p_opt : t -> Proc_run_result.t -> Res.t option
+(** Analyze raw result to look for the result *)
 
 (** Map by name *)
 module Map_name : CCMap.S with type key = t

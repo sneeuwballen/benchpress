@@ -2,6 +2,8 @@
 
 module Fmt = CCFormat
 module Str_map = CCMap.Make(String)
+module E = CCResult
+type 'a or_error = ('a, string) E.t
 
 let _lock = CCLock.create()
 
@@ -32,6 +34,16 @@ end
 let pp_list ?(sep=" ") f out l =
   let sep out () = Fmt.fprintf out "%s@," sep in
   Fmt.list ~sep f out l
+
+module Pp = struct
+  let pp_l = pp_list
+  let pp_f what f out x = Fmt.fprintf out "@ (@[%s@ %a@])" what f x
+  let pp_opt what f out = function
+    | None -> ()
+    | Some x -> Fmt.fprintf out "@ (@[%s@ %a@])" what f x
+  let pp_str out s = Sexp_loc.pp out (Sexp_loc.atom s)
+  let pp_regex out r = Fmt.fprintf out "%S" r
+end
 
 let die_on_sigterm : unit -> unit =
   let thunk = lazy (
@@ -65,6 +77,22 @@ let human_size (x:int) : string =
   else if x >= 1_000 then Printf.sprintf "%d.%dK" (x/1000) ((x/100) mod 10)
   else string_of_int x
 
+(* ensure [s] is not too long *)
+let truncate_at (n:int) (s:string) : string =
+  if String.length s > n then String.sub s 0 (n-1) ^ "…" else s
+      
+let get_cmd_out cmd =
+  CCUnix.with_process_in cmd
+    ~f:(fun ic -> CCIO.read_all ic |> String.trim)
+
+let mk_abs_path (s:string) : string =
+  if Filename.is_relative s then Filename.concat (Sys.getcwd()) s
+  else s
+
+let guess_cpu_count () =
+  try get_cmd_out "grep -c processor /proc/cpuinfo" |> int_of_string
+  with _ -> 2
+
 (** Parallel map *)
 module Par_map = struct
   (* map on the list with at most [j] parallel threads *)
@@ -78,7 +106,6 @@ module Par_map = struct
       CCSemaphore.with_acquire ~n:1 sem ~f:(fun () -> f x)
     in
     let module P = CCPool.Make(struct
-        let min_size = 0
         let max_size = j
       end) in
     let res =
@@ -103,4 +130,15 @@ module Json = struct
     let (>>::) x f = uncons f x
     let list1 s = list s >>= function [x] -> succeed x | _ -> fail "need unary list"
   end
+end
+
+module Git = struct
+  (* obtain the current commit name *)
+  let get_commit (dir:string) : string =
+    get_cmd_out (
+      Printf.sprintf "git -C %s rev-parse HEAD" dir)
+
+  let get_branch dir : string =
+    get_cmd_out (
+      Printf.sprintf "git -C %s branch | grep '*' | cut -d ' ' -f2" dir)
 end

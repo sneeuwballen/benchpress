@@ -11,19 +11,31 @@ type 'a or_error = ('a, string) E.t
 
 (** Result to expect for a problem *)
 type expect =
-  | E_auto
   | E_const of Res.t
   | E_program of { prover: string }
   | E_try of expect list (** Try these methods successively *)
 
+type version_field =
+  | Version_exact of Prover.version
+  | Version_git of {dir:string} (* compute by calling git *)
+  | Version_cmd of {cmd:string}
+
 (** A regex in Perl syntax *)
 type regex = string
 
+type action =
+  | A_run_provers of {
+    dirs: string list; (* list of directories to examine *)
+    provers: string list;
+    timeout: int option;
+    memory: int option;
+  }
+
 (** Stanzas for configuring Logitest *)
 type t =
-  | Add_prover of {
+  | St_prover of {
       name: string;
-      version: Prover.version option;
+      version: version_field option;
       cmd: string;
       (** the command line to run.
          possibly contains $binary, $file, $memory and $timeout *)
@@ -38,61 +50,70 @@ type t =
       timeout : regex option;  (** regex for "timeout" *)
       memory  : regex option;  (** regex for "out of memory" *)
     }
-  | Add_dir of {
+  | St_dir of {
       path: string;
       expect: expect option;
       pattern: regex option; (** Pattern of problems in this directory *)
     }
-  | Add_task of {
+  | St_task of {
       name: string; (* name of this task *)
-      dirs: string list; (* list of directories to examine *)
-      provers: string list;
-      timeout: int option;
-      memory: int option;
+      synopsis: string option;
+      action: action;
     }
 
 (** {2 Printers} *)
 
-let pp_l = Misc.pp_list
-let pp_f_ what f out x = Fmt.fprintf out "@ (@[%s@ %a@])" what f x
-let pp_opt_ what f out = function
-  | None -> ()
-  | Some x -> Fmt.fprintf out "@ (@[%s@ %a@])" what f x
-let pp_str out s = Sexp_loc.pp out (Sexp_loc.atom s)
-let pp_regex out r = Fmt.fprintf out "%S" r
-
 let rec pp_expect out = function
-  | E_auto -> Fmt.string out "auto"
   | E_const r -> Fmt.fprintf out "(const %a)" Res.pp r
   | E_program {prover} -> Fmt.fprintf out "(run %s)" prover
-  | E_try l -> Fmt.fprintf out "(@[try@ %a@])" (pp_l pp_expect) l
+  | E_try l -> Fmt.fprintf out "(@[try@ %a@])" (Misc.pp_list pp_expect) l
 
-let pp out = function
-  | Add_dir {path; expect; pattern; } ->
-    Fmt.fprintf out "(@[<hv1>dir%a%a%a@])"
-      (pp_f_ "path" Fmt.string) path
-      (pp_opt_ "expect" pp_expect) expect
-      (pp_opt_ "pattern" pp_regex) pattern
-  | Add_prover {
+let pp_version_field out =
+  let open Misc.Pp in
+  function
+  | Version_exact v ->  Prover.pp_version out v
+  | Version_git {dir} -> pp_str out @@ Printf.sprintf {|git:%S|} dir
+  | Version_cmd {cmd} -> pp_str out @@ Printf.sprintf {|cmd:%S|} cmd
+
+let pp_action out =
+  let open Misc.Pp in
+  function
+  | A_run_provers {dirs;provers;timeout;memory} ->
+    Fmt.fprintf out "(@[<v1>run_provers%a%a%a%a@])"
+      (pp_f "dirs" (pp_l pp_str)) dirs
+      (pp_f "provers" (pp_l pp_str)) provers
+      (pp_opt "timeout" Fmt.int) timeout
+      (pp_opt "memory" Fmt.int) memory
+
+let pp out =
+  let open Misc.Pp in
+  function
+  | St_dir {path; expect; pattern; } ->
+    Fmt.fprintf out "(@[<v1>dir%a%a%a@])"
+      (pp_f "path" Fmt.string) path
+      (pp_opt "expect" pp_expect) expect
+      (pp_opt "pattern" pp_regex) pattern
+  | St_prover {
       name; cmd; version; unsat; sat; unknown; timeout; memory;
       binary=_; binary_deps=_;
     } ->
-    Fmt.fprintf out "(@[<hv1>prover%a%a%a%a%a%a%a%a@])"
-      (pp_f_ "name" pp_str) name
-      (pp_f_ "cmd" pp_str) cmd
-      (pp_opt_ "version" Prover.pp_version) version
-      (pp_opt_ "sat" pp_regex) sat
-      (pp_opt_ "unsat" pp_regex) unsat
-      (pp_opt_ "unknown" pp_regex) unknown
-      (pp_opt_ "timeout" pp_regex) timeout
-      (pp_opt_ "memory" pp_regex) memory
-  | Add_task {name; dirs; provers; timeout; memory; } ->
-    Fmt.fprintf out "(@[<hv1>task%a%a%a%a%a@])"
-      (pp_f_ "name" pp_str) name
-      (pp_f_ "dirs" (pp_l pp_str)) dirs
-      (pp_f_ "provers" (pp_l pp_str)) provers
-      (pp_opt_ "timeout" Fmt.int) timeout
-      (pp_opt_ "memory" Fmt.int) memory
+    Fmt.fprintf out "(@[<v1>prover%a%a%a%a%a%a%a%a@])"
+      (pp_f "name" pp_str) name
+      (pp_f "cmd" pp_str) cmd
+      (pp_opt "version" pp_version_field) version
+      (pp_opt "sat" pp_regex) sat
+      (pp_opt "unsat" pp_regex) unsat
+      (pp_opt "unknown" pp_regex) unknown
+      (pp_opt "timeout" pp_regex) timeout
+      (pp_opt "memory" pp_regex) memory
+  | St_task {name; synopsis; action;} ->
+    Fmt.fprintf out "(@[<v1>task%a%a%a@])"
+      (pp_f "name" pp_str) name
+      (pp_opt "synopsis" pp_str) synopsis
+      (pp_f "action" pp_action) action
+
+let pp_l out l =
+  Fmt.fprintf out "@[<v>%a@]" (Misc.pp_list pp) l
 
 (** {2 Decoding} *)
 
@@ -123,28 +144,32 @@ let dec_regex : regex Se.D.decoder =
 let dec_expect : _ Se.D.decoder =
   let open Se.D in
   fix (fun self ->
-    one_of [
-      ("atomic `expect`", string >>= function
-       | "auto" -> succeed E_auto
-       | _ -> fail_sexp_f "expected `auto`");
-      ("composite `expect`", string >>:: function
-       | "auto" -> list0 >|= fun () -> E_auto
-       | "const" -> list1 dec_res >|= fun r -> E_const r
-       | "run" -> list1 string >|= fun prover -> E_program {prover}
-       | "try" -> list self >|= fun e -> E_try e
-       | s -> fail_sexp_f "invalid `expect` stanzas: %s" s)
-    ])
+      string >>:: function
+      | "const" -> list1 dec_res >|= fun r -> E_const r
+      | "run" -> list1 string >|= fun prover -> E_program {prover}
+      | "try" -> list self >|= fun e -> E_try e
+      | s -> fail_sexp_f "invalid `expect` stanzas: %s" s)
 
 let dec_version : _ Se.D.decoder =
   let open Se.D in
+  let str =
+    string >>= fun s ->
+    succeed @@ if CCString.prefix ~pre:"git:" s then (
+      Version_git {dir=snd @@ CCString.Split.left_exn ~by:":" s}
+    ) else if CCString.prefix ~pre:"cmd:" s then (
+      Version_cmd {cmd=snd @@ CCString.Split.left_exn ~by:":" s}
+    ) else (
+      Version_exact (Prover.Tag s)
+    )
+  in
   one_of [
-    "atom", (string >|= fun s -> Prover.Tag s);
+    "atom", str;
     "list", (string >>:: function
       | "git" ->
         field "branch" string >>= fun branch ->
         field "commit" string >>= fun commit ->
-        succeed (Prover.Git {branch; commit})
-      | s -> fail_sexp_f "invalid `version` constructor: %s" s)
+        succeed (Version_exact (Prover.Git {branch; commit}))
+      | s -> fail_sexp_f "invalid `version` constructor: %s" s);
   ]
 
 let list_or_singleton d =
@@ -156,6 +181,18 @@ let list_or_singleton d =
     | List _ -> s
   in
   from_result (decode_value (list d) l)
+
+let dec_action : action Se.D.decoder =
+  let open Se.D in
+  string >>:: function
+  | "run_provers" ->
+    field "dirs" (list_or_singleton string) >>= fun dirs ->
+    field "provers" (list_or_singleton string) >>= fun provers ->
+    field_opt "timeout" int >>= fun timeout ->
+    field_opt "memory" int >>= fun memory ->
+    succeed @@ A_run_provers {dirs;provers;timeout;memory}
+  | s ->
+    fail_sexp_f "unknown config stanzas %s" s
   
 let dec : t Se.D.decoder =
   let open Se.D in
@@ -164,7 +201,7 @@ let dec : t Se.D.decoder =
     field "path" string >>= fun path ->
     field_opt "expect" dec_expect >>= fun expect ->
     field_opt "pattern" dec_regex >>= fun pattern ->
-    succeed (Add_dir {path;expect;pattern})
+    succeed (St_dir {path;expect;pattern})
   | "prover" ->
     field "name" string >>= fun name ->
     field "cmd" string >>= fun cmd ->
@@ -175,17 +212,15 @@ let dec : t Se.D.decoder =
     field_opt "timeout" dec_regex >>= fun timeout ->
     field_opt "memory" dec_regex >>= fun memory ->
     succeed @@
-    Add_prover {
+    St_prover {
       name; cmd; version; sat; unsat; unknown; timeout; memory;
       binary=None; binary_deps=[]; (* TODO *)
     }
   | "task" ->
     field "name" string >>= fun name ->
-    field "dirs" (list_or_singleton string) >>= fun dirs ->
-    field "provers" (list_or_singleton string) >>= fun provers ->
-    field_opt "timeout" int >>= fun timeout ->
-    field_opt "memory" int >>= fun memory ->
-    succeed @@ Add_task {name;dirs;provers;timeout;memory}
+    field_opt "synopsis" string >>= fun synopsis ->
+    field "action" dec_action >>= fun action ->
+    succeed @@ St_task {name;synopsis;action}
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
 

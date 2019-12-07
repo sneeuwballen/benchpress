@@ -6,18 +6,6 @@ module J = Misc.Json
 
 type 'a or_error = ('a, string) CCResult.t
 
-type raw_result = {
-  (* Raw output *)
-  errcode: int;
-  stdout: string;
-  stderr: string;
-
-  (* Time used *)
-  rtime : float;
-  utime : float;
-  stime : float;
-}
-
 type prover  = Prover.t
 type checker = unit
 
@@ -25,12 +13,12 @@ type +'a result = {
   program : 'a;
   problem : Problem.t;
   timeout: int;
-  raw : raw_result;
+  raw : Proc_run_result.t;
 }
 
 val program : 'a result -> 'a
 val problem : _ result -> Problem.t
-val raw : _ result -> raw_result
+val raw : _ result -> Proc_run_result.t
 
 val analyze_p_opt : prover result -> Res.t option
 val analyze_p : prover result -> Res.t
@@ -80,9 +68,6 @@ module Meta : sig
 end
 
 val meta : snapshot -> snapshot_meta
-
-val encode_raw_result : raw_result J.Encode.t
-val decode_raw_result : raw_result J.Decode.t
 
 val encode_result : 'a J.Encode.t -> 'a result J.Encode.t
 val decode_result : 'a J.Decode.t -> 'a result J.Decode.t

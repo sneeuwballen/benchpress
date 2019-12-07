@@ -28,7 +28,7 @@ let pp_hvlist_ p =
     (CCFormat.hvbox
        (CCFormat.(list ~sep:(return "@ ") p)))
 
-let time_of_res e = e.Run_event.raw.Run_event.rtime
+let time_of_res e = e.Run_event.raw.rtime
 
 let pb_v_record ?bars l =
   PB.grid_l ?bars
@@ -133,7 +133,6 @@ module Raw = struct
     field "timeout" int >>= fun timeout ->
     field "total_time" float >>= fun total_time ->
     succeed {sat;unsat;errors;unknown;timeout;total_time}
-
 end
 
 module Analyze = struct
@@ -208,7 +207,7 @@ module Analyze = struct
       CCFormat.(with_color color string) r.Run_event.problem.Problem.name
       (CCFormat.with_color color Res.pp) r.Run_event.problem.Problem.expected
       (CCFormat.with_color color Res.pp) (Run_event.analyze_p r)
-      r.Run_event.raw.Run_event.rtime
+      r.Run_event.raw.rtime
 
   let pp_bad out t =
     if t.bad <> [] then (
@@ -249,37 +248,6 @@ module Analyze = struct
     fpf out
       "(@[<hv2>:summary %a@ :stat %a@])"
       pp_summary r Raw.pp_stat stat
-end
-
-module Config = struct
-  type expect =
-    | Auto
-    | Res of Res.t
-    | Program of Prover.t
-
-  type problem_set = {
-    directory : string;
-    pattern : string;
-    expect : expect;
-  }
-
-  type t = {
-    j: int; (* number of concurrent processes *)
-    timeout: int; (* timeout for each problem *)
-    memory: int;
-    problems : problem_set list;
-    provers: Prover.t list;
-    default_expect: Res.t option;
-  }
-
-  let make ?(j=1) ?(timeout=5) ?(memory=1000) ?(dirs=[]) ?default_expect ~provers () =
-    { j; timeout; memory; provers; problems=dirs; default_expect;}
-
-  let update ?j ?timeout ?memory c =
-    let j = CCOpt.get_or ~default:c.j j in
-    let timeout = CCOpt.get_or ~default:c.timeout timeout in
-    let memory = CCOpt.get_or ~default:c.memory memory in
-    { c with j; timeout; memory; }
 end
 
 module ResultsComparison = struct

@@ -1,15 +1,32 @@
 (* This file is free software. See file "license" for more details. *)
 
+module Fmt = CCFormat
+type 'a or_error = ('a, string) CCResult.t
+
+type path = string
 type t = {
-  name: string;  (* filename *)
+  name: path;  (* filename *)
   expected: Res.t; (* result expected *)
 }
 
-type problem = t
-type problem_set = t list
-
 val make : string -> Res.t -> t
 (** Make a problem. *)
+
+val find_expect :
+  ?default_expect:Res.t ->
+  expect:Dir.expect ->
+  path ->
+  Res.t or_error
+(** FInd the expected result for this given problem *)
+
+val make_find_expect :
+  expect:Dir.expect ->
+  path ->
+  t or_error
+(** [make_find_expect ~expect file] tries to find the expected
+    result of [file] using [expect], and
+    makes a problem if it finds the result
+    @param expect the method for finding expected result *)
 
 val basename : t -> string
 (** Returns the basename of a problem *)
@@ -32,7 +49,7 @@ val compare_res : t -> Res.t -> [`Same | `Improvement | `Mismatch | `Disappoint 
     }
 *)
 
-val pp : t CCFormat.printer
+val pp : t Fmt.printer
 val name : t -> string
 val to_string : t -> string
 
@@ -40,16 +57,3 @@ module J = Misc.Json
 
 val encode : t J.Encode.t
 val decode : t J.Decode.t
-
-(** {2 Proper table for storing problems} *)
-module Tbl : sig
-  type t
-
-  val empty : t
-
-  val add : problem -> t -> t
-  val add_l : problem list -> t -> t
-
-  val find_by_name : string -> t -> problem option
-  val to_list : t -> problem list
-end

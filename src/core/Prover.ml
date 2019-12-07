@@ -48,13 +48,13 @@ let pp_version out = function
 
 exception Subst_not_found of string
 
-(* Internal function, do NOT export ! *)
-let mk_cmd
+let interpolate_cmd
     ?(env=[||])
     ?(binary="")
     ?(timeout=0)
     ?(memory=0)
     ?(file="")
+    ?(f=fun _->None)
     cmd =
   let buf = Buffer.create 32 in
   let add_str s =
@@ -64,7 +64,10 @@ let mk_cmd
         | "timeout" | "time" -> string_of_int timeout
         | "file" -> file
         | "binary" -> binary
-        | s -> raise (Subst_not_found s))
+        | s ->
+          match f s with
+          | Some u -> u
+          | None -> raise (Subst_not_found s))
       s
   in
   add_str "ulimit -t \\$(( 1 + $time)) -v \\$(( 1200 * $memory )); ";
@@ -76,7 +79,7 @@ let mk_cmd
 
 let make_command ?env prover ~timeout ~memory ~file =
   let binary = prover.binary in
-  try mk_cmd ?env ~binary ~timeout ~memory ~file prover.cmd
+  try interpolate_cmd ?env ~binary ~timeout ~memory ~file prover.cmd
   with Subst_not_found s ->
     failwith (Printf.sprintf
         "cannot make command for prover %s: cannot find field %s" prover.name s)
@@ -152,5 +155,46 @@ let decode =
   f_opt_null "memory" >>= fun memory ->
   succeed {
     name; cmd; binary; binary_deps; version;
-    sat; unsat; unknown; timeout; memory }
+    sat; unsat; unknown; timeout; memory;
+  }
 
+let run_proc cmd =
+  let start = Unix.gettimeofday () in
+  (* call process and block *)
+  let p = CCUnix.call_full "%s" cmd in
+  let errcode = p#errcode in
+  Misc.Debug.debugf 5 (fun k->k "errcode: %d\n" errcode);
+    (* Compute time used by the prover *)
+  let rtime = Unix.gettimeofday () -. start in
+  let utime = 0. in
+  let stime = 0. in
+  let stdout = p#stdout in
+  let stderr = p#stderr in
+  { Proc_run_result. stdout; stderr; errcode; rtime; utime; stime; }
+
+let run ?env ~timeout ~memory ~file (self:t) : Proc_run_result.t =
+  Misc.Debug.debugf 5 (fun k->k "mk_cmd timeout: %d, memory: %d" timeout memory);
+  (* limit time and memory ('v' is virtual memory, needed because 'm' ignored on linux) *)
+  let memory' = memory * 1000 in
+  let memory_v = memory * 1000 * 8 in (* give 8 times more virtual mem, for JVM *)
+  let prefix =
+    Printf.sprintf "ulimit -t %d -m %d -Sv %d; " timeout memory' memory_v
+  in
+  let cmd = make_command ?env self ~timeout ~memory ~file in
+  let cmd = prefix ^ cmd in
+  run_proc cmd
+
+let analyze_p_opt (self:t) (r:Proc_run_result.t) : Res.t option =
+  (* find if [re: re option] is present in [stdout] *)
+  let find_opt_ re = match re with
+    | None -> false
+    | Some re ->
+      let re = Re.Perl.compile_pat ~opts:[`Multiline] re in
+      Re.execp re r.stdout ||
+      Re.execp re r.stderr
+  in
+  if find_opt_ self.sat then Some Res.Sat
+  else if find_opt_ self.unsat then Some Res.Unsat
+  else if find_opt_ self.timeout then Some Res.Timeout
+  else if find_opt_ self.unknown then Some Res.Unknown
+  else None

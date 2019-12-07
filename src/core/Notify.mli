@@ -14,7 +14,7 @@ val stdout : t
 val combine : t -> t -> t
 val combine_l : t list -> t
 
-val make : Config.t -> t
+val make : Definitions.t -> t
 (** Make a combination of notification systems *)
 
 val sync : t -> unit

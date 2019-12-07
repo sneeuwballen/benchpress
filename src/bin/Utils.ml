@@ -4,7 +4,7 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
-let config_term =
+let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in
   let aux config config_toml debug =
     if debug then (
@@ -20,14 +20,22 @@ let config_term =
     let conf_files = List.map Xdg.interpolate_home conf_files in
     let toml_files = match config_toml with None -> [] | Some c -> [c] in
     Misc.Debug.debugf 1 (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
-    begin match Stanzas.parse_files conf_files, Config.parse_files toml_files with
-      | Ok _x, Ok y -> `Ok y (* FIXME: convert Toml config into stanzas *)
+    begin match Stanza.parse_files conf_files, Config.parse_files toml_files with
+      | Ok x, Ok y ->
+        (* combine configs *)
+        begin match E.(
+          Definitions.of_config y >>= fun defs ->
+          Definitions.add_stanza_l x defs
+        ) with
+          | Ok x -> `Ok x
+          | Error s -> `Error (false, s)
+        end
       | Error e, _ | _, Error e -> `Error (false, e)
     end
   in
   let arg_toml =
     Arg.(value & opt (some string) None &
-         info ["ct"; "config-toml"] ~doc:"configuration file (toml; in target directory)")
+         info ["ct"; "config-toml"] ~doc:"configuration file (toml; in target directory; DEPRECATED)")
   and arg =
     Arg.(value & opt (some string) None &
          info ["c"; "config"] ~doc:"configuration file (sexp)")

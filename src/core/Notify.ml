@@ -33,7 +33,8 @@ let combine_l l : t =
    OR: sub-library, that we can try to dynlink optionally
   *)
 
-let make (_config:Config.t) : t =
+(* TODO: stanza for IRC *)
+let make (_defs) : t =
   (* TODO: notification by IRC, if any *)
   combine_l [stdout]
 

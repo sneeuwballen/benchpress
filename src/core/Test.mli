@@ -1,5 +1,6 @@
 (* This file is free software. See file "license" for more details. *)
 
+(* TODO: rename this, split into several files *)
 (** {1 Tools to test a prover} *)
 
 type 'a or_error = ('a, string) CCResult.t
@@ -63,40 +64,6 @@ module Analyze : sig
 
   val pp : t CCFormat.printer
   val pp_compact : t CCFormat.printer
-end
-
-module Config : sig
-
-  type expect =
-    | Auto
-    | Res of Res.t
-    | Program of Prover.t
-
-  type problem_set = {
-    directory : string;
-    pattern : string;
-    expect : expect;
-  }
-
-  type t = {
-    j: int; (* number of concurrent processes *)
-    timeout: int; (* timeout for each problem *)
-    memory: int;
-    problems : problem_set list;
-    provers: Prover.t list;
-    default_expect: Res.t option;
-  }
-
-  val make:
-    ?j:int ->
-    ?timeout:int ->
-    ?memory:int ->
-    ?dirs:problem_set list ->
-    ?default_expect:Res.t ->
-    provers:Prover.t list ->
-    unit -> t
-
-  val update : ?j:int -> ?timeout:int -> ?memory:int -> t -> t
 end
 
 module ResultsComparison : sig

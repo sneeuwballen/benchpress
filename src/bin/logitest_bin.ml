@@ -8,34 +8,10 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
-let config_term =
-  let open Cmdliner in
-  let aux config debug =
-    if debug then (
-      Misc.Debug.set_level 5;
-    );
-    let (//) = Filename.concat in
-    let default_conf = Xdg.config_dir() // "logitest" // "conf.sexp" in
-    let conf_files = match config with None -> [] | Some c -> [c] in
-    let conf_files =
-      if Sys.file_exists (Xdg.interpolate_home default_conf)
-      then conf_files @ [default_conf] else conf_files
-    in
-    let conf_files = List.map Xdg.interpolate_home conf_files in
-    Misc.Debug.debugf 1 (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
-    begin match Config.parse_files conf_files with
-      | Result.Ok x -> `Ok x
-      | Result.Error e -> `Error (false, e)
-    end
-  in
-  let arg =
-    Arg.(value & opt (some string) None &
-         info ["c"; "config"] ~doc:"configuration file (in target directory)")
-  and debug =
-    let doc = "Enable debug (verbose) output" in
-    Arg.(value & flag & info ["d"; "debug"] ~doc)
-  in
-  Term.(ret (pure aux $ arg $ debug))
+let default_conf () = 
+  let (//) = Filename.concat in
+  Xdg.config_dir() // "logitest" // "conf.sexp"
+
 
 let snapshot_name_term : string option Cmdliner.Term.t =
   let open Cmdliner in
@@ -47,20 +23,20 @@ module Run = struct
   (* sub-command for running tests *)
   let cmd =
     let open Cmdliner in
-    let aux j dyn dirs dir_file config profile timeout memory
+    let aux j dyn paths dir_file defs task timeout memory
         meta provers csv summary no_color
       : (unit,string) E.t =
       if no_color then CCFormat.set_color_default false;
       Run_main.main ~dyn ~j ?timeout ?memory ?csv ?provers
-        ~meta ?profile ?summary ~config ?dir_file dirs ()
+        ~meta ?task ?summary ?dir_file defs paths ()
     in
-    let config = config_term
+    let defs = Utils.definitions_term
     and dyn =
       Arg.(value & flag & info ["progress"] ~doc:"print progress bar")
     and dir_file =
       Arg.(value & opt (some string) None & info ["F"] ~doc:"file containing a list of files")
-    and profile =
-      Arg.(value & opt (some string) None & info ["profile"] ~doc:"pick test profile (default 'test')")
+    and task =
+      Arg.(value & opt (some string) None & info ["task"] ~doc:"task to run")
     and timeout =
       Arg.(value & opt (some int) None & info ["t"; "timeout"] ~doc:"timeout (in s)")
     and j =
@@ -73,9 +49,9 @@ module Run = struct
       "test a program on every file in a directory"
     and csv =
       Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
-    and dir =
+    and paths =
       Arg.(value & pos_all string [] &
-           info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
+           info [] ~docv:"PATH" ~doc:"target paths (or directories containing tests)")
     and provers =
       Arg.(value & opt (some (list string)) None & info ["p"; "provers"] ~doc:"select provers")
     and no_color =
@@ -83,7 +59,7 @@ module Run = struct
     and summary =
       Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
     in
-    Term.(pure aux $ j $ dyn $ dir $ dir_file $ config $ profile $ timeout $ memory
+    Term.(pure aux $ j $ dyn $ paths $ dir_file $ defs $ task $ timeout $ memory
       $ meta $ provers $ csv $ summary $ no_color),
     Term.info ~doc "run"
 end
@@ -144,10 +120,19 @@ end
 module Sample = struct
   open E.Infix
 
+  let files_of_dir (p:string) : string list or_error =
+    try
+      CCIO.File.walk_l p
+      |> CCList.filter_map
+        (fun (kind,f) -> match kind with
+           | `File -> Some f
+           | _ -> None)
+      |> E.return
+    with e ->
+      E.of_exn_trace e |> E.add_ctxf "expand_subdir of_dir %S" p
+
   let run ~n dirs =
-    E.map_l
-      (fun d -> Problem_run.of_dir ~filter:(fun _ -> true) d)
-      dirs
+    E.map_l files_of_dir dirs
     >|= List.flatten
     >|= Array.of_list
     >>= fun files ->
@@ -202,21 +187,22 @@ end
 
 module Check_config = struct
   let run f =
-    match Stanzas.parse_files f with
+    let f = if f=[] then [default_conf()] else f in
+    match Stanza.parse_files f with
     | Ok c ->
-      Format.printf "@[<v>%a@]@." Stanzas.(pp_l pp) c;
+      Format.printf "@[<v>%a@]@." Stanza.pp_l c;
       Ok ()
     | Error e -> Error e
 
   (* sub-command to sample a directory *)
   let cmd =
     let open Cmdliner in
-    let file =
+    let files =
       Arg.(value & pos_all string [] & info [] ~doc:"file(s) to check")
     in
     let doc = "check configuration file(s)" in
-    let aux file () = run file in
-    Term.(pure aux $ file $ pure () ), Term.info ~doc "check-config"
+    let aux files () = run files in
+    Term.(pure aux $ files $ pure () ), Term.info ~doc "check-config"
 end
 
 (** {2 Main: Parse CLI} *)

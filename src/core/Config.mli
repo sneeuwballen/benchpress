@@ -2,6 +2,8 @@
 
 (** {1 Config File} *)
 
+[@@@ocaml.deprecated "use sexp stanzas"]
+
 type 'a or_error = ('a, string) Result.result
 type file = string
 
