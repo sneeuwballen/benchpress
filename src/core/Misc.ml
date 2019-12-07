@@ -21,11 +21,12 @@ end = struct
 
   let debugf l k =
     if l <= !lev_ then (
+      let out = Format.std_formatter in
       synchronized
         (fun () ->
+           Format.fprintf out "[%d] " l;
            k (Format.kfprintf
-               (fun fmt -> Format.fprintf fmt "@.")
-               Format.std_formatter))
+               (fun fmt -> Format.fprintf fmt "@.") out))
     )
 
   let debug l msg = debugf l (fun k->k "%s" msg)

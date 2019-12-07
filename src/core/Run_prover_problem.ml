@@ -9,8 +9,9 @@ type job_res= Prover.t Run_event.result
 
 (* run one particular test *)
 let run_exn_ ~timeout ~memory prover pb =
-  Misc.Debug.debugf 2 (fun k->k "running %-15s/%-30s..."
-    (Filename.basename prover.Prover.binary) pb.Problem.name);
+  Misc.Debug.debugf 2
+    (fun k->k"running %-15s/%-30s (timeout %d)..."
+        prover.Prover.name pb.Problem.name timeout);
   (* spawn process *)
   let raw = Prover.run ~timeout ~memory ~file:pb.Problem.name prover in
   let result = 

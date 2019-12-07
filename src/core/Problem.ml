@@ -59,7 +59,7 @@ end
 
 (* find expected result for [file] *)
 let find_expect ?default_expect ~expect file : Res.t or_error =
-  Misc.Debug.debugf 3 (fun k->k "find_expect `%s`…" file);
+  Misc.Debug.debugf 3 (fun k->k "(@[<2>find_expect `%s`@ using %a@])…" file Dir.pp_expect expect);
   let rec loop expect =
     match expect with
     | Dir.E_comment -> Exp_.find_expected_ ?default:default_expect file

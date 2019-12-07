@@ -20,7 +20,7 @@ type t = {
 
 let rec pp_expect out = function
   | E_comment -> Fmt.string out "comments"
-  | E_const r -> Fmt.fprintf out "(const %a)" Res.pp r
+  | E_const r -> Fmt.fprintf out "(@[const %a@])" Res.pp r
   | E_program {prover} -> Fmt.fprintf out "(@[run %a@])" Prover.pp_name prover
   | E_try l -> Fmt.fprintf out "(@[try@ %a@])" (Misc.pp_list pp_expect) l
 

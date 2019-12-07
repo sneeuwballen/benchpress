@@ -94,9 +94,10 @@ end = struct
         (fun (kind,f) -> match kind with
            | `File when filter f -> Some f
            | _ -> None)
-      |> E.map_l
+      |> Misc.Par_map.map_p ~j:3
         (fun path ->
            Problem.make_find_expect path ~expect:s.Subdir.inside.expect)
+      |> E.flatten_l
     with e ->
       E.of_exn_trace e |> E.add_ctxf "expand_subdir of_dir %a" Subdir.pp s
 
@@ -104,7 +105,7 @@ end = struct
   let expand ?j ?timeout ?memory (self:t) : expanded or_error =
     let j = j >?? self.j >? Misc.guess_cpu_count () in
     let timeout = timeout >?? self.timeout >? 60 in
-    let memory = memory >?? self.memory >? 1_000_000_000 in
+    let memory = memory >?? self.memory >? 1_000 in
     E.map_l expand_subdir self.dirs >>= fun problems ->
     let problems = CCList.flatten problems in
     Ok { j; memory; timeout; problems; provers=self.provers; }

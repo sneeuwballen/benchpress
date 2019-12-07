@@ -163,7 +163,7 @@ let run_proc cmd =
   (* call process and block *)
   let p = CCUnix.call_full "%s" cmd in
   let errcode = p#errcode in
-  Misc.Debug.debugf 5 (fun k->k "errcode: %d\n" errcode);
+  Misc.Debug.debugf 5 (fun k->k "(@[prover.run.done errcode: %d@]" errcode);
     (* Compute time used by the prover *)
   let rtime = Unix.gettimeofday () -. start in
   let utime = 0. in
@@ -173,7 +173,8 @@ let run_proc cmd =
   { Proc_run_result. stdout; stderr; errcode; rtime; utime; stime; }
 
 let run ?env ~timeout ~memory ~file (self:t) : Proc_run_result.t =
-  Misc.Debug.debugf 5 (fun k->k "mk_cmd timeout: %d, memory: %d" timeout memory);
+  Misc.Debug.debugf 5
+    (fun k->k "(@[Prover.run %s timeout: %d, memory: %d@])" self.name timeout memory);
   (* limit time and memory ('v' is virtual memory, needed because 'm' ignored on linux) *)
   let memory' = memory * 1000 in
   let memory_v = memory * 1000 * 8 in (* give 8 times more virtual mem, for JVM *)
