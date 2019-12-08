@@ -148,7 +148,7 @@ let dec_expect : _ Se.D.decoder =
       | "const" -> list1 dec_res >|= fun r -> E_const r
       | "run" -> list1 string >|= fun prover -> E_program {prover}
       | "try" -> list self >|= fun e -> E_try e
-      | s -> fail_sexp_f "invalid `expect` stanzas: %s" s)
+      | s -> fail_sexp_f "expected `expect` stanzas (constructors: const|run|try, not %S)" s)
 
 let dec_version : _ Se.D.decoder =
   let open Se.D in
