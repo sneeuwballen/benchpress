@@ -19,9 +19,10 @@ type def =
 type t = {
   defs: def Str_map.t;
   dirs: Dir.t list; (* list of directories *)
+  cur_dir: string; (* for relative paths *)
 }
 
-let empty : t = { defs= Str_map.empty; dirs=[]}
+let empty : t = { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd(); }
 
 let add_prover (p:Prover.t) self : t =
   { self with defs=Str_map.add (Prover.name p) (D_prover p) self.defs}
@@ -170,12 +171,14 @@ let mk_action (self:t) (a:Stanza.action) : _ or_error =
     mk_run_provers ?timeout ?memory ~paths:dirs ~provers self
     >|= fun a -> Action.Act_run_provers a
 
-let add_stanza ?cur_dir (st:Stanza.t) self : t or_error =
+let add_stanza (st:Stanza.t) self : t or_error =
   Misc.Debug.debugf 5 (fun k->k "add-stanza %a" Stanza.pp st);
   let open Stanza in
   match st with
+  | St_enter_file file ->
+    Ok { self with cur_dir=Misc.mk_abs_path (Filename.dirname file) }
   | St_dir {path;expect;pattern} ->
-    let path = norm_path ?cur_dir path in
+    let path = norm_path ~cur_dir:self.cur_dir path in
     (if Sys.file_exists path && Sys.is_directory path then Ok ()
      else E.fail_fprintf "%S is not a directory" path) >>= fun () ->
     begin match expect with
@@ -189,11 +192,12 @@ let add_stanza ?cur_dir (st:Stanza.t) self : t or_error =
       version; binary; binary_deps;
     } ->
     (* add prover *)
+    let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
     let binary =
       CCOpt.get_lazy
         (fun () -> fst @@ CCString.Split.left_exn ~by:" " @@ String.trim cmd)
         binary
-      |> norm_path ?cur_dir
+      |> Misc.str_replace ["cur_dir", self.cur_dir]
     and version = match version with
       | Some v -> v
       | None -> Version_exact (Prover.Tag "<unknown>")
@@ -209,8 +213,8 @@ let add_stanza ?cur_dir (st:Stanza.t) self : t or_error =
     let t = {Task.name; synopsis; action; } in
     Ok (add_task t self)
 
-let add_stanza_l ?cur_dir (l:Stanza.t list) self : t or_error =
-  E.fold_l (fun self st -> add_stanza ?cur_dir st self) self l
+let add_stanza_l (l:Stanza.t list) self : t or_error =
+  E.fold_l (fun self st -> add_stanza st self) self l
 
-let of_stanza_l ?cur_dir l = add_stanza_l ?cur_dir l empty
+let of_stanza_l l = add_stanza_l l empty
 

@@ -179,13 +179,16 @@ let run_proc cmd =
   (* call process and block *)
   let p = CCUnix.call_full "%s" cmd in
   let errcode = p#errcode in
-  Misc.Debug.debugf 5 (fun k->k "(@[prover.run.done errcode: %d@]" errcode);
-    (* Compute time used by the prover *)
+  Misc.Debug.debugf 5
+    (fun k->k "(@[prover.run.done errcode: %d@ cmd %a@]" errcode Misc.Pp.pp_str cmd);
+  (* Compute time used by the prover *)
   let rtime = Unix.gettimeofday () -. start in
   let utime = 0. in
   let stime = 0. in
   let stdout = p#stdout in
   let stderr = p#stderr in
+  Misc.Debug.debugf 10
+    (fun k->k "stdout:\n%s\nstderr:\n%s" stdout stderr);
   { Proc_run_result. stdout; stderr; errcode; rtime; utime; stime; }
 
 let run ?env ~timeout ~memory ~file (self:t) : Proc_run_result.t =

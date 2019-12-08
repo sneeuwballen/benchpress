@@ -46,6 +46,16 @@ module Pp = struct
   let pp_regex out r = Fmt.fprintf out "%S" r
 end
 
+(** Replace in [s] the list of key/values in [l]. Ignore other keys. *)
+let str_replace l (s:string) : string =
+  let buf = Buffer.create 32 in
+  Buffer.add_substitute buf
+    (fun k -> match List.assoc k l with
+       | v -> v
+       | exception Not_found -> "$" ^ k)
+    s;
+  Buffer.contents buf
+
 let die_on_sigterm : unit -> unit =
   let thunk = lazy (
     Sys.set_signal 15
@@ -108,6 +118,7 @@ module Par_map = struct
     let f_with_sem x =
       CCSemaphore.with_acquire ~n:1 sem ~f:(fun () -> f x)
     in
+    Debug.debugf 5 (fun k->k "par-map: create pool j=%d" j);
     let module P = CCPool.Make(struct
         let max_size = j
       end) in
@@ -116,6 +127,7 @@ module Par_map = struct
       |> P.Fut.sequence_l
       |> P.Fut.get
     in
+    Debug.debugf 5 (fun k->k "par-map: stop pool");
     P.stop();
     res
 end

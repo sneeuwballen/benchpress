@@ -33,6 +33,7 @@ type action =
 
 (** Stanzas for configuring Logitest *)
 type t =
+  | St_enter_file of string
   | St_prover of {
       name: string;
       version: version_field option;
@@ -88,6 +89,7 @@ let pp_action out =
 let pp out =
   let open Misc.Pp in
   function
+  | St_enter_file f -> Fmt.fprintf out "(@[enter-file@ %a@])" pp_str f
   | St_dir {path; expect; pattern; } ->
     Fmt.fprintf out "(@[<v1>dir%a%a%a@])"
       (pp_f "path" Fmt.string) path
@@ -236,6 +238,7 @@ let parse_files (files:string list) : t list or_error =
          match Se.parse_file_list file with
          | Error e -> wrapf "cannot parse %s:@,%s" file e
          | Ok l ->
+           St_enter_file file ::
            CCList.map
              (fun s ->
                match Se.D.decode_value dec s with

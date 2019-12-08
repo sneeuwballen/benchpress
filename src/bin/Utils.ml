@@ -28,7 +28,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
         Misc.Debug.debugf 4 (fun k->k "combine configs…");
         begin match E.(
           Definitions.of_config y >>= fun defs ->
-          Definitions.add_stanza_l ~cur_dir:(Sys.getcwd()) x defs
+          Definitions.add_stanza_l x defs
         ) with
           | Ok x -> `Ok x
           | Error s -> `Error (false, s)
