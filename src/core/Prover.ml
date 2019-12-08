@@ -51,7 +51,7 @@ let pp out self =
   let {name; version; cmd; unsat; sat; timeout; unknown; memory;
        binary; binary_deps=_;} = self in
   Fmt.fprintf out
-    "(@[<hv2>prover%a%a%a%a%a%a%a%a%a@])"
+    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a@])"
     (pp_f "name" pp_str) name
     (pp_f "version" pp_version) version
     (pp_f "cmd" pp_str) cmd
