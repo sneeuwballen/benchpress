@@ -46,6 +46,22 @@ let pp_version out = function
   | Git {branch=b; commit=c} ->
     Fmt.fprintf out "(@[git@ branch=%S@ commit=%s@])" b c
 
+let pp out self =
+  let open Misc.Pp in
+  let {name; version; cmd; unsat; sat; timeout; unknown; memory;
+       binary; binary_deps=_;} = self in
+  Fmt.fprintf out
+    "(@[<hv2>prover%a%a%a%a%a%a%a%a%a@])"
+    (pp_f "name" pp_str) name
+    (pp_f "version" pp_version) version
+    (pp_f "cmd" pp_str) cmd
+    (pp_f "binary" pp_str) binary
+    (pp_opt "sat" pp_regex) sat
+    (pp_opt "unsat" pp_regex) unsat
+    (pp_opt "memory" pp_regex) memory
+    (pp_opt "timeout" pp_regex) timeout
+    (pp_opt "unknown" pp_regex) unknown
+
 exception Subst_not_found of string
 
 let interpolate_cmd

@@ -18,15 +18,16 @@ val empty : t
 
 val find_prover : t -> string -> Prover.t or_error
 val find_task : t -> string -> Task.t or_error
+val all_provers : t -> Prover.t list
 
 val of_config : Config.t -> t or_error
 (** Get a list of supported provers from a config file. *)
 
-val add_stanza : Stanza.t -> t -> t or_error
+val add_stanza : ?cur_dir:string -> Stanza.t -> t -> t or_error
 
-val add_stanza_l : Stanza.t list -> t -> t or_error
+val add_stanza_l : ?cur_dir:string -> Stanza.t list -> t -> t or_error
 
-val of_stanza_l : Stanza.t list -> t or_error
+val of_stanza_l : ?cur_dir:string -> Stanza.t list -> t or_error
 
 val mk_run_provers :
   ?j:int ->

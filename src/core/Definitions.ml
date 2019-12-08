@@ -32,6 +32,14 @@ let add_task (t:Task.t) self : t =
 let add_dir (d:Dir.t) self : t =
   { self with dirs=d::self.dirs }
 
+let all_provers self : _ list =
+  Str_map.fold
+    (fun _ d acc ->
+       match d with
+       | D_prover p -> p :: acc
+       | _ -> acc)
+    self.defs []
+
 (* compute a version for the prover *)
 let get_version ?(binary="") (v:Stanza.version_field) : Prover.version =
   let open Prover in
@@ -110,8 +118,12 @@ let find_task self name : Task.t or_error =
   | Some _ -> E.fail_fprintf "%S is not a task" name
   | _ -> E.fail_fprintf "task %S is not defined" name
 
-let norm_path s =
-  s |> Xdg.interpolate_home |> Misc.mk_abs_path
+let norm_path ?cur_dir s =
+  let f s = match s with
+    | "cur_dir" -> cur_dir
+    | _ -> None
+  in
+  s |> Xdg.interpolate_home ~f |> Misc.mk_abs_path
 
 (* find a known directory for [path] *)
 let mk_subdir self path : Subdir.t or_error =
@@ -119,7 +131,7 @@ let mk_subdir self path : Subdir.t or_error =
   (* helper *)
   let is_parent (dir:string) (f:string) : bool =
     let fd_dir = (Unix.stat dir).Unix.st_dev in
-    let same_file f = (Unix.stat f).Unix.st_dev = fd_dir in
+    let same_file f = try (Unix.stat f).Unix.st_dev = fd_dir with _ -> false in
     (* check f and its parents *)
     let rec check f =
       same_file f ||
@@ -158,12 +170,12 @@ let mk_action (self:t) (a:Stanza.action) : _ or_error =
     mk_run_provers ?timeout ?memory ~paths:dirs ~provers self
     >|= fun a -> Action.Act_run_provers a
 
-let add_stanza (st:Stanza.t ) self : t or_error =
+let add_stanza ?cur_dir (st:Stanza.t) self : t or_error =
   Misc.Debug.debugf 5 (fun k->k "add-stanza %a" Stanza.pp st);
   let open Stanza in
   match st with
   | St_dir {path;expect;pattern} ->
-    let path = norm_path path in
+    let path = norm_path ?cur_dir path in
     (if Sys.file_exists path && Sys.is_directory path then Ok ()
      else E.fail_fprintf "%S is not a directory" path) >>= fun () ->
     begin match expect with
@@ -181,6 +193,7 @@ let add_stanza (st:Stanza.t ) self : t or_error =
       CCOpt.get_lazy
         (fun () -> fst @@ CCString.Split.left_exn ~by:" " @@ String.trim cmd)
         binary
+      |> norm_path ?cur_dir
     and version = match version with
       | Some v -> v
       | None -> Version_exact (Prover.Tag "<unknown>")
@@ -196,8 +209,8 @@ let add_stanza (st:Stanza.t ) self : t or_error =
     let t = {Task.name; synopsis; action; } in
     Ok (add_task t self)
 
-let add_stanza_l (l:Stanza.t list) self : t or_error =
-  E.fold_l (fun self st -> add_stanza st self) self l
+let add_stanza_l ?cur_dir (l:Stanza.t list) self : t or_error =
+  E.fold_l (fun self st -> add_stanza ?cur_dir st self) self l
 
-let of_stanza_l l = add_stanza_l l empty
+let of_stanza_l ?cur_dir l = add_stanza_l ?cur_dir l empty
 

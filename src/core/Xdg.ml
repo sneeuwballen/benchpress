@@ -9,12 +9,17 @@ let get_home : unit -> string =
   let s = lazy (getenv_or_empty "HOME" <+> (fun () -> "/tmp")) in
   fun () -> Lazy.force s
 
-let interpolate_home s =
+let interpolate_home ?(f=fun _-> None) s =
   let buf = Buffer.create (String.length s) in
   Buffer.add_substitute buf
     (function
       | "HOME" | "home" -> get_home()
-      | s -> failwith ("couldn't find variable: " ^ s))
+      | s ->
+        begin match f s with
+          | Some u -> u
+          | None ->
+            failwith ("couldn't find variable: " ^ s)
+        end)
     s;
   Buffer.contents buf
 

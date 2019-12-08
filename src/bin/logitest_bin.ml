@@ -190,7 +190,6 @@ module Check_config = struct
       Ok ()
     | Error e -> Error e
 
-  (* sub-command to sample a directory *)
   let cmd =
     let open Cmdliner in
     let files =
@@ -203,8 +202,37 @@ module Check_config = struct
     Term.(pure aux $ with_default $ files $ pure () ), Term.info ~doc "check-config"
 end
 
-(** {2 Main: Parse CLI} *)
+(** {2 See prover(s)} *)
 
+module Prover_show = struct
+  let run defs names =
+    let open E.Infix in
+    E.map_l (Definitions.find_prover defs) names >>= fun l ->
+    Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
+    Ok ()
+
+  let cmd =
+    let open Cmdliner in
+    let doc = "show prover(s)" in
+    let names = Arg.(value & pos_all string [] & info []) in
+    Term.(pure run $ Utils.definitions_term $ names ), Term.info ~doc "prover-show"
+end
+
+(** {2 List provers} *)
+
+module Prover_list = struct
+  let run defs =
+    let l = Definitions.all_provers defs in
+    Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp_name) l;
+    Ok ()
+
+  let cmd =
+    let open Cmdliner in
+    let doc = "show prover(s)" in
+    Term.(pure run $ Utils.definitions_term), Term.info ~doc "prover-list"
+end
+
+(** {2 Main: Parse CLI} *)
 
 let parse_opt () =
   let open Cmdliner in
@@ -227,6 +255,8 @@ let parse_opt () =
     Show.cmd;
     Serve.cmd;
     Check_config.cmd;
+    Prover_show.cmd;
+    Prover_list.cmd;
   ]
 
 let () =

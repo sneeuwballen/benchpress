@@ -40,6 +40,7 @@ val name : t -> string
 (** Prover name *)
 
 val pp_name : t Fmt.printer
+val pp : t Fmt.printer
 val pp_version : version Fmt.printer
 val version_to_string : version -> string
 
