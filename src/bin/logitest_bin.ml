@@ -181,8 +181,9 @@ end
 (** {2 Check config} *)
 
 module Check_config = struct
-  let run f =
-    let f = if f=[] then [Utils.default_conf()] else f in
+  let run with_default f =
+    let f = if f=[] then [Utils.default_conf()]
+      else if with_default then Utils.default_conf() :: f else f in
     match Stanza.parse_files f with
     | Ok c ->
       Format.printf "@[<v>%a@]@." Stanza.pp_l c;
@@ -194,10 +195,12 @@ module Check_config = struct
     let open Cmdliner in
     let files =
       Arg.(value & pos_all string [] & info [] ~doc:"file(s) to check")
+    and with_default =
+      Arg.(value & opt bool false & info ["d"; "default"] ~doc:"combine with the default config file(s)")
     in
     let doc = "check configuration file(s)" in
-    let aux files () = run files in
-    Term.(pure aux $ files $ pure () ), Term.info ~doc "check-config"
+    let aux with_default files () = run with_default files in
+    Term.(pure aux $ with_default $ files $ pure () ), Term.info ~doc "check-config"
 end
 
 (** {2 Main: Parse CLI} *)
