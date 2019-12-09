@@ -232,25 +232,46 @@ let dec : t Se.D.decoder =
 exception Wrap of string
 let wrapf fmt = Format.kasprintf (fun s ->raise (Wrap s)) fmt
 
+let parse_string_list_ s : _ list or_error =
+  let buf = Lexing.from_string s in
+  let d = Se.Decoder.of_lexbuf buf in
+  let rec iter acc = match Se.Decoder.next d with
+    | Se.End -> Result.Ok (List.rev acc)
+    | Se.Yield x -> iter (x::acc)
+    | Se.Fail e -> Result.Error e
+  in
+  try iter []
+  with e -> E.of_exn e
+
 (** Parse a list of files into a list of stanzas *)
-let parse_files (files:string list) : t list or_error =
+let parse_files ?(builtin=true) (files:string list) : t list or_error =
+  let decode_sexp_l l =
+    CCList.map
+      (fun s ->
+         match Se.D.decode_value dec s with
+         | Ok x -> x
+         | Error e ->
+           wrapf "at %a, error@ %s" Se.pp_loc s.Se.loc
+             (Se.D.string_of_error e))
+      l
+  in
   try
+    let prelude =
+      if builtin then
+        match parse_string_list_ Builtin_config.config with
+        | Ok l -> St_enter_file "prelude" :: decode_sexp_l l
+        | Error e ->
+          wrapf "failure when reading builtin config: %s" e
+      else []
+    in
     List.map
       (fun file ->
-         Se.cur_file_ := file; (* issue in CCSexp *)
+         Se.cur_file_ := file; (* issue in CCSexp's locations *)
          match Se.parse_file_list file with
          | Error e -> wrapf "cannot parse %s:@,%s" file e
-         | Ok l ->
-           St_enter_file file ::
-           CCList.map
-             (fun s ->
-               match Se.D.decode_value dec s with
-               | Ok x -> x
-               | Error e ->
-                 wrapf "at %a, error@ %s" Se.pp_loc s.Se.loc
-                   (Se.D.string_of_error e))
-             l)
+         | Ok l -> St_enter_file file :: decode_sexp_l l)
       files
+    |> CCList.cons prelude
     |> CCList.flatten
     |> E.return
   with Wrap e -> Error e

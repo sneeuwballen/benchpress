@@ -6,3 +6,13 @@
    re.perl csv cmdliner result toml olinq iter decoders printbox yojson
    decoders-yojson)
  (flags :standard -warn-error -3-32-50 -safe-string))
+
+(rule
+  (targets builtin_config.ml)
+  (deps builtin_config.sexp)
+  (action
+    (with-stdout-to %{targets}
+     (progn
+       (echo "let config = {sexp|")
+       (cat %{deps})
+       (echo "|sexp} ;;")))))
