@@ -182,8 +182,11 @@ end
 
 module Check_config = struct
   let run with_default f =
-    let f = if f=[] then [Utils.default_conf()]
-      else if with_default then Utils.default_conf() :: f else f in
+    let default_file = Utils.default_conf () in
+    let f =
+      if f=[] then (
+        if Sys.file_exists default_file then [default_file] else []
+      ) else if with_default && Sys.file_exists default_file then Utils.default_conf() :: f else f in
     match Stanza.parse_files f with
     | Ok c ->
       Format.printf "@[<v>%a@]@." Stanza.pp_l c;
