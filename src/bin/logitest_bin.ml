@@ -91,7 +91,7 @@ module Show = struct
     let csv =
       Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
     and files =
-      Arg.(value & pos_all string [] &
+      Arg.(non_empty & pos_all string [] &
            info [] ~docv:"FILES" ~doc:"files to read")
     and no_color =
       Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
