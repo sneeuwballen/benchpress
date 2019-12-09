@@ -95,6 +95,7 @@ let truncate_right (n:int) (s:string) : string =
   if String.length s > n then String.sub s 0 (n-1) ^ "…" else s
       
 let get_cmd_out cmd =
+  Debug.debugf 10 (fun k->k "get-cmd-out %S" cmd);
   CCUnix.with_process_in cmd
     ~f:(fun ic -> CCIO.read_all ic |> String.trim)
 

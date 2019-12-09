@@ -41,10 +41,12 @@ let version_to_string = function
 let name p = p.name
 
 let pp_name out p = Fmt.string out p.name
-let pp_version out = function
-  | Tag s -> Fmt.fprintf out "(tag %s)" s
+let pp_version out =
+  let open Misc.Pp in
+  function
+  | Tag s -> Fmt.fprintf out "(tag %a)" pp_str s
   | Git {branch=b; commit=c} ->
-    Fmt.fprintf out "(@[git@ branch=%S@ commit=%s@])" b c
+    Fmt.fprintf out "(@[git@ branch=%a@ commit=%a@])" pp_str b pp_str c
 
 let pp out self =
   let open Misc.Pp in
@@ -67,8 +69,8 @@ exception Subst_not_found of string
 let interpolate_cmd
     ?(env=[||])
     ?(binary="")
-    ?(timeout=0)
-    ?(memory=0)
+    ?(timeout=1)
+    ?(memory=5_000_000)
     ?(file="")
     ?(f=fun _->None)
     cmd =
