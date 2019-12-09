@@ -114,8 +114,11 @@ let printbox_results (results:T.top_result) : unit =
   let box =
     let open PrintBox in
     Prover.Map_name.to_list map
-    |> List.map (fun (p,r) -> hlist [hpad 1 @@ text p.Prover.name; T.Analyze.to_printbox r])
-    |> vlist |> frame
+    |> List.map
+      (fun (p,r) -> frame @@ hlist [
+           center_hv @@ pad @@ text p.Prover.name;
+           T.Analyze.to_printbox r])
+    |> hlist ~bars:false ~pad:(hpad 1)
   in
   Printf.printf "%s\n%!" (PrintBox_text.to_string box);
   ()
