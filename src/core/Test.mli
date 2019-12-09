@@ -5,6 +5,7 @@
 
 type 'a or_error = ('a, string) CCResult.t
 
+module Db = Sqlite3_utils
 module MStr = Misc.Str_map
 module J = Misc.Json
 
@@ -179,6 +180,8 @@ module Top_result : sig
 
   val encode : t J.Encode.t
   val decode : t J.Decode.t
+
+  val to_db : Db.t -> t -> unit or_error
 end
 
 (** {2 Benchmark, within one Top Result} *)

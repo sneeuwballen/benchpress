@@ -261,6 +261,21 @@ module Prover_list = struct
     Term.(pure run $ Utils.definitions_term), Term.info ~doc "prover-list"
 end
 
+(** {2 Convert results to Sql} *)
+
+module Sql_res = struct
+  (* sub-command for showing results *)
+  let cmd =
+    let open Cmdliner in
+    let files =
+      Arg.(non_empty & pos_all string [] &
+           info [] ~docv:"FILES" ~doc:"files to read")
+    in
+    let doc = "convert result(s) into sqlite files" in
+    Term.(pure Sql_res.run $ Utils.definitions_term $ files),
+    Term.info ~doc "sql-convert"
+end
+
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -287,6 +302,7 @@ let parse_opt () =
     Check_config.cmd;
     Prover_show.cmd;
     Prover_list.cmd;
+    Sql_res.cmd;
   ]
 
 let () =

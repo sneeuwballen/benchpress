@@ -2,6 +2,7 @@
 
 (** {1 Event Stored on Disk or Transmitted on Network} *)
 
+module Db = Sqlite3_utils
 module J = Misc.Json
 
 type 'a or_error = ('a, string) CCResult.t
@@ -74,3 +75,7 @@ val decode_result : 'a J.Decode.t -> 'a result J.Decode.t
 
 val encode : t J.Encode.t
 val decode : t J.Decode.t
+
+val prepare_db : Db.t -> unit or_error
+val to_db_prover_result : Db.t -> Prover.t result -> unit or_error
+val to_db: Db.t -> t -> unit or_error

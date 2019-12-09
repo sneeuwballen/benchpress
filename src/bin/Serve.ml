@@ -20,7 +20,7 @@ let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 (* show individual files *)
 let handle_show server : unit =
   H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
-      match Show.load_file file with
+      match Utils.load_file file with
       | Error e ->
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
@@ -65,7 +65,7 @@ let handle_compare server : unit =
         let files =
           names
           |> List.map
-            (fun s -> match Show.load_file s with
+            (fun s -> match Utils.load_file s with
                | Error e -> H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
                | Ok x -> s, x)
         in

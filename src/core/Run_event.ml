@@ -4,6 +4,7 @@
 
 module E = CCResult
 module J = Misc.Json
+module Db = Sqlite3_utils
 
 type 'a or_error = ('a, string) CCResult.t
 
@@ -139,3 +140,50 @@ let decode =
   | "prover" -> (list1 (decode_result Prover.decode) >|= fun r -> Prover_run r)
   | "checker" -> (list1 (decode_result @@ succeed ()) >|= fun r -> Checker_run r)
   | _ -> fail "expected prover/checker run event"
+
+let prepare_db (db:Db.t) : unit or_error =
+  Db.exec0 db
+    {|create table if not exists
+      prover_res (
+        prover text not null,
+        file text not null,
+        res text not null,
+        timeout int, 
+        errcode int not null,
+        stdout blob,
+        stderr blob,
+        rtime float,
+        utime float,
+        stime float,
+        unique (prover, file) on conflict fail
+      );
+    create index if not exists pr_prover on prover_res(prover);
+    create index if not exists pr_file on prover_res(file);
+    |}
+  |> Misc.db_err ~ctx:"run-event.prepare-db"
+
+let to_db_prover_result (db:Db.t) (self:Prover.t result) : _ or_error =
+  let i64 = Int64.of_int in
+  Db.exec_raw_args ~f:Db.Cursor.ignore db
+    {|insert into prover_res
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    |}
+    Db.Data.([|
+        TEXT self.program.Prover.name;
+        TEXT self.problem.Problem.name;
+        TEXT (analyze_p self |> Res.to_string);
+        INT (i64 self.timeout);
+        INT (i64 self.raw.errcode);
+        BLOB self.raw.stdout;
+        BLOB self.raw.stderr;
+        FLOAT self.raw.rtime;
+        FLOAT self.raw.utime;
+        FLOAT self.raw.stime;
+      |])
+  |> Misc.db_err ~ctx:"run-event.to-db-prover-result"
+
+let to_db db self : _ or_error =
+  match self with
+  | Prover_run r -> to_db_prover_result db r
+  | Checker_run _ ->
+    Error "not implemented: conversion of checker res to DB" (* TODO *)

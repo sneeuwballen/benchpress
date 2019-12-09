@@ -133,3 +133,31 @@ let list_entries data_dir =
         Some (s,size)
       | _ -> None)
   |> List.sort (fun x y->CCOrd.compare y x)
+
+(** Load file by name *)
+let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
+  try
+    let dir = Filename.concat (Xdg.data_dir()) "logitest" in
+    let file = Filename.concat dir f in
+    if not @@ Sys.file_exists file then (
+      Error ("cannot find file " ^ f)
+    ) else (
+      if Filename.check_suffix f ".gz" then (
+        (* use [zcat] to decompress *)
+        let v =
+          CCUnix.with_process_in (Printf.sprintf "zcat '%s'" file)
+            ~f:Misc.Json.J.from_channel in
+        (* Format.printf "%a@." (Misc.Json.J.pretty_print ?std:None) v; *)
+        Misc.Json.Decode.decode_value T.Top_result.decode v
+        |> E.map_err Misc.Json.Decode.string_of_error
+        |> E.map (fun r -> file, r)
+      ) else (
+        Misc.Json.Decode.decode_file T.Top_result.decode file
+        |> E.map_err Misc.Json.Decode.string_of_error
+        |> E.map (fun r -> file, r)
+      )
+    )
+  with e ->
+    E.of_exn_trace e
+
+let load_file f = E.map snd @@ load_file_full f

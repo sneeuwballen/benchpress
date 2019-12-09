@@ -3,6 +3,7 @@
 module Fmt = CCFormat
 module Str_map = CCMap.Make(String)
 module E = CCResult
+module Db = Sqlite3_utils
 type 'a or_error = ('a, string) E.t
 
 let _lock = CCLock.create()
@@ -106,6 +107,29 @@ let mk_abs_path (s:string) : string =
 let guess_cpu_count () =
   try get_cmd_out "grep -c processor /proc/cpuinfo" |> int_of_string
   with _ -> 2
+
+(** A scope for {!err_with} *)
+type 'a try_scope = {
+  unwrap: 'x. ('x,'a) result -> 'x;
+  unwrap_with: 'x 'b. ('b -> 'a) -> ('x,'b) result -> 'x;
+}
+
+(** Open a local block with an [unwrap] to unwrap results *)
+let err_with (type a) ?(map_err=fun e -> e) f : (_,a) result =
+  let module E = struct exception Local of a end in
+  let scope = {
+    unwrap=(function Ok x -> x | Error e -> raise (E.Local e));
+    unwrap_with=(fun ferr -> function Ok x -> x | Error e -> raise (E.Local (ferr e)));
+  } in
+  try
+    let res = f scope in
+    Ok res
+  with E.Local e ->
+    Error (map_err e)
+
+(** Turn the DB error into a normal string error *)
+let db_err ~ctx (x:(_,Db.Rc.t) result) : _ result =
+  E.map_err (fun e -> Printf.sprintf "DB error in %s: %s" ctx @@ Db.Rc.to_string e) x
 
 (** Parallel map *)
 module Par_map = struct

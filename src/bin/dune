@@ -2,5 +2,5 @@
  (name benchpress_bin)
  (public_name benchpress)
  (libraries benchpress containers cmdliner result toml olinq uuidm
-            tiny_httpd tyxml printbox.html)
- (flags :standard -warn-error -3-32 -safe-string -open Benchpress))
+            tiny_httpd tyxml printbox.html sqlite3_utils)
+ (flags :standard -warn-error -3-32 -safe-string))

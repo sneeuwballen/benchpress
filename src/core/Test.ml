@@ -6,6 +6,7 @@ module E = CCResult
 module MStr = Misc.Str_map
 module J = Misc.Json
 module PB = PrintBox
+module Db = Sqlite3_utils
 
 type result = Run_event.prover Run_event.result
 
@@ -684,6 +685,24 @@ module Top_result = struct
     let total_wall_time = CCOpt.get_or ~default:0. total_wall_time in
     field "events" (list Run_event.decode) >>= fun events ->
     succeed (make ~timestamp ~total_wall_time events)
+
+  let db_prepare (db:Db.t) : _ or_error =
+    Db.exec0 db {|
+        create table if not exists
+        meta(
+          key text not null unique,
+          value text
+          );
+        create index if not exists meta_k on meta(key);
+        |} |> Misc.db_err ~ctx:"top-res.db-prepare"
+
+  let to_db (db:Db.t) (self:t) : unit or_error =
+    Misc.err_with (fun scope ->
+        scope.unwrap @@ db_prepare db;
+        scope.unwrap @@ Run_event.prepare_db db;
+        Db.transact db (fun _ ->
+          List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
+        ())
 end
 
 (** {2 Benchmark, within one Top Result} *)
