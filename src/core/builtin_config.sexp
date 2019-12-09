@@ -3,6 +3,7 @@
 (prover
   (name smtlib-read-status)
   (cmd "grep :status $file")
+  (unknown ":status unknown")
   (sat ":status sat")
   (unsat ":status unsat"))
 
