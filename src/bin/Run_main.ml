@@ -89,6 +89,11 @@ let main ?j ?dyn ?timeout ?memory ?csv ?provers
     | Some task_name ->
       begin Definitions.find_task defs task_name >>= function
         | {Task.action=Action.Act_run_provers r;_} ->
+          (* convert paths and provers *)
+          E.map_l (Definitions.mk_subdir defs) paths >>= fun paths ->
+          E.map_l (Definitions.find_prover defs)
+            (CCOpt.get_or ~default:[] provers) >>= fun provers ->
+          let r = {r with provers=provers @ r.provers; dirs=paths @ r.dirs} in
           (* TODO: more general framework for running and reporting actions *)
           Ok r
           (* | _ -> E.fail_fprintf "cannot run task %a yet" Task.pp t *)

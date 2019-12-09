@@ -29,6 +29,8 @@ val add_stanza_l : Stanza.t list -> t -> t or_error
 
 val of_stanza_l : Stanza.t list -> t or_error
 
+val mk_subdir : t -> string -> Subdir.t or_error
+
 val mk_run_provers :
   ?j:int ->
   ?timeout:int ->
