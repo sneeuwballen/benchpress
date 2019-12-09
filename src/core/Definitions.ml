@@ -119,16 +119,16 @@ let find_task self name : Task.t or_error =
   | Some _ -> E.fail_fprintf "%S is not a task" name
   | _ -> E.fail_fprintf "task %S is not defined" name
 
-let norm_path ?cur_dir s =
+let norm_path ~cur_dir s =
   let f s = match s with
-    | "cur_dir" -> cur_dir
+    | "cur_dir" -> Some cur_dir
     | _ -> None
   in
   s |> Xdg.interpolate_home ~f |> Misc.mk_abs_path
 
 (* find a known directory for [path] *)
 let mk_subdir self path : Subdir.t or_error =
-  let path = norm_path path in
+  let path = norm_path ~cur_dir:self.cur_dir path in
   (* helper *)
   let is_parent (dir:string) (f:string) : bool =
     let fd_dir = (Unix.stat dir).Unix.st_dev in
