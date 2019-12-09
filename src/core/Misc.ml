@@ -90,7 +90,7 @@ let human_size (x:int) : string =
 
 (* ensure [s] is not too long *)
 let truncate_left (n:int) (s:string) : string =
-  if String.length s > n then "…" ^ String.sub s 1 (n-1) else s
+  if String.length s > n then "…" ^ String.sub s (String.length s-n+1) (n-1) else s
 let truncate_right (n:int) (s:string) : string =
   if String.length s > n then String.sub s 0 (n-1) ^ "…" else s
       
