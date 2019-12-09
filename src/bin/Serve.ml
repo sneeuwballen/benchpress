@@ -43,7 +43,7 @@ let handle_show server : unit =
                   (fun (n,p) -> [h3 [txt ("bad for " ^ n)]; div [pb_html p]])
                   bad;
                 [h3 [txt "full results"];
-                 div [pb_html full_table]];
+                 details (summary [txt "table"]) [pb_html full_table]];
             ])
         in
         H.Response.make_string (Ok (string_of_html h))
