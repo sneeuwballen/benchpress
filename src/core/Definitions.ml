@@ -157,18 +157,18 @@ let rec conv_expect self = function
     find_prover self prover >|= fun p -> Dir.E_program {prover=p}
   | Stanza.E_try l -> E.map_l (conv_expect self) l >|= fun l -> Dir.E_try l
 
-let mk_run_provers ?j ?timeout ?memory ~paths ~provers (self:t) : _ or_error =
+let mk_run_provers ?j ?timeout ?memory ?pattern ~paths ~provers (self:t) : _ or_error =
   E.map_l (find_prover self) provers >>= fun provers ->
   E.map_l (mk_subdir self) paths >>= fun dirs ->
   let act={
-    Action.j; timeout; memory; dirs; provers;
+    Action.j; timeout; memory; dirs; provers; pattern;
   } in
   Ok act
 
 let mk_action (self:t) (a:Stanza.action) : _ or_error =
   match a with
-  | Stanza.A_run_provers {provers; memory; dirs; timeout } ->
-    mk_run_provers ?timeout ?memory ~paths:dirs ~provers self
+  | Stanza.A_run_provers {provers; memory; dirs; timeout; pattern } ->
+    mk_run_provers ?timeout ?memory ?pattern ~paths:dirs ~provers self
     >|= fun a -> Action.Act_run_provers a
 
 let add_stanza (st:Stanza.t) self : t or_error =

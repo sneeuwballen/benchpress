@@ -33,6 +33,7 @@ val mk_run_provers :
   ?j:int ->
   ?timeout:int ->
   ?memory:int ->
+  ?pattern:string ->
   paths:path list ->
   provers:string list ->
   t ->

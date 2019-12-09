@@ -26,6 +26,7 @@ type regex = string
 type action =
   | A_run_provers of {
     dirs: string list; (* list of directories to examine *)
+    pattern: regex option;
     provers: string list;
     timeout: int option;
     memory: int option;
@@ -79,10 +80,11 @@ let pp_version_field out =
 let pp_action out =
   let open Misc.Pp in
   function
-  | A_run_provers {dirs;provers;timeout;memory} ->
-    Fmt.fprintf out "(@[<v1>run_provers%a%a%a%a@])"
+  | A_run_provers {dirs;provers;timeout;memory;pattern;} ->
+    Fmt.fprintf out "(@[<v1>run_provers%a%a%a%a%a@])"
       (pp_f "dirs" (pp_l pp_str)) dirs
       (pp_f "provers" (pp_l pp_str)) provers
+      (pp_opt "pattern" pp_regex) pattern
       (pp_opt "timeout" Fmt.int) timeout
       (pp_opt "memory" Fmt.int) memory
 
@@ -190,9 +192,10 @@ let dec_action : action Se.D.decoder =
   | "run_provers" ->
     field "dirs" (list_or_singleton string) >>= fun dirs ->
     field "provers" (list_or_singleton string) >>= fun provers ->
+    field_opt "pattern" dec_regex >>= fun pattern ->
     field_opt "timeout" int >>= fun timeout ->
     field_opt "memory" int >>= fun memory ->
-    succeed @@ A_run_provers {dirs;provers;timeout;memory}
+    succeed @@ A_run_provers {dirs;provers;timeout;memory;pattern}
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
   

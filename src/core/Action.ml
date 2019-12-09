@@ -11,6 +11,7 @@ type run_provers = {
   j: int option; (* number of concurrent processes *)
   dirs: Subdir.t list; (* list of directories to examine *)
   provers: Prover.t list;
+  pattern: string option;
   timeout: int option;
   memory: int option;
 }
@@ -21,10 +22,11 @@ type t =
 
 let pp_run_provers out (self:run_provers) =
   let open Misc.Pp in
-  let {dirs; provers; timeout; memory; j; } = self in
-  Fmt.fprintf out "(@[<v1>run_provers%a%a%a%a%a@])"
+  let {dirs; provers; timeout; memory; j; pattern; } = self in
+  Fmt.fprintf out "(@[<v1>run_provers%a%a%a%a%a%a@])"
     (pp_f "dirs" (pp_l Subdir.pp)) dirs
     (pp_f "provers" (pp_l Prover.pp_name)) provers
+    (pp_opt "pattern" pp_regex) pattern
     (pp_opt "timeout" Fmt.int) timeout
     (pp_opt "memory" Fmt.int) memory
     (pp_opt "j" Fmt.int) j
@@ -79,16 +81,18 @@ end = struct
     memory: int;
   }
 
+  let filter_regex_ = function
+    | None -> (fun _ -> true)
+    | Some re ->
+      let re = Re.Perl.compile_pat re in
+      (fun path -> Re.execp re path)
+
   (* turn a subdir into a list of problems *)
-  let expand_subdir (s:Subdir.t) : Problem.t list or_error =
+  let expand_subdir ?pattern (s:Subdir.t) : Problem.t list or_error =
     try
-      let filter =
-        match s.Subdir.inside.pattern with
-        | None -> (fun _ -> true)
-        | Some re ->
-          let re = Re.Perl.compile_pat re in
-          (fun path -> Re.execp re path)
-      in
+      let filter1 = filter_regex_ s.Subdir.inside.pattern in
+      let filter2 = filter_regex_ pattern in
+      let filter s = filter1 s && filter2 s in
       CCIO.File.walk_l s.Subdir.path
       |> CCList.filter_map
         (fun (kind,f) -> match kind with
