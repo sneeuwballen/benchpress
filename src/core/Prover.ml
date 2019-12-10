@@ -179,7 +179,15 @@ let decode =
 let run_proc cmd =
   let start = Unix.gettimeofday () in
   (* call process and block *)
-  let p = CCUnix.call_full "%s" cmd in
+  let p = try CCUnix.call_full "%s" cmd
+    with e ->
+      object
+        method stdout=""
+        method stderr="<process died: " ^ Printexc.to_string e
+        method errcode=1
+        method status = Unix.WEXITED 1
+      end
+  in
   let errcode = p#errcode in
   Misc.Debug.debugf 5
     (fun k->k "(@[prover.run.done errcode: %d@ cmd %a@]" errcode Misc.Pp.pp_str cmd);
