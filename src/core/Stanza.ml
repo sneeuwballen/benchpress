@@ -267,6 +267,7 @@ let parse_files ?(builtin=true) (files:string list) : t list or_error =
     List.map
       (fun file ->
          Se.cur_file_ := file; (* issue in CCSexp's locations *)
+         let file = Misc.mk_abs_path file in
          match Se.parse_file_list file with
          | Error e -> wrapf "cannot parse %s:@,%s" file e
          | Ok l -> St_enter_file file :: decode_sexp_l l)
