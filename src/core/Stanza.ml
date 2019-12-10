@@ -81,7 +81,7 @@ let pp_action out =
   let open Misc.Pp in
   function
   | A_run_provers {dirs;provers;timeout;memory;pattern;} ->
-    Fmt.fprintf out "(@[<v1>run_provers%a%a%a%a%a@])"
+    Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a@])"
       (pp_f "dirs" (pp_l pp_str)) dirs
       (pp_f "provers" (pp_l pp_str)) provers
       (pp_opt "pattern" pp_regex) pattern
@@ -93,7 +93,7 @@ let pp out =
   function
   | St_enter_file f -> Fmt.fprintf out "(@[enter-file@ %a@])" pp_str f
   | St_dir {path; expect; pattern; } ->
-    Fmt.fprintf out "(@[<v1>dir%a%a%a@])"
+    Fmt.fprintf out "(@[<v>dir%a%a%a@])"
       (pp_f "path" Fmt.string) path
       (pp_opt "expect" pp_expect) expect
       (pp_opt "pattern" pp_regex) pattern
@@ -101,7 +101,7 @@ let pp out =
       name; cmd; version; unsat; sat; unknown; timeout; memory;
       binary=_; binary_deps=_;
     } ->
-    Fmt.fprintf out "(@[<v1>prover%a%a%a%a%a%a%a%a@])"
+    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a@])"
       (pp_f "name" pp_str) name
       (pp_f "cmd" pp_str) cmd
       (pp_opt "version" pp_version_field) version
@@ -111,7 +111,7 @@ let pp out =
       (pp_opt "timeout" pp_regex) timeout
       (pp_opt "memory" pp_regex) memory
   | St_task {name; synopsis; action;} ->
-    Fmt.fprintf out "(@[<v1>task%a%a%a@])"
+    Fmt.fprintf out "(@[<v>task%a%a%a@])"
       (pp_f "name" pp_str) name
       (pp_opt "synopsis" pp_str) synopsis
       (pp_f "action" pp_action) action
