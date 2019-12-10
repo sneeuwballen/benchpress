@@ -178,6 +178,33 @@ module Serve = struct
     Term.(pure aux $ debug $ port $ pure () ), Term.info ~doc "serve"
 end
 
+(** {2 Show directories} *)
+
+module Dir = struct
+  type which = Config | State
+
+  let which_conv = Cmdliner.Arg.(enum ["config", Config; "state", State])
+
+  let run c =
+    let (//) = Filename.concat in
+    Format.printf "%s@."
+      (match c with
+       | Config -> Xdg.config_dir() // "logitest"
+       | State -> Xdg.data_dir() // "logitest");
+    Ok ()
+
+  (* sub-command for showing results *)
+  let cmd =
+    let open Cmdliner in
+    let which =
+      Arg.(required & pos 0 (some which_conv) None & info ~doc:"directory to list (config|state)" [])
+    in
+    let doc = "show main directories" in
+    Term.(pure run $ which),
+    Term.info ~doc "dir"
+
+end
+
 (** {2 Check config} *)
 
 module Check_config = struct
@@ -252,6 +279,7 @@ let parse_opt () =
     Term.info ~version:"dev" ~man ~doc "logitest"
   in
   Cmdliner.Term.eval_choice help [
+    Dir.cmd;
     Run.cmd;
     Sample.cmd;
     List_files.cmd;
