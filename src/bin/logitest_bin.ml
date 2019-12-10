@@ -41,7 +41,7 @@ module Run = struct
     and meta =
       Arg.(value & opt string "" & info ["meta"] ~doc:"additional metadata to save")
     and doc =
-      "test a program on every file in a directory"
+      "run a task, such as running solvers on directories of problem files"
     and csv =
       Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
     and paths =
@@ -79,7 +79,7 @@ module List_files = struct
     let abs =
       Arg.(value & opt ~vopt:true bool false & info ["abs"] ~doc:"show absolute paths")
     in
-    let doc = "list benchmark files" in
+    let doc = "list benchmark result files" in
     let aux abs () = main ~abs () in
     Term.(pure aux $ abs $ pure () ), Term.info ~doc "list-files"
 end
@@ -106,7 +106,7 @@ module Show = struct
       if no_color then CCFormat.set_color_default false;
       Show.main ~check ~bad ?csv ?summary files
     in
-    let doc = "show benchmark results" in
+    let doc = "show benchmark results (see `list-files`)" in
     Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ files),
     Term.info ~doc "show"
 end
@@ -158,7 +158,7 @@ module Sample = struct
            info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
     and n =
       Arg.(value & opt int 1 & info ["n"] ~docv:"N" ~doc:"number of files to sample")
-    and doc = "sample N files in the directories" in
+    and doc = "sample N files in the given directories" in
     Term.(pure aux $ n $ dir), Term.info ~doc "sample"
 end
 
@@ -173,7 +173,7 @@ module Serve = struct
     and debug =
       Arg.(value & opt int 0 & info ["d"; "debug"] ~doc:"enable debug")
     in
-    let doc = "server on given port" in
+    let doc = "serve embedded web UI on given port" in
     let aux debug port () = Serve.main ~debug ?port () in
     Term.(pure aux $ debug $ port $ pure () ), Term.info ~doc "serve"
 end
@@ -199,7 +199,7 @@ module Dir = struct
     let which =
       Arg.(required & pos 0 (some which_conv) None & info ~doc:"directory to list (config|state)" [])
     in
-    let doc = "show main directories" in
+    let doc = "show directories where logitest stores its state (config|state)" in
     Term.(pure run $ which),
     Term.info ~doc "dir"
 
@@ -227,7 +227,7 @@ module Check_config = struct
     and with_default =
       Arg.(value & opt bool false & info ["d"; "default"] ~doc:"combine with the default config file(s)")
     in
-    let doc = "check configuration file(s)" in
+    let doc = "parse and print configuration file(s)" in
     let aux with_default files () = run with_default files in
     Term.(pure aux $ with_default $ files $ pure () ), Term.info ~doc "check-config"
 end
@@ -243,7 +243,7 @@ module Prover_show = struct
 
   let cmd =
     let open Cmdliner in
-    let doc = "show prover(s)" in
+    let doc = "show definitions of given prover(s)" in
     let names = Arg.(value & pos_all string [] & info []) in
     Term.(pure run $ Utils.definitions_term $ names ), Term.info ~doc "prover-show"
 end
@@ -258,7 +258,7 @@ module Prover_list = struct
 
   let cmd =
     let open Cmdliner in
-    let doc = "show prover(s)" in
+    let doc = "list prover(s) defined in config" in
     Term.(pure run $ Utils.definitions_term), Term.info ~doc "prover-list"
 end
 
@@ -267,11 +267,11 @@ end
 let parse_opt () =
   let open Cmdliner in
   let help =
-    let doc = "Offers various utilities to test automated theorem provers." in
+    let doc = "Tool to test logic solver and automatic theorem provers." in
     let man = [
       `S "DESCRIPTION";
-      `P "$(b,logitest) is a set of utils to run tests and compare different \
-          results obtained with distinct versions of the same tool";
+      `P "$(b,logitest) is a tool to run tests and compare different \
+          results obtained with distinct tools or versions of the same tool";
       `S "COMMANDS";
       `S "OPTIONS"; (* TODO: explain config file *)
     ] in
