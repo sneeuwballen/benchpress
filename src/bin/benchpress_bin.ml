@@ -263,7 +263,7 @@ end
 
 (** {2 Convert results to Sql} *)
 
-module Sql_res = struct
+module Sql_convert = struct
   (* sub-command for showing results *)
   let cmd =
     let open Cmdliner in
@@ -302,7 +302,7 @@ let parse_opt () =
     Check_config.cmd;
     Prover_show.cmd;
     Prover_list.cmd;
-    Sql_res.cmd;
+    Sql_convert.cmd;
   ]
 
 let () =
