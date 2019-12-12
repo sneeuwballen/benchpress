@@ -715,6 +715,9 @@ module Top_result = struct
         Db.transact db (fun _ ->
             List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
         ())
+
+  let of_db (db:Db.t) : t or_error =
+    assert false
 end
 
 (** {2 Benchmark, within one Top Result} *)

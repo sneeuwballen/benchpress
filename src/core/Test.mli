@@ -185,6 +185,8 @@ module Top_result : sig
   val decode : t J.Decode.t
 
   val to_db : Db.t -> t -> unit or_error
+
+  val of_db : Db.t -> t or_error
 end
 
 (** {2 Benchmark, within one Top Result} *)

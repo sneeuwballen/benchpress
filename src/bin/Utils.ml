@@ -159,7 +159,8 @@ let list_entries data_dir =
     (function
       | (`File, s)
         when (Filename.check_suffix s ".json.gz" ||
-              Filename.check_suffix s ".json") ->
+              Filename.check_suffix s ".json" ||
+              Filename.check_suffix s ".sqlite") ->
         let size = (Unix.stat s).Unix.st_size in
         Some (s,size)
       | _ -> None)
@@ -173,7 +174,8 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
     if not @@ Sys.file_exists file then (
       Error ("cannot find file " ^ f)
     ) else (
-      if Filename.check_suffix f ".gz" then (
+      if Filename.check_suffix f ".sqlite" then (
+      ) else if Filename.check_suffix f ".gz" then (
         (* use [zcat] to decompress *)
         let v =
           CCUnix.with_process_in (Printf.sprintf "zcat '%s'" file)

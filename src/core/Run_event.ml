@@ -143,6 +143,8 @@ let decode =
 
 (* main schema for results! *)
 let prepare_db (db:Db.t) : unit or_error =
+  Prover.prepare_db db;
+  Problem.prepare_db db;
   Db.exec0 db
     {|create table if not exists
       prover_res (
@@ -160,6 +162,10 @@ let prepare_db (db:Db.t) : unit or_error =
       );
     create index if not exists pr_prover on prover_res(prover);
     create index if not exists pr_file on prover_res(file);
+    create table if not exists prover (
+      name text not null;
+
+    )
     |}
   |> Misc.db_err ~ctx:"run-event.prepare-db"
 
@@ -188,3 +194,11 @@ let to_db db self : _ or_error =
   | Prover_run r -> to_db_prover_result db r
   | Checker_run _ ->
     Error "not implemented: conversion of checker res to DB" (* TODO *)
+
+let of_db db : t list or_error =
+  Db.exec_no_params db {|
+
+    |}
+    ~ty:Db.Ty.(
+        p3 text text text @> p2 int int @> p2 blob blob @> p3 float float float,
+        (fun 
