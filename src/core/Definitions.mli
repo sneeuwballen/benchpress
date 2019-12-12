@@ -22,6 +22,7 @@ val all_provers : t -> Prover.t list
 
 val of_config : Config.t -> t or_error
 (** Get a list of supported provers from a config file. *)
+[@@ocaml.deprecated "use sexp stanzas"]
 
 val add_stanza : Stanza.t -> t -> t or_error
 

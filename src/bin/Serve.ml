@@ -52,7 +52,7 @@ let handle_show server : unit =
 let handle_compare server : unit =
   H.add_path_handler server ~meth:`POST "/compare" (fun req ->
       let body = H.Request.body req |> String.trim in
-      Misc.Debug.debugf 4 (fun k->k "/compare: body is %s" body);
+      Logs.debug (fun k->k "/compare: body is %s" body);
       let names =
         CCString.split_on_char '&' body
         |> CCList.filter_map
@@ -60,7 +60,7 @@ let handle_compare server : unit =
              | Some (name, "on") -> Some name
              | _ -> None)
       in
-      Misc.Debug.debugf 2 (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
+      Logs.debug (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
       if List.length names>=2 then (
         let files =
           names
@@ -129,13 +129,14 @@ let handle_root server data_dir : unit =
       H.Response.make_string (Ok (string_of_html h))
     )
 
-let main ~debug ?port () =
+let main ?port () =
   try
     let server = H.create ?port () in
-    if debug >0 then (
+    (* trick: see if debug level is active *)
+    Logs.debug (fun k ->
       H._enable_debug true;
-      Misc.Debug.set_level debug;
-    );
+      k "enable http debug"
+      );
     Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
     let data_dir = Filename.concat (Xdg.data_dir()) !Xdg.name_of_project in
     handle_root server data_dir;

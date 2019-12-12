@@ -61,7 +61,7 @@ end
 module List_files = struct
   let main ?(abs=false) () =
     try
-      let data_dir = Filename.concat (Xdg.data_dir()) "benchpress" in
+      let data_dir = Utils.data_dir() in
       let entries = Utils.list_entries data_dir in
       List.iter
         (fun (s,size) ->
@@ -170,10 +170,12 @@ module Serve = struct
     let port =
       Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
     and debug =
-      Arg.(value & opt int 0 & info ["d"; "debug"] ~doc:"enable debug")
+      Logs_cli.level ()
     in
     let doc = "serve embedded web UI on given port" in
-    let aux debug port () = Serve.main ~debug ?port () in
+    let aux debug port () =
+      Misc.setup_logs debug;
+      Serve.main ?port () in
     Term.(pure aux $ debug $ port $ pure () ), Term.info ~doc "serve"
 end
 
@@ -185,11 +187,10 @@ module Dir = struct
   let which_conv = Cmdliner.Arg.(enum ["config", Config; "state", State])
 
   let run c =
-    let (//) = Filename.concat in
     Format.printf "%s@."
       (match c with
-       | Config -> Xdg.config_dir() // ! Xdg.name_of_project
-       | State -> Xdg.data_dir() // ! Xdg.name_of_project);
+       | Config -> Utils.config_dir()
+       | State -> Utils.data_dir ());
     Ok ()
 
   (* sub-command for showing results *)
@@ -208,11 +209,11 @@ end
 
 module Check_config = struct
   let run with_default f =
-    let default_file = Utils.default_conf () in
+    let default_file = Utils.default_config () in
     let f =
       if f=[] then (
         if Sys.file_exists default_file then [default_file] else []
-      ) else if with_default && Sys.file_exists default_file then Utils.default_conf() :: f else f in
+      ) else if with_default && Sys.file_exists default_file then Utils.default_config() :: f else f in
     match Stanza.parse_files f with
     | Ok c ->
       Format.printf "@[<v>%a@]@." Stanza.pp_l c;

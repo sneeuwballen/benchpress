@@ -9,7 +9,7 @@ type job_res= Prover.t Run_event.result
 
 (* run one particular test *)
 let run_exn_ ~timeout ~memory prover pb =
-  Misc.Debug.debugf 2
+  Logs.info
     (fun k->k"running %-15s/%-30s (timeout %d)..."
         prover.Prover.name pb.Problem.name timeout);
   (* spawn process *)
@@ -17,7 +17,7 @@ let run_exn_ ~timeout ~memory prover pb =
   let result = 
     { Run_event.program = prover; timeout; problem = pb; raw; }
   in
-  Misc.Debug.debugf 4
+  Logs.debug
     (fun k->
        let open Proc_run_result in
        k "output for %s/%s: `%s`, `%s`, errcode %d"
@@ -32,7 +32,6 @@ let run ~timeout ~memory prover pb : _ E.t =
   with e -> E.of_exn_trace e
 
 let pp_result ~w_prover ~w_pb out (res:Test.result): unit =
-  let module F = CCFormat in
   let p_res = Run_event.analyze_p res in
   let pp_res out () : unit =
     let str = ""^^match Problem.compare_res res.Run_event.problem p_res with
@@ -47,7 +46,7 @@ let pp_result ~w_prover ~w_pb out (res:Test.result): unit =
   let prover = res.Run_event.program in
   let prover_name = Filename.basename prover.Prover.name in
   let pb_name = res.Run_event.problem.Problem.name in
-  Misc.Debug.debugf 3 (fun k->k "result for `%s` with %s: %s (%.1fs)"
+  Logs.info (fun k->k "result for `%s` with %s: %s (%.1fs)"
       prover_name pb_name (Res.to_string p_res) res.Run_event.raw.rtime);
   Format.fprintf out 
     "%-*s%-*s : %a (%.1fs)@."

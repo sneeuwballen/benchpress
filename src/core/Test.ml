@@ -691,17 +691,29 @@ module Top_result = struct
         create table if not exists
         meta(
           key text not null unique,
-          value text
+          value blob
           );
         create index if not exists meta_k on meta(key);
         |} |> Misc.db_err ~ctx:"top-res.db-prepare"
 
+  let add_meta (db:Db.t) (self:t) : unit or_error =
+    Db.exec_no_cursor db
+      "insert into meta values
+      ('timestamp', ?), ('total-wall-time', ?);"
+      ~ty:Db.Ty.(p2 blob blob)
+      (string_of_float self.timestamp)
+      (string_of_float self.total_wall_time)
+    |> Misc.db_err ~ctx:"inserting metadata"
+
   let to_db (db:Db.t) (self:t) : unit or_error =
+    Logs.info (fun k->k "dump top-result into DB");
     Misc.err_with (fun scope ->
         scope.unwrap @@ db_prepare db;
         scope.unwrap @@ Run_event.prepare_db db;
+        (* insert within one transaction, much faster *)
+        scope.unwrap @@ add_meta db self;
         Db.transact db (fun _ ->
-          List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
+            List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
         ())
 end
 

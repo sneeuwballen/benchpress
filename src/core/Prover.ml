@@ -4,6 +4,8 @@
 
 module Fmt = CCFormat
 
+let src_log = Logs.Src.create "prover"
+
 type version =
   | Tag of string
   | Git of {
@@ -112,7 +114,7 @@ module As_key = struct
 
   let compare p1 p2 =
     let c = String.compare p1.name p2.name in
-    if c<>0 then c else Pervasives.compare p1.version p2.version
+    if c<>0 then c else CCOrd.compare p1.version p2.version
 end
 
 module Map = CCMap.Make(As_key)
@@ -189,7 +191,7 @@ let run_proc cmd =
       end
   in
   let errcode = p#errcode in
-  Misc.Debug.debugf 5
+  Logs.debug ~src:src_log
     (fun k->k "(@[prover.run.done errcode: %d@ cmd %a@]" errcode Misc.Pp.pp_str cmd);
   (* Compute time used by the prover *)
   let rtime = Unix.gettimeofday () -. start in
@@ -197,12 +199,12 @@ let run_proc cmd =
   let stime = 0. in
   let stdout = p#stdout in
   let stderr = p#stderr in
-  Misc.Debug.debugf 10
+  Logs.debug ~src:src_log
     (fun k->k "stdout:\n%s\nstderr:\n%s" stdout stderr);
   { Proc_run_result. stdout; stderr; errcode; rtime; utime; stime; }
 
 let run ?env ~timeout ~memory ~file (self:t) : Proc_run_result.t =
-  Misc.Debug.debugf 5
+  Logs.debug ~src:src_log
     (fun k->k "(@[Prover.run %s timeout: %d, memory: %d@])" self.name timeout memory);
   (* limit time and memory ('v' is virtual memory, needed because 'm' ignored on linux) *)
   let memory' = memory * 1000 in

@@ -1,30 +1,33 @@
 module T = Test
 module E = CCResult
+module Db = Misc.Db
 
 type 'a or_error = ('a, string) E.t
 
-let default_conf () = 
-  let (//) = Filename.concat in
-  Xdg.config_dir() // !Xdg.name_of_project // "conf.sexp"
+let (//) = Filename.concat
+
+let data_dir () = Xdg.data_dir () // !(Xdg.name_of_project)
+let config_dir () = Xdg.config_dir () // !(Xdg.name_of_project)
+let default_config () = config_dir() // "conf.sexp"
 
 let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in
-  let aux config config_toml debug =
-    CCOpt.iter Misc.Debug.set_level debug;
+  let aux config config_toml logs_cmd =
+    Misc.setup_logs logs_cmd;
     let conf_files = match config with None -> [] | Some c -> [c] in
     let conf_files =
-      let default_conf = default_conf () in
+      let default_conf = default_config () in
       (* always add default config file if it exists *)
       if Sys.file_exists (Xdg.interpolate_home default_conf)
       then default_conf :: conf_files else conf_files
     in
     let conf_files = List.map Xdg.interpolate_home conf_files in
     let toml_files = match config_toml with None -> [] | Some c -> [c] in
-    Misc.Debug.debugf 1 (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
+    Logs.info (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
     begin match Stanza.parse_files conf_files, Config.parse_files toml_files with
       | Ok x, Ok y ->
         (* combine configs *)
-        Misc.Debug.debugf 4 (fun k->k "combine configs…");
+        Logs.debug (fun k->k "combine configs…");
         begin match E.(
           Definitions.of_config y >>= fun defs ->
           Definitions.add_stanza_l x defs
@@ -42,8 +45,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
     Arg.(value & opt (some string) None &
          info ["c"; "config"] ~doc:"configuration file (sexp)")
   and debug =
-    let doc = "Enable debug (verbose) output" in
-    Arg.(value & opt (some int) None & info ["d"; "debug"] ~doc)
+    Logs_cli.level ()
   in
   Term.(ret (pure aux $ arg $ arg_toml $ debug))
 
@@ -52,7 +54,7 @@ let dump_csv ~csv results : unit =
   begin match csv with
     | None -> ()
     | Some file ->
-      Misc.Debug.debugf 1 (fun k->k "write results in CSV to file `%s`" file);
+      Logs.app (fun k->k "write results in CSV to file `%s`" file);
       T.Top_result.to_csv_file file results;
       (try ignore (Sys.command (Printf.sprintf "gzip -f '%s'" file):int) with _ -> ())
   end
@@ -80,7 +82,7 @@ let dump_results_json ~timestamp results : unit =
     (try Unix.mkdir data_dir 0o744 with _ -> ());
     Filename.concat data_dir filename
   in
-  Misc.Debug.debugf 1 (fun k->k "write results in json to file `%s`" dump_file);
+  Logs.app (fun k->k "write results in json to file `%s`" dump_file);
   (try
     CCIO.with_out ~flags:[Open_creat; Open_text] dump_file
       (fun oc ->
@@ -91,6 +93,35 @@ let dump_results_json ~timestamp results : unit =
    with e ->
      Printf.eprintf "error when saving to %s: %s\n%!"
        dump_file (Printexc.to_string e);
+  );
+  ()
+[@@ocaml.deprecated "use sqlite instead"]
+
+let dump_results_sqlite results : unit =
+  (* save results *)
+  let dump_file =
+    (* FIXME: results should have their own UUID already *)
+    let filename =
+      Printf.sprintf "res-%s-%s.sqlite"
+        (ISO8601.Permissive.string_of_datetime_basic results.Test.timestamp)
+        (Uuidm.v4_gen (Random.State.make_self_init()) () |> Uuidm.to_string)
+    in
+    let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
+    (try Unix.mkdir data_dir 0o744 with _ -> ());
+    Filename.concat data_dir filename
+  in
+  Logs.app (fun k->k "write results into sqlite DB `%s`" dump_file);
+  (try
+     match Db.with_db dump_file
+       (fun db -> Test.Top_result.to_db db results)
+     with
+     | Ok () -> ()
+     | Error e ->
+       Logs.err (fun k->k"error when saving to %s:@ %s" dump_file e);
+   with e ->
+     Logs.err (fun k->k"error when saving to %s:@ %s"
+       dump_file (Printexc.to_string e));
+     exit 1
   );
   ()
 
@@ -137,7 +168,7 @@ let list_entries data_dir =
 (** Load file by name *)
 let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
   try
-    let dir = Filename.concat (Xdg.data_dir()) "logitest" in
+    let dir = Filename.concat (Xdg.data_dir()) !(Xdg.name_of_project) in
     let file = Filename.concat dir f in
     if not @@ Sys.file_exists file then (
       Error ("cannot find file " ^ f)

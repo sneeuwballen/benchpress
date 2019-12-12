@@ -11,27 +11,11 @@ let _lock = CCLock.create()
 let reset_line = "\x1b[2K\r"
 let synchronized f = CCLock.with_lock _lock f
 
-module Debug : sig
-  val set_level : int -> unit
-
-  val debugf : int -> ((('a, Format.formatter, unit, unit) format4 -> 'a) -> unit) -> unit
-  val debug : int -> string -> unit
-end = struct
-  let lev_ = ref 0
-  let set_level = (:=) lev_
-
-  let debugf l k =
-    if l <= !lev_ then (
-      let out = Format.std_formatter in
-      synchronized
-        (fun () ->
-           Format.fprintf out "[%d] " l;
-           k (Format.kfprintf
-               (fun fmt -> Format.fprintf fmt "@.") out))
-    )
-
-  let debug l msg = debugf l (fun k->k "%s" msg)
-end
+(** Setup the logging infra *)
+let setup_logs (lvl:Logs.level option) : unit =
+  Logs.set_reporter (Logs.format_reporter ());
+  Logs.set_level ~all:true lvl;
+  ()
 
 let pp_list ?(sep=" ") f out l =
   let sep out () = Fmt.fprintf out "%s@," sep in
@@ -96,7 +80,7 @@ let truncate_right (n:int) (s:string) : string =
   if String.length s > n then String.sub s 0 (n-1) ^ "…" else s
       
 let get_cmd_out cmd =
-  Debug.debugf 10 (fun k->k "get-cmd-out %S" cmd);
+  Logs.debug (fun k->k "get-cmd-out %S" cmd);
   CCUnix.with_process_in cmd
     ~f:(fun ic -> CCIO.read_all ic |> String.trim)
 
@@ -143,7 +127,7 @@ module Par_map = struct
     let f_with_sem x =
       CCSemaphore.with_acquire ~n:1 sem ~f:(fun () -> f x)
     in
-    Debug.debugf 5 (fun k->k "par-map: create pool j=%d" j);
+    Logs.debug (fun k->k "par-map: create pool j=%d" j);
     let module P = CCPool.Make(struct
         let max_size = j
       end) in
@@ -152,7 +136,7 @@ module Par_map = struct
       |> P.Fut.sequence_l
       |> P.Fut.get
     in
-    Debug.debugf 5 (fun k->k "par-map: stop pool");
+    Logs.debug (fun k->k "par-map: stop pool");
     P.stop();
     res
 end

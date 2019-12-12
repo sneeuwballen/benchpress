@@ -3,7 +3,7 @@
  (public_name benchpress)
  (wrapped true)
  (libraries containers containers.unix containers.thread containers.sexp re
-   re.perl csv cmdliner result toml olinq iter decoders printbox yojson
+   re.perl csv cmdliner result toml olinq iter decoders printbox yojson logs
    decoders-yojson sqlite3 sqlite3_utils)
  (flags :standard -warn-error -3-32-50 -safe-string))
 

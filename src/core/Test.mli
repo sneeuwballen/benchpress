@@ -94,6 +94,7 @@ end
     Main result of testing: a snapshot of the work done, + the analysis
     per prover *)
 
+(* TODO: this should contain a UUID *)
 type top_result = private {
   timestamp: float; (* timestamp *)
   events: Run_event.t list;
@@ -179,6 +180,8 @@ module Top_result : sig
   (** Write as CSV into given file *)
 
   val encode : t J.Encode.t
+  [@@ocaml.deprecated "use sqlite instead"]
+
   val decode : t J.Decode.t
 
   val to_db : Db.t -> t -> unit or_error

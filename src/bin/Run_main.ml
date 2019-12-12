@@ -71,7 +71,7 @@ let execute_run_prover_action
 let main ?j ?dyn ?timeout ?memory ?csv ?provers
     ?meta:_ ?summary ?task ?dir_file (defs:Definitions.t) paths () =
   let open E.Infix in
-  Misc.Debug.debugf 2
+  Logs.info
     (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
   let timestamp = Unix.gettimeofday() in
   let notify = Notify.make defs in
@@ -108,7 +108,7 @@ let main ?j ?dyn ?timeout ?memory ?csv ?provers
   >>= fun (results:T.Top_result.t) ->
   Utils.dump_csv ~csv results;
   Utils.dump_summary ~summary results;
-  Utils.dump_results_json ~timestamp results;
+  Utils.dump_results_sqlite results;
   (* now fail if results were bad *)
   let r = Utils.check_res notify results in
   Notify.sync notify;

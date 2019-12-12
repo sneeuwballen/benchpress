@@ -7,7 +7,7 @@ module Fmt = CCFormat
 module Str_map = Misc.Str_map
 
 type path = string
-type 'a or_error = ('a, string) Result.result
+type 'a or_error = ('a, string) result
 
 open E.Infix
 
@@ -143,7 +143,7 @@ let mk_subdir self path : Subdir.t or_error =
   in
   CCList.find_map
     (fun dir ->
-       Misc.Debug.debugf 3 (fun k->k"check prefix dir=%S for %S" dir.Dir.path path);
+       Logs.debug (fun k->k"check prefix dir=%S for %S" dir.Dir.path path);
        if is_parent dir.Dir.path path
        then Some {Subdir.path; inside=dir}
        else None)
@@ -171,8 +171,9 @@ let mk_action (self:t) (a:Stanza.action) : _ or_error =
     mk_run_provers ?timeout ?memory ?pattern ~paths:dirs ~provers self
     >|= fun a -> Action.Act_run_provers a
 
+(* conversion from stanzas *)
 let add_stanza (st:Stanza.t) self : t or_error =
-  Misc.Debug.debugf 5 (fun k->k "add-stanza %a" Stanza.pp st);
+  Logs.info (fun k->k "add-stanza %a" Stanza.pp st);
   let open Stanza in
   match st with
   | St_enter_file file ->

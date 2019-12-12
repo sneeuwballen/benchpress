@@ -17,6 +17,7 @@ depends: [
     "csv"
     "cmdliner"
     "iter" { >= "1.0" } # TODO: remove
+    "logs"
     "uuidm"
     "sqlite3"
     "sqlite3_utils" { >= "0.1" & < "0.2" }

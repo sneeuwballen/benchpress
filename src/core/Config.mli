@@ -4,7 +4,7 @@
 
 [@@@ocaml.deprecated "use sexp stanzas"]
 
-type 'a or_error = ('a, string) Result.result
+type 'a or_error = ('a, string) result
 type file = string
 
 type t

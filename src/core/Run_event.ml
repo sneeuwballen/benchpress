@@ -141,6 +141,7 @@ let decode =
   | "checker" -> (list1 (decode_result @@ succeed ()) >|= fun r -> Checker_run r)
   | _ -> fail "expected prover/checker run event"
 
+(* main schema for results! *)
 let prepare_db (db:Db.t) : unit or_error =
   Db.exec0 db
     {|create table if not exists
