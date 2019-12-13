@@ -31,12 +31,6 @@ let assoc_or def x l =
   try List.assoc x l
   with Not_found -> def
 
-let encode self =
-  let open J.Encode in
-  match self with
-  | Prover_run r -> list value [string "prover"; Run_result.encode string r]
-  | Checker_run r -> list value [string "prover"; Run_result.encode (fun ()->null) r]
-
 let decode =
   let open J.Decode in
   string >>:: function
@@ -68,12 +62,8 @@ let db_prepare (db:Db.t) : unit or_error =
       );
     create index if not exists pr_prover on prover_res(prover);
     create index if not exists pr_file on prover_res(file);
-    create table if not exists prover (
-      name text not null;
-
-    )
     |}
-  |> Misc.db_err ~ctx:"run-event.prepare-db"
+  |> Misc.db_err ~ctx:"run-event.db-prepare"
 
 let to_db_prover_result (db:Db.t) (self:Prover.name Run_result.t) : _ or_error =
   Db.exec_no_cursor db
@@ -102,7 +92,7 @@ let to_db db self : _ or_error =
 
 let of_db_map db ~f : _ list or_error =
   Db.exec_no_params db {|
-    "select
+    select
       prover, file, res, file_expect, timeout, errcode, stdout, stderr,
       rtime, utime, stime
      from prover_res;

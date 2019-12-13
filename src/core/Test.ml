@@ -14,7 +14,6 @@ type result = Prover.name Run_result.t
 type 'a or_error = ('a, string) CCResult.t
 
 let fpf = Format.fprintf
-let spf = Format.asprintf
 
 let assoc_or def x l =
   try List.assoc x l
@@ -104,29 +103,11 @@ module Raw = struct
     MStr.iter (fun _ r -> add_res (time_of_res r) r.res) r;
     !stat
 
-  let encode (r:t) =
-    let open J.Encode in
-    list
-      Run_event.encode
-      (MStr.values r |> Iter.map Run_event.mk_prover |> Iter.to_rev_list)
-
   let decode =
     let open J.Decode in
     list Run_event.decode
     >|= CCList.filter_map (function Run_event.Prover_run r -> Some r | _ -> None)
     >|= of_list
-
-  let encode_stat r =
-    let open J.Encode in
-    let {sat;unsat;errors;unknown;timeout;total_time} = r in
-    obj [
-      "sat", int sat;
-      "unsat", int unsat;
-      "unknown", int unknown;
-      "errors", int errors;
-      "timeout", int timeout;
-      "total_time", float total_time
-    ]
 
   let decode_stat =
     let open J.Decode in
@@ -634,15 +615,6 @@ module Top_result = struct
     Csv.output_all ch (to_csv t);
     Buffer.contents buf
 
-  let encode (self:t) =
-    let open J.Encode in
-    let {timestamp; events; total_wall_time; raw=_; analyze=_} = self in
-    obj [
-      "timestamp", float timestamp;
-      "total_wall_time", float total_wall_time;
-      "events", list Run_event.encode events;
-    ]
-
   let decode_events =
     let open J.Decode in
     list Run_event.decode
@@ -686,8 +658,21 @@ module Top_result = struct
             List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
         ())
 
-  let of_db (_db:Db.t) : t or_error =
-    assert false
+  let get_meta db k : _ or_error =
+    Db.exec db {|select value from meta where key=? ;|}
+      k
+      ~ty:Db.Ty.(p1 text, p1 blob,fun x->x) ~f:Db.Cursor.next
+      |> Misc.db_err ~ctx:"test.get-meta"
+      |> E.flat_map (CCOpt.to_result ("did not found metadata " ^ k))
+
+  let of_db (db:Db.t) : t or_error =
+    let open E.Infix in
+    get_meta db "timestamp" >>= fun timestamp ->
+    get_meta db "total-wall-time" >>= fun total_wall_time ->
+    let timestamp = float_of_string timestamp in
+    let total_wall_time = float_of_string total_wall_time in
+    Run_event.of_db_l db >>= fun events ->
+    Ok (make ~total_wall_time ~timestamp events)
 end
 
 (** {2 Benchmark, within one Top Result} *)

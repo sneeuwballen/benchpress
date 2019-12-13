@@ -45,7 +45,6 @@ let equal p1 p2 = p1.name = p2.name
 let name p = p.name
 
 let pp_name out p = Fmt.string out p.name
-let encode_name = J.Encode.string
 let decode_name = J.Decode.string
 
 module Version = struct
@@ -83,13 +82,6 @@ module Version = struct
           succeed (Git{branch;commit})
         | _ -> fail "constructor should be 'git'")
     ]
-
-  let encode v =
-    let open J.Encode in
-    match v with
-    | Tag s -> list string ["tag"; s]
-    | Git {branch;commit} ->
-      list string ["git"; branch; commit]
 
   let decode =
     let open J.Decode in
@@ -177,25 +169,6 @@ end
 module Map = CCMap.Make(As_key)
 module Set = CCSet.Make(As_key)
 
-let encode p =
-  let open J.Encode in
-  let {
-    name;version;binary;binary_deps;cmd;
-    sat; unsat; unknown; timeout; memory;
-  } = p in
-  obj [
-    "name", string name;
-    "version", Version.encode version;
-    "binary", string binary;
-    "binary_deps", list string binary_deps;
-    "cmd", string cmd;
-    "unsat", option string unsat;
-    "sat", option string sat;
-    "unknown", option string unknown;
-    "timeout", option string timeout;
-    "memory", option string memory;
-  ]
-
 let decode =
   let open J.Decode in
   let f_opt_null f_name =
@@ -273,7 +246,7 @@ let db_prepare (db:Db.t) : unit or_error =
   Db.exec0 db {|
   create table if not exists
     prover (
-      name text notnull unique,
+      name text not null unique,
       version text not null,
       binary blob not null,
       unsat text not null,

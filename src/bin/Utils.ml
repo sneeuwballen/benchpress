@@ -71,33 +71,6 @@ let dump_summary ~summary results : unit =
            Format.fprintf out "%a@." T.Top_result.pp_compact results);
   end
 
-let dump_results_json ~timestamp results : unit =
-  (* save results *)
-  let dump_file =
-    let filename =
-      Printf.sprintf "res-%s-%s.json"
-        (ISO8601.Permissive.string_of_datetime_basic timestamp)
-        (Uuidm.v4_gen (Random.State.make_self_init()) () |> Uuidm.to_string)
-    in
-    let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
-    (try Unix.mkdir data_dir 0o744 with _ -> ());
-    Filename.concat data_dir filename
-  in
-  Logs.app (fun k->k "write results in json to file `%s`" dump_file);
-  (try
-    CCIO.with_out ~flags:[Open_creat; Open_text] dump_file
-      (fun oc ->
-         let j = Misc.Json.Encode.encode_value T.Top_result.encode results in
-         Misc.Json.J.to_channel oc j; flush oc);
-    (* try to compress results *)
-    ignore (Sys.command (Printf.sprintf "gzip -f '%s'" dump_file) : int);
-   with e ->
-     Printf.eprintf "error when saving to %s: %s\n%!"
-       dump_file (Printexc.to_string e);
-  );
-  ()
-[@@ocaml.deprecated "use sqlite instead"]
-
 let dump_results_sqlite results : unit =
   (* save results *)
   let dump_file =
@@ -177,8 +150,8 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
     ) else (
       if Filename.check_suffix f ".sqlite" then (
         try
-          Db.with_db ~mode:`NO_CREATE f 
-            (fun db -> T.Top_result.of_db db |> E.map (fun r->f,r))
+          Db.with_db ~mode:`NO_CREATE file
+            (fun db -> T.Top_result.of_db db |> E.map (fun r->file,r))
         with e -> E.of_exn e
       ) else if Filename.check_suffix f ".gz" then (
         (* use [zcat] to decompress *)

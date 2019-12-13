@@ -113,14 +113,6 @@ let pp out p =
 let name p = p.name
 let to_string = CCFormat.to_string pp
 
-let encode self =
-  let open J.Encode in
-  let {name; expected} = self in
-  obj [
-    "name", string name;
-    "expected", Res.encode expected;
-  ]
-
 let decode =
   let open J.Decode in
   field "name" string >>= fun name ->

@@ -41,17 +41,6 @@ let pp pp_prog out (self:_ t): unit =
     pp_prog (program self) Problem.pp (problem self) Proc_run_result.pp (raw self)
     (Res.to_string self.res)
 
-let encode f (self: _ t) =
-  let open J.Encode in
-  let {program; problem; timeout; res; raw} = self in
-  obj [
-    "program", f program;
-    "problem", Problem.encode problem;
-    "timeout", int timeout;
-    "res", string (Res.to_string res);
-    "raw", Proc_run_result.encode raw;
-  ]
-
 let decode f =
   let open J.Decode in
   field "problem" Problem.decode >>= fun problem ->

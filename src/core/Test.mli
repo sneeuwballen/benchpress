@@ -34,10 +34,8 @@ module Raw : sig
   val pp_stat : stat CCFormat.printer
   val printbox_stat : stat -> PrintBox.t
 
-  val encode_stat : stat J.Encode.t
   val decode_stat : stat J.Decode.t
 
-  val encode : t J.Encode.t
   val decode : t J.Decode.t
 end
 
@@ -166,9 +164,6 @@ module Top_result : sig
 
   val to_csv_file : string -> t -> unit
   (** Write as CSV into given file *)
-
-  val encode : t J.Encode.t
-  [@@ocaml.deprecated "use sqlite instead"]
 
   val decode : t J.Decode.t
 

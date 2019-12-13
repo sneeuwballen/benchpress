@@ -47,7 +47,6 @@ val name : t -> string
 
 val pp_name : t Fmt.printer
 val pp : t Fmt.printer
-val encode_name : name J.Encode.t
 val decode_name : name J.Decode.t
 
 (** Version *)
@@ -55,7 +54,6 @@ module Version : sig
   type t = version
   val pp : t Fmt.printer
 
-  val encode : t J.Encode.t
   val decode : t J.Decode.t
 
   val to_string_short : t -> string
@@ -109,7 +107,6 @@ module Map_name : CCMap.S with type key = t
 module Map : CCMap.S with type key = t
 module Set : CCSet.S with type elt = t
 
-val encode : t J.Encode.t
 val decode : t J.Decode.t
 
 val db_prepare : Db.t -> unit or_error
