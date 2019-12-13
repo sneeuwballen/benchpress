@@ -1,4 +1,4 @@
-let name_of_project = ref "logitest"
+let name_of_project = ref "benchpress"
 
 let getenv_or_empty s =
   try Sys.getenv s with _ -> ""

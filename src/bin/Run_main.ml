@@ -1,5 +1,3 @@
-open Logitest
-
 module T = Test
 module E = CCResult
 type 'a or_error = ('a, string) E.t

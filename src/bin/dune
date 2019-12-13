@@ -1,6 +1,6 @@
 (executable
- (name logitest_bin)
- (public_name logitest)
- (libraries logitest containers cmdliner result toml olinq uuidm
+ (name benchpress_bin)
+ (public_name benchpress)
+ (libraries benchpress containers cmdliner result toml olinq uuidm
             tiny_httpd tyxml printbox.html)
- (flags :standard -warn-error -3-32 -safe-string))
+ (flags :standard -warn-error -3-32 -safe-string -open Benchpress))

@@ -1,5 +1,4 @@
 opam-version: "2.0"
-name: "logitest"
 version: "dev"
 authors: ["Simon Cruanes" "Guillaume Bury"]
 synopsis: "Tool to run one or more logic programs, on a set of files, and collect the results"
@@ -26,6 +25,6 @@ depends: [
     "decoders-yojson" { >= "0.3.0" & < "0.4" }
     "ocaml" {>= "4.02" }
 ]
-homepage: "https://github.com/nunchaku-inria/logitest/"
-dev-repo: "git+https://github.com/nunchaku-inria/logitest.git"
-bug-reports: "https://github.com/nunchaku-inria/logitest/issues"
+homepage: "https://github.com/sneeuwballen/benchpress/"
+dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
+bug-reports: "https://github.com/sneeuwballen/benchpress/issues"

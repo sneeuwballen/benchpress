@@ -1,7 +1,6 @@
 (* This file is free software. See file "license" for more details. *)
 
 (* run tests, or compare results *)
-open Logitest
 
 module T = Test
 module E = CCResult
@@ -62,7 +61,7 @@ end
 module List_files = struct
   let main ?(abs=false) () =
     try
-      let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
+      let data_dir = Filename.concat (Xdg.data_dir()) "benchpress" in
       let entries = Utils.list_entries data_dir in
       List.iter
         (fun (s,size) ->
@@ -189,8 +188,8 @@ module Dir = struct
     let (//) = Filename.concat in
     Format.printf "%s@."
       (match c with
-       | Config -> Xdg.config_dir() // "logitest"
-       | State -> Xdg.data_dir() // "logitest");
+       | Config -> Xdg.config_dir() // ! Xdg.name_of_project
+       | State -> Xdg.data_dir() // ! Xdg.name_of_project);
     Ok ()
 
   (* sub-command for showing results *)
@@ -199,7 +198,7 @@ module Dir = struct
     let which =
       Arg.(required & pos 0 (some which_conv) None & info ~doc:"directory to list (config|state)" [])
     in
-    let doc = "show directories where logitest stores its state (config|state)" in
+    let doc = "show directories where benchpress stores its state (config|state)" in
     Term.(pure run $ which),
     Term.info ~doc "dir"
 
@@ -270,13 +269,13 @@ let parse_opt () =
     let doc = "Tool to test logic solver and automatic theorem provers." in
     let man = [
       `S "DESCRIPTION";
-      `P "$(b,logitest) is a tool to run tests and compare different \
+      `P "$(b,benchpress) is a tool to run tests and compare different \
           results obtained with distinct tools or versions of the same tool";
       `S "COMMANDS";
       `S "OPTIONS"; (* TODO: explain config file *)
     ] in
     Term.(ret (pure (fun () -> `Help (`Pager, None)) $ pure ())),
-    Term.info ~version:"dev" ~man ~doc "logitest"
+    Term.info ~version:"dev" ~man ~doc "benchpress"
   in
   Cmdliner.Term.eval_choice help [
     Dir.cmd;

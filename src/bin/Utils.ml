@@ -1,4 +1,3 @@
-open Logitest
 module T = Test
 module E = CCResult
 
@@ -6,7 +5,7 @@ type 'a or_error = ('a, string) E.t
 
 let default_conf () = 
   let (//) = Filename.concat in
-  Xdg.config_dir() // "logitest" // "conf.sexp"
+  Xdg.config_dir() // !Xdg.name_of_project // "conf.sexp"
 
 let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in

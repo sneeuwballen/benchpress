@@ -1,12 +1,11 @@
 
 (* run tests, or compare results *)
-open Logitest
 module T = Test
 module E = CCResult
 
 let load_file (f:string) : (T.Top_result.t, _) E.t =
   try
-    let dir = Filename.concat (Xdg.data_dir()) "logitest" in
+    let dir = Filename.concat (Xdg.data_dir()) !Xdg.name_of_project in
     let file = Filename.concat dir f in
     if not @@ Sys.file_exists file then (
       Error ("cannot find file " ^ f)

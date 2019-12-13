@@ -1,5 +1,4 @@
 (* run tests, or compare results *)
-open Logitest
 module T = Test
 module E = CCResult
 
@@ -138,7 +137,7 @@ let main ~debug ?port () =
       Misc.Debug.set_level debug;
     );
     Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
-    let data_dir = Filename.concat (Xdg.data_dir()) "logitest" in
+    let data_dir = Filename.concat (Xdg.data_dir()) !Xdg.name_of_project in
     handle_root server data_dir;
     handle_show server;
     handle_compare server;
