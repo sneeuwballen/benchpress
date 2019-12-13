@@ -1,4 +1,4 @@
-# Logitest
+# Benchpress
 
 [![build status](https://travis-ci.org/sneeuwballen/benchpress.svg?branch=master "build status")](https://travis-ci.org/sneeuwballen/benchpress)
 

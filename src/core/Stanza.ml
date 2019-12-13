@@ -32,7 +32,7 @@ type action =
     memory: int option;
   }
 
-(** Stanzas for configuring Logitest *)
+(** Stanzas for the configuration *)
 type t =
   | St_enter_file of string
   | St_prover of {
