@@ -5,7 +5,7 @@ module Fmt = CCFormat
 type 'a or_error = ('a, string) CCResult.t
 
 type path = string
-type job_res = Prover.t Run_event.result
+type job_res = Prover.name Run_result.t
 
 val run :
   timeout:int ->

@@ -7,11 +7,6 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
-let snapshot_name_term : string option Cmdliner.Term.t =
-  let open Cmdliner in
-  Arg.(value & pos 0 (some string) None
-       & info [] ~docv:"FILE" ~doc:"file/name containing results (default: last)")
-
 (** {2 Run} *)
 module Run = struct
   (* sub-command for running tests *)
@@ -89,9 +84,9 @@ module Show = struct
     let open Cmdliner in
     let csv =
       Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
-    and files =
-      Arg.(non_empty & pos_all string [] &
-           info [] ~docv:"FILES" ~doc:"files to read")
+    and file =
+      Arg.(required & pos 0 (some string) None &
+           info [] ~docv:"FILE" ~doc:"file to read")
     and no_color =
       Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
     and check =
@@ -101,12 +96,12 @@ module Show = struct
     and summary =
       Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
     in
-    let aux check bad csv summary no_color files : _ E.t = 
+    let aux check bad csv summary no_color file : _ E.t = 
       if no_color then CCFormat.set_color_default false;
-      Show.main ~check ~bad ?csv ?summary files
+      Show.main ~check ~bad ?csv ?summary file
     in
     let doc = "show benchmark results (see `list-files`)" in
-    Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ files),
+    Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ file),
     Term.info ~doc "show"
 end
 

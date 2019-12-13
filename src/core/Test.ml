@@ -7,8 +7,9 @@ module MStr = Misc.Str_map
 module J = Misc.Json
 module PB = PrintBox
 module Db = Sqlite3_utils
+module Fmt = CCFormat
 
-type result = Run_event.prover Run_event.result
+type result = Prover.name Run_result.t
 
 type 'a or_error = ('a, string) CCResult.t
 
@@ -29,7 +30,7 @@ let pp_hvlist_ p =
     (CCFormat.hvbox
        (CCFormat.(list ~sep:(return "@ ") p)))
 
-let time_of_res e = e.Run_event.raw.rtime
+let time_of_res e = e.Run_result.raw.rtime
 
 let pb_v_record ?bars l =
   PB.grid_l ?bars
@@ -44,8 +45,8 @@ module Raw = struct
   type t = result MStr.t
   let empty = MStr.empty
 
-  let add r raw =
-    let pb = r.Run_event.problem.Problem.name in
+  let add (r:result) raw =
+    let pb = r.Run_result.problem.Problem.name in
     MStr.add pb r raw
 
   let merge =
@@ -100,18 +101,20 @@ module Raw = struct
           | Res.Timeout -> add_timeout_
         ) !stat
     in
-    MStr.iter (fun _ r -> add_res (time_of_res r) (Run_event.analyze_p r)) r;
+    MStr.iter (fun _ r -> add_res (time_of_res r) r.res) r;
     !stat
 
   let encode (r:t) =
     let open J.Encode in
     list
-      (Run_event.encode_result Prover.encode)
-      (MStr.values r |> Iter.to_rev_list)
+      Run_event.encode
+      (MStr.values r |> Iter.map Run_event.mk_prover |> Iter.to_rev_list)
 
   let decode =
     let open J.Decode in
-    list (Run_event.decode_result Prover.decode) >|= of_list
+    list Run_event.decode
+    >|= CCList.filter_map (function Run_event.Prover_run r -> Some r | _ -> None)
+    >|= of_list
 
   let encode_stat r =
     let open J.Encode in
@@ -153,7 +156,7 @@ module Analyze = struct
       M.of_map raw
       |> OLinq.map snd
       |> OLinq.group_by
-        (fun r -> Problem.compare_res r.Run_event.problem (Run_event.analyze_p r))
+        (fun r -> Problem.compare_res r.Run_result.problem r.res)
       |> OLinq.run_list ?limit:None
     in
     let improved = assoc_or [] `Improvement l in
@@ -191,8 +194,8 @@ module Analyze = struct
       let l =
         List.map
           (fun r -> 
-             [ text (Problem.name r.Run_event.problem);
-               text (Res.to_string @@ Run_event.analyze_p r);
+             [ text (Problem.name r.Run_result.problem);
+               text (Res.to_string r.res);
                text (Res.to_string r.problem.Problem.expected);
              ])
           r.bad
@@ -205,10 +208,10 @@ module Analyze = struct
 
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
-      CCFormat.(with_color color string) r.Run_event.problem.Problem.name
-      (CCFormat.with_color color Res.pp) r.Run_event.problem.Problem.expected
-      (CCFormat.with_color color Res.pp) (Run_event.analyze_p r)
-      r.Run_event.raw.rtime
+      CCFormat.(with_color color string) r.Run_result.problem.Problem.name
+      (CCFormat.with_color color Res.pp) r.Run_result.problem.Problem.expected
+      (CCFormat.with_color color Res.pp) r.res
+      r.Run_result.raw.rtime
 
   let pp_bad out t =
     if t.bad <> [] then (
@@ -263,7 +266,7 @@ module ResultsComparison = struct
 
   (* TODO: use outer_join? to also find the disappeared/appeared *)
   let compare (a: Raw.t) b : t =
-    let open Run_event in
+    let open Run_result in
     let module M = OLinq.AdaptMap(Map.Make(String)) in
     let a = M.of_map a |> OLinq.map snd in
     let b = M.of_map b |> OLinq.map snd in
@@ -272,7 +275,7 @@ module ResultsComparison = struct
         (fun r -> r.problem) (fun r -> r.problem) a b
         ~merge:(fun pb r1 r2 ->
             assert (r1.problem.Problem.name = r2.problem.Problem.name);
-            Some (pb, analyze_p r1, analyze_p r2, time_of_res r1, time_of_res r2))
+            Some (pb, r1.res, r2.res, time_of_res r1, time_of_res r2))
       |> OLinq.group_by (fun (_,res1,res2,_,_) -> Res.compare res1 res2)
       |> OLinq.run_list
     in
@@ -283,15 +286,15 @@ module ResultsComparison = struct
     let same = assoc_or [] `Same j |> List.rev_map (fun (pb,r,_,t1,t2) -> pb,r,t1,t2) in
     let disappeared =
       OLinq.diff a b
-        ~eq:(CCFun.compose_binop Run_event.problem Problem.same_name)
-        ~hash:(CCFun.compose Run_event.problem Problem.hash_name)
-      |> OLinq.map (fun r -> r.problem, analyze_p r)
+        ~eq:(CCFun.compose_binop Run_result.problem Problem.same_name)
+        ~hash:(CCFun.compose Run_result.problem Problem.hash_name)
+      |> OLinq.map (fun r -> r.problem, r.res)
       |> OLinq.run_list
     and appeared =
       OLinq.diff b a
-        ~eq:(CCFun.compose_binop Run_event.problem Problem.same_name)
-        ~hash:(CCFun.compose Run_event.problem Problem.hash_name)
-      |> OLinq.map (fun r -> r.problem, analyze_p r)
+        ~eq:(CCFun.compose_binop Run_result.problem Problem.same_name)
+        ~hash:(CCFun.compose Run_result.problem Problem.hash_name)
+      |> OLinq.map (fun r -> r.problem, r.res)
       |> OLinq.run_list
     in
     { appeared; disappeared; mismatch; same; regressed; improved; }
@@ -367,19 +370,14 @@ type top_result = {
   timestamp: float; (* timestamp *)
   events: Run_event.t list;
   total_wall_time: float;
-  raw: Raw.t Prover.Map_name.t lazy_t;
-  analyze: Analyze.t Prover.Map_name.t lazy_t;
+  raw: Raw.t MStr.t lazy_t;
+  analyze: Analyze.t MStr.t lazy_t;
 }
 
 module Top_result = struct
   type t = top_result
 
-  let snapshot ?meta t = Run_event.Snapshot.make ?meta t.events
-
-  (* more recent first *)
-  let compare_date a b: int = CCFloat.compare b.timestamp a.timestamp
-
-  let make ?total_wall_time ?timestamp l =
+  let make ?total_wall_time ?timestamp (l:Prover.name Run_result.t list) : t =
     let timestamp = match timestamp with
       | None -> Unix.gettimeofday()
       | Some t -> t
@@ -388,53 +386,21 @@ module Top_result = struct
       | Some f -> f
       | None -> Unix.gettimeofday() -. timestamp in
     let raw = lazy (
-      l
-      |> List.fold_left
-        (fun map e -> match e with
-           | Run_event.Prover_run r ->
-             let p = r.Run_event.program in
+      List.fold_left
+        (fun map (r:Prover.name Run_result.t) ->
+             let p = r.program in
              let raw =
-               try Prover.Map_name.find p map with Not_found -> Raw.empty
+               try MStr.find p map with Not_found -> Raw.empty
              in
              let analyze_raw = Raw.add r raw in
-             Prover.Map_name.add p analyze_raw map
-           | Run_event.Checker_run _ -> map)
-        Prover.Map_name.empty
+             MStr.add p analyze_raw map)
+        MStr.empty l
     ) in
     let analyze = lazy (
-      Prover.Map_name.map Analyze.make (Lazy.force raw)
+      MStr.map Analyze.make (Lazy.force raw)
     ) in
+    let l = List.rev_map Run_event.mk_prover l in
     { timestamp; events=l; raw; analyze; total_wall_time; }
-
-  let filter ~provers ~dir (t:t): t =
-    (* predicates on events *)
-    let prover_ok r: bool = match provers with
-      | None -> true
-      | Some l -> List.mem r.Run_event.program.Prover.name l
-    and dir_ok r: bool = match dir with
-      | [] -> true
-      | l ->
-        let path = r.Run_event.problem.Problem.name in
-        List.exists (fun d -> CCString.mem ~sub:d path) l
-    in
-    let events =
-      CCList.filter
-        (function
-          | Run_event.Prover_run r -> prover_ok r && dir_ok r
-          | Run_event.Checker_run _ -> true)
-        t.events
-    in
-    make ~timestamp:t.timestamp events
-
-  let of_snapshot s =
-    make ~timestamp:s.Run_event.timestamp s.Run_event.events
-
-  let merge ?total_wall_time ?timestamp a b =
-    make ?total_wall_time ?timestamp (List.rev_append a.events b.events)
-
-  let merge_l ?total_wall_time ?timestamp l =
-    let events = List.map (fun t->t.events) l |> List.flatten in
-    make ?total_wall_time ?timestamp events
 
   let pp_header out t =
     Format.fprintf out "(@[(date %a)@])"
@@ -443,42 +409,43 @@ module Top_result = struct
   let pp_compact out (r:t) =
     let pp_tup out (p,res) =
       Format.fprintf out "@[<2>%a:@ @[%a@]@]"
-        Prover.pp_name p Analyze.pp_compact res
+        Fmt.string p Analyze.pp_compact res
     in
     let {analyze=lazy a; _} = r in
     Format.fprintf out "(@[<2>%a@ %a@])"
-      pp_header r (pp_list_ pp_tup) (Prover.Map_name.to_list a)
+      pp_header r (pp_list_ pp_tup) (MStr.to_list a)
 
   let pp_bad out (r:t) =
     let pp_tup out (p,res) =
       Format.fprintf out "@[<2>%a:@ @[%a@]@]"
-        Prover.pp_name p Analyze.pp_bad res
+        Fmt.string p Analyze.pp_bad res
     in
     let {analyze=lazy a; _} = r in
     Format.fprintf out "(@[<2>%a@ %a@])"
-      pp_header r (pp_list_ pp_tup) (Prover.Map_name.to_list a)
+      pp_header r (pp_list_ pp_tup) (MStr.to_list a)
 
   let pp out (r:t) =
     let pp_tup out (p,res) =
       Format.fprintf out "@[<2>%a:@ @[%a@]@]"
-        Prover.pp_name p Analyze.pp res
+        Fmt.string p Analyze.pp res
     in
     let {analyze=lazy a; _} = r in
     Format.fprintf out "(@[<2>%a@ %a@])"
-      pp_header r (pp_list_ pp_tup) (Prover.Map_name.to_list a)
+      pp_header r (pp_list_ pp_tup) (MStr.to_list a)
 
   type comparison_result = {
-    both: ResultsComparison.t Prover.Map_name.t;
-    left: Analyze.t Prover.Map_name.t;
-    right: Analyze.t Prover.Map_name.t;
+    both: ResultsComparison.t MStr.t;
+    left: Analyze.t MStr.t;
+    right: Analyze.t MStr.t;
   }
 
+  (* TODO: use that in web UI *)
   (* any common problem? *)
   let should_compare (a:t)(b:t): bool =
     let {raw=lazy a; _} = a in
     let {raw=lazy b; _} = b in
-    Prover.Map_name.exists
-      (fun p r1 -> match Prover.Map_name.get p b with
+    MStr.exists
+      (fun p r1 -> match MStr.get p b with
          | Some r2 -> MStr.exists (fun k _ -> MStr.mem k r2) r1
          | None -> false)
       a
@@ -487,11 +454,11 @@ module Top_result = struct
     let {analyze=lazy a; _} = a in
     let {analyze=lazy b; _} = b in
     let both, left =
-      Prover.Map_name.fold
+      MStr.fold
         (fun p r_left (both,left) ->
            try
              (* find same (problem,dir) in [b], and compare *)
-             let r_right = Prover.Map_name.find p b in
+             let r_right = MStr.find p b in
              let cmp =
                ResultsComparison.compare r_left.Analyze.raw r_right.Analyze.raw
              in
@@ -501,26 +468,26 @@ module Top_result = struct
         a ([],[])
     in
     let right =
-      Prover.Map_name.filter
-        (fun p _ -> not (Prover.Map_name.mem p a))
+      MStr.filter
+        (fun p _ -> not (MStr.mem p a))
         b
     in
-    let both = Prover.Map_name.of_list both in
-    let left = Prover.Map_name.of_list left in
+    let both = MStr.of_list both in
+    let left = MStr.of_list left in
     { both; left; right; }
 
   let pp_comparison out (r:comparison_result) =
     let pp_tup out (p,cmp) =
       Format.fprintf out "@[<2>%s:@ @[%a@]@]"
-        (Prover.name p) ResultsComparison.pp cmp
+        p ResultsComparison.pp cmp
     and pp_one which out (p,res) =
       Format.fprintf out "@[<2>%s (only on %s):@ @[%a@]@]"
-        (Prover.name p) which Analyze.pp res
+        p which Analyze.pp res
     in
     Format.fprintf out "(@[<hv>%a@ %a@ %a@])@."
-      (pp_hvlist_ pp_tup) (Prover.Map_name.to_list r.both)
-      (pp_hvlist_ (pp_one "left")) (Prover.Map_name.to_list r.left)
-      (pp_hvlist_ (pp_one "right")) (Prover.Map_name.to_list r.right)
+      (pp_hvlist_ pp_tup) (MStr.to_list r.both)
+      (pp_hvlist_ (pp_one "left")) (MStr.to_list r.left)
+      (pp_hvlist_ (pp_one "right")) (MStr.to_list r.right)
 
   module StrSet = CCSet.Make(String)
 
@@ -538,16 +505,16 @@ module Top_result = struct
   let to_table (t:t): table =
     let lazy map = t.analyze in
     let find_cell p pb : result option =
-      try Some (MStr.find pb (Prover.Map_name.find p map).Analyze.raw)
+      try Some (MStr.find pb (MStr.find p map).Analyze.raw)
       with Not_found -> None
     in
     let line0 =
       Printf.sprintf "(snapshot :date %s)"
         (ISO8601.Permissive.string_of_datetime t.timestamp)
     in
-    let provers = Prover.Map_name.to_list map |> List.map fst in
+    let provers = MStr.to_list map |> List.map fst in
     let all_problems : StrSet.t =
-      Prover.Map_name.fold
+      MStr.fold
         (fun _ analyze acc ->
            MStr.fold (fun pb _ acc -> StrSet.add pb acc) analyze.Analyze.raw acc)
         map
@@ -559,18 +526,16 @@ module Top_result = struct
            let tr_res =
              List.map
                (fun prover -> match find_cell prover file with
-                  | None ->
-                    Prover.name prover, Res.Unknown, 0.
+                  | None -> prover, Res.Unknown, 0.
                   | Some res ->
                     let time = time_of_res res in
-                    let res = Run_event.analyze_p res in
-                    Prover.name prover, res, time)
+                    prover, res.res, time)
                provers
            in
            {tr_problem=file; tr_res} :: acc)
         all_problems []
     in
-    {t_meta=line0; t_provers=List.map Prover.name provers; t_rows}
+    {t_meta=line0; t_provers=provers; t_rows}
 
   let time_to_csv (_:Res.t) f = Printf.sprintf "%.2f" f
   let res_to_csv (r:Res.t) = match r with
@@ -618,33 +583,33 @@ module Top_result = struct
 
   let to_printbox_summary (self:t) : (_ * PB.t) list =
     let {analyze=lazy a; _} = self in
-    Prover.Map_name.to_list a
-    |> List.map (fun (p, a) -> Prover.name p, Analyze.to_printbox a)
+    MStr.to_list a
+    |> List.map (fun (p, a) -> p, Analyze.to_printbox a)
 
   let to_printbox_table self = table_to_printbox @@ to_table self
   let to_printbox_bad self =
     let {analyze=lazy a; _} = self in
-    Prover.Map_name.to_list a
+    MStr.to_list a
     |> CCList.filter_map
       (fun (p, a) ->
          if a.Analyze.bad =[] then None
-         else Some (p.Prover.name, Analyze.to_printbox_bad a))
+         else Some (p, Analyze.to_printbox_bad a))
 
   let comparison_to_printbox ?(short=true) (self:comparison_result) : PB.t =
     let open PB in
     let pm side m =
-      Prover.Map_name.to_list m
+      MStr.to_list m
       |> List.map
         (fun (p,c) ->
-           [text_with_style Style.bold (Prover.name p ^ " ("^side^")");
+           [text_with_style Style.bold (p ^ " ("^side^")");
             Analyze.to_printbox c])
     in
     grid_l @@ List.flatten [
       [
-        Prover.Map_name.to_list self.both
+        MStr.to_list self.both
         |> List.map
           (fun (p,c) ->
-             hlist [text_with_style Style.bold (Prover.name p ^" (both)");
+             hlist [text_with_style Style.bold (p ^" (both)");
                     if short
                     then ResultsComparison.to_printbox_short c
                     else ResultsComparison.to_printbox c;
@@ -678,12 +643,17 @@ module Top_result = struct
       "events", list Run_event.encode events;
     ]
 
+  let decode_events =
+    let open J.Decode in
+    list Run_event.decode
+    >|= CCList.filter_map (function Run_event.Prover_run r -> Some r | _ -> None)
+
   let decode : t J.Decode.t =
     let open J.Decode in
     field "timestamp" float >>= fun timestamp ->
     field_opt "total_wall_time" float >>= fun total_wall_time ->
     let total_wall_time = CCOpt.get_or ~default:0. total_wall_time in
-    field "events" (list Run_event.decode) >>= fun events ->
+    field "events" decode_events >>= fun events ->
     succeed (make ~timestamp ~total_wall_time events)
 
   let db_prepare (db:Db.t) : _ or_error =
@@ -709,14 +679,14 @@ module Top_result = struct
     Logs.info (fun k->k "dump top-result into DB");
     Misc.err_with (fun scope ->
         scope.unwrap @@ db_prepare db;
-        scope.unwrap @@ Run_event.prepare_db db;
+        scope.unwrap @@ Run_event.db_prepare db;
         (* insert within one transaction, much faster *)
         scope.unwrap @@ add_meta db self;
         Db.transact db (fun _ ->
             List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
         ())
 
-  let of_db (db:Db.t) : t or_error =
+  let of_db (_db:Db.t) : t or_error =
     assert false
 end
 
@@ -730,23 +700,23 @@ module Bench = struct
 
   type t = {
     from: top_result;
-    per_prover: per_prover Prover.Map_name.t;
+    per_prover: per_prover MStr.t;
   }
 
   let make (r:top_result): t =
     let per_prover =
-      Prover.Map_name.map
+      MStr.map
         (fun raw ->
            let stat = Raw.stat raw in
            let sat =
              MStr.fold
-               (fun file res acc -> match Run_event.analyze_p res with
+               (fun file res acc -> match res.Run_result.res with
                   | Res.Sat -> (file, time_of_res res) :: acc
                   | _ -> acc)
                raw []
            and unsat =
              MStr.fold
-               (fun file res acc -> match Run_event.analyze_p res with
+               (fun file res acc -> match res.Run_result.res with
                   | Res.Unsat -> (file, time_of_res res) :: acc
                   | _ -> acc)
                raw []
@@ -758,12 +728,12 @@ module Bench = struct
 
   let pp out (r:t): unit =
     let pp_stat out (p,per_prover) =
-      Format.fprintf out "@[<h2>%a:@ %a@]"
-        Prover.pp_name p Raw.pp_stat per_prover.stat
+      Format.fprintf out "@[<h2>%s:@ %a@]"
+        p Raw.pp_stat per_prover.stat
     and pp_full _out (_p,_res) =
       () (* TODO *)
     in
-    let l = Prover.Map_name.to_list r.per_prover in
+    let l = MStr.to_list r.per_prover in
     Format.fprintf out "(@[<v2>bench@ @[%a@]@ @[<v>%a@]@])"
       (pp_hvlist_ pp_stat) l
       (pp_hvlist_ pp_full) l

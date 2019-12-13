@@ -3,16 +3,15 @@
 module T = Test
 module E = CCResult
 
-let main ?(check=true) ?(bad=true) ?csv ?summary files =
+let main ?(check=true) ?(bad=true) ?csv ?summary (file:string) =
   let open E.Infix in
-  E.map_l Utils.load_file files >>= fun res ->
-  let results = T.Top_result.merge_l res in
-  Utils.dump_csv ~csv results;
-  Utils.dump_summary ~summary results;
-  Utils.printbox_results results;
+  Utils.load_file file >>= fun res ->
+  Utils.dump_csv ~csv res;
+  Utils.dump_summary ~summary res;
+  Utils.printbox_results res;
   if bad then (
-    Format.printf "@[<2>bad: %a@]@." T.Top_result.pp_bad results;
+    Format.printf "@[<2>bad: %a@]@." T.Top_result.pp_bad res;
   );
-  if check then Utils.check_res Notify.nil results else E.return ()
+  if check then Utils.check_res Notify.nil res else E.return ()
 
 

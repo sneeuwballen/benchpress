@@ -1,5 +1,6 @@
 module T = Test
 module E = CCResult
+module MStr = Misc.Str_map
 type 'a or_error = ('a, string) E.t
 
 (* callback that prints a result *)
@@ -59,11 +60,11 @@ let execute_run_prover_action
       |> E.add_ctxf "running %d tests" len
     end
     >>= fun results ->
-    Prover.Map_name.iter
+    MStr.iter
       (fun p r ->
          Misc.synchronized (fun () ->
          Format.printf "(@[<2>:prover %s @[<2>:results@ %a@]@])@."
-           (Prover.name p) T.Analyze.pp r))
+           p T.Analyze.pp r))
       (Lazy.force results.T.analyze);
     E.return results
   end |> E.add_ctxf "running tests"

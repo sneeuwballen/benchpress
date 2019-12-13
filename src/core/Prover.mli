@@ -6,6 +6,10 @@
 *)
 
 module Fmt = CCFormat
+module E = CCResult
+module Db = Sqlite3_utils
+module J = Misc.Json
+type 'a or_error = ('a, string) E.t
 
 (** {2 Prover configurations} *)
 
@@ -16,9 +20,11 @@ type version =
       commit: string;  (* branch & commit hash *)
     }
 
+type name = string
+
 type t = {
   (* Prover identification *)
-  name : string;
+  name : name;
   version : version;
 
   (* Pover execution *)
@@ -41,8 +47,24 @@ val name : t -> string
 
 val pp_name : t Fmt.printer
 val pp : t Fmt.printer
-val pp_version : version Fmt.printer
-val version_to_string : version -> string
+val encode_name : name J.Encode.t
+val decode_name : name J.Decode.t
+
+(** Version *)
+module Version : sig
+  type t = version
+  val pp : t Fmt.printer
+
+  val encode : t J.Encode.t
+  val decode : t J.Decode.t
+
+  val to_string_short : t -> string
+
+  val to_sexp : t -> Sexp_loc.t
+  val sexp_decode : t Sexp_loc.D.decoder
+  val ser_sexp : t -> string
+  val deser_sexp : string -> t or_error
+end
 
 val equal : t -> t -> bool
 (** Equality (by name) *)
@@ -87,9 +109,9 @@ module Map_name : CCMap.S with type key = t
 module Map : CCMap.S with type key = t
 module Set : CCSet.S with type elt = t
 
-module J = Misc.Json
-
-val encode_version : version J.Encode.t
-val decode_version : version J.Decode.t
 val encode : t J.Encode.t
 val decode : t J.Decode.t
+
+val db_prepare : Db.t -> unit or_error
+
+val to_db : Db.t -> t -> unit or_error

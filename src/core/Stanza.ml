@@ -73,7 +73,7 @@ let rec pp_expect out = function
 let pp_version_field out =
   let open Misc.Pp in
   function
-  | Version_exact v ->  Prover.pp_version out v
+  | Version_exact v ->  Prover.Version.pp out v
   | Version_git {dir} -> pp_str out @@ Printf.sprintf {|git:%S|} dir
   | Version_cmd {cmd} -> pp_str out @@ Printf.sprintf {|cmd:%S|} cmd
 

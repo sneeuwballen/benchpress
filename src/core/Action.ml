@@ -143,8 +143,8 @@ end = struct
         jobs
       |> E.flatten_l
     end
-    >>= fun res ->
-    let r = T.Top_result.make ?timestamp (List.map Run_event.mk_prover res) in
+    >>= fun res_l ->
+    let r = T.Top_result.make ?timestamp res_l in
     on_done r;
     E.return r
 end

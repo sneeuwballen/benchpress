@@ -9,7 +9,7 @@ module Db = Sqlite3_utils
 module MStr = Misc.Str_map
 module J = Misc.Json
 
-type result = Run_event.prover Run_event.result
+type result = Prover.name Run_result.t
 
 module Raw : sig
   type t = result MStr.t
@@ -99,8 +99,8 @@ type top_result = private {
   timestamp: float; (* timestamp *)
   events: Run_event.t list;
   total_wall_time: float;
-  raw: Raw.t Prover.Map_name.t lazy_t;
-  analyze: Analyze.t Prover.Map_name.t lazy_t;
+  raw: Raw.t MStr.t lazy_t;
+  analyze: Analyze.t MStr.t lazy_t;
 }
 
 module Top_result : sig
@@ -118,30 +118,18 @@ module Top_result : sig
   val pp_bad : t CCFormat.printer
 
   (* FIXME:
-     use meta everywhere;
      request a Uuid as a unique name (along with timestamp), provided
      from main. *)
 
-  val merge : ?total_wall_time:float -> ?timestamp:float -> t -> t -> t
-
-  val merge_l : ?total_wall_time:float -> ?timestamp:float -> t list -> t
-
-  val make : ?total_wall_time:float -> ?timestamp:float -> Run_event.t list -> t
-
-  val snapshot : ?meta:string -> t -> Run_event.Snapshot.t
-
-  val of_snapshot : Run_event.Snapshot.t -> t
-
-  val filter :
-    provers:string list option ->
-    dir:string list ->
-    t -> t
-  (** Filter the results by problem and by prover *)
+  val make :
+    ?total_wall_time:float -> ?timestamp:float ->
+    Prover.name Run_result.t list ->
+    t
 
   type comparison_result = {
-    both: ResultsComparison.t Prover.Map_name.t;
-    left: Analyze.t Prover.Map_name.t;
-    right: Analyze.t Prover.Map_name.t;
+    both: ResultsComparison.t MStr.t;
+    left: Analyze.t MStr.t;
+    right: Analyze.t MStr.t;
   }
 
   val compare : t -> t -> comparison_result
@@ -199,7 +187,7 @@ module Bench : sig
 
   type t = {
     from: top_result;
-    per_prover: per_prover Prover.Map_name.t;
+    per_prover: per_prover MStr.t;
   }
 
   val make : top_result -> t

@@ -15,6 +15,7 @@ let basic_css = {|
   h1,h2,h3{line-height:1.2} table {width: 100%;} .framed {border-width:0.3rem; border-style: solid}
   |}
 
+let src = Logs.Src.create "logitest.serve"
 let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 
 (* show individual files *)
@@ -22,6 +23,7 @@ let handle_show server : unit =
   H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
       match Utils.load_file file with
       | Error e ->
+        Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
         let box_summary = Test.Top_result.to_printbox_summary res in
@@ -45,6 +47,7 @@ let handle_show server : unit =
                  details (summary [txt "table"]) [pb_html full_table]];
             ])
         in
+        Logs.debug ~src (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (string_of_html h))
     )
 
@@ -66,7 +69,9 @@ let handle_compare server : unit =
           names
           |> List.map
             (fun s -> match Utils.load_file s with
-               | Error e -> H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
+               | Error e ->
+                 Logs.err ~src (fun k->k "cannot load file %S" s);
+                 H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
                | Ok x -> s, x)
         in
         let box_compare_l =
@@ -89,6 +94,7 @@ let handle_compare server : unit =
                 div [PrintBox_html.to_html box_compare_l];
               ])
         in
+        Logs.err ~src (fun k->k "ok reply for compare %s" @@ String.concat ";" names);
         H.Response.make_string (Ok (string_of_html h))
       ) else (
         H.Response.fail ~code:412 "precondition failed: select at least 2 files"

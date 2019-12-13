@@ -1,6 +1,7 @@
 module T = Test
 module E = CCResult
 module Db = Misc.Db
+module MStr = Misc.Str_map
 
 type 'a or_error = ('a, string) E.t
 
@@ -127,13 +128,13 @@ let dump_results_sqlite results : unit =
 
 let check_res notify (results:T.top_result) : unit or_error =
   let lazy map = results.T.analyze in
-  if Prover.Map_name.for_all (fun _ r -> T.Analyze.is_ok r) map
+  if MStr.for_all (fun _ r -> T.Analyze.is_ok r) map
   then (
     Notify.send notify "OK";
     E.return ()
   ) else (
     let n_fail =
-      Prover.Map_name.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0
+      MStr.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0
     in
     Notify.sendf notify "FAIL (%d failures)" n_fail;
     E.fail_fprintf "FAIL (%d failures)" n_fail
@@ -143,10 +144,10 @@ let printbox_results (results:T.top_result) : unit =
   let lazy map = results.T.analyze in
   let box =
     let open PrintBox in
-    Prover.Map_name.to_list map
+    MStr.to_list map
     |> List.map
       (fun (p,r) -> frame @@ hlist [
-           center_hv @@ pad @@ text p.Prover.name;
+           center_hv @@ pad @@ text p;
            T.Analyze.to_printbox r])
     |> hlist ~bars:false ~pad:(hpad 1)
   in
@@ -175,6 +176,10 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
       Error ("cannot find file " ^ f)
     ) else (
       if Filename.check_suffix f ".sqlite" then (
+        try
+          Db.with_db ~mode:`NO_CREATE f 
+            (fun db -> T.Top_result.of_db db |> E.map (fun r->f,r))
+        with e -> E.of_exn e
       ) else if Filename.check_suffix f ".gz" then (
         (* use [zcat] to decompress *)
         let v =
