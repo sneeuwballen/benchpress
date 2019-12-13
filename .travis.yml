@@ -5,12 +5,12 @@ services:
 - docker
 env:
   global:
-  - PINS="logitest:."
+  - PINS="benchpress:."
   - DISTRO="ubuntu-16.04"
   matrix:
-    #- PACKAGE="logitest" OCAML_VERSION="4.02"
-  - PACKAGE="logitest" OCAML_VERSION="4.03"
-  - PACKAGE="logitest" OCAML_VERSION="4.04"
-  - PACKAGE="logitest" OCAML_VERSION="4.05"
-  - PACKAGE="logitest" OCAML_VERSION="4.06"
-  - PACKAGE="logitest" OCAML_VERSION="4.09"
+    #- PACKAGE="benchpress" OCAML_VERSION="4.02"
+  - PACKAGE="benchpress" OCAML_VERSION="4.03"
+  - PACKAGE="benchpress" OCAML_VERSION="4.04"
+  - PACKAGE="benchpress" OCAML_VERSION="4.05"
+  - PACKAGE="benchpress" OCAML_VERSION="4.06"
+  - PACKAGE="benchpress" OCAML_VERSION="4.09"
