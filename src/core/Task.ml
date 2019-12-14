@@ -8,6 +8,8 @@ type t = {
   action: Action.t;
 }
 
+let pp_name out self = Fmt.string out self.name
+
 let pp out (self:t) =
   let open Misc.Pp in
   let {name;synopsis;action} = self in

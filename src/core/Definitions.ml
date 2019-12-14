@@ -34,12 +34,14 @@ let add_dir (d:Dir.t) self : t =
   { self with dirs=d::self.dirs }
 
 let all_provers self : _ list =
-  Str_map.fold
-    (fun _ d acc ->
-       match d with
-       | D_prover p -> p :: acc
-       | _ -> acc)
-    self.defs []
+  Str_map.values self.defs
+  |> Iter.filter_map (function D_prover p -> Some p | _ -> None)
+  |> Iter.to_rev_list
+
+let all_tasks self : _ list =
+  Str_map.values self.defs
+  |> Iter.filter_map (function D_task t -> Some t | _ -> None)
+  |> Iter.to_rev_list
 
 (* compute a version for the prover *)
 let get_version ?(binary="") (v:Stanza.version_field) : Prover.version =

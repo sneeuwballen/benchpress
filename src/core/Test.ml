@@ -20,14 +20,14 @@ let assoc_or def x l =
   with Not_found -> def
 
 let pp_list_ p =
-  CCFormat.within "(" ")"
-    (CCFormat.hovbox
-       (CCFormat.(list ~sep:(return "@ ") p)))
+  Fmt.within "(" ")"
+    (Fmt.hovbox
+       (Fmt.(list ~sep:(return "@ ") p)))
 
 let pp_hvlist_ p =
-  CCFormat.within "(" ")"
-    (CCFormat.hvbox
-       (CCFormat.(list ~sep:(return "@ ") p)))
+  Fmt.within "(" ")"
+    (Fmt.hvbox
+       (Fmt.(list ~sep:(return "@ ") p)))
 
 let time_of_res e = e.Run_result.raw.rtime
 
@@ -40,7 +40,54 @@ let pb_int_color c n =
   if n=0 then int n
   else text_with_style (Style.set_bold true c) (string_of_int n)
 
-module Raw = struct
+module Stat = struct
+  type t = {
+    unsat: int;
+    sat: int;
+    errors: int;
+    unknown: int;
+    timeout: int;
+    total_time: float; (* for sat+unsat *)
+  }
+
+  let empty : t =
+    {unsat=0; sat=0; errors=0; unknown=0; timeout=0; total_time=0.; }
+
+  let as_printbox_record s : _ list =
+    let open PB in
+    [ "sat", int s.sat; "unsat", int s.unsat; "errors", int s.errors;
+      "unknown", int s.unknown; "timeout", int s.timeout;
+      "total_time", line (Misc.human_time s.total_time) ]
+
+  let printbox (s:t) : PrintBox.t =
+    pb_v_record @@ as_printbox_record s
+
+  let add_sat_ t s = {s with sat=s.sat+1; total_time=s.total_time+. t; }
+  let add_unsat_ t s = {s with unsat=s.unsat+1; total_time=s.total_time+. t; }
+  let add_unknown_ s = {s with unknown=s.unknown+1}
+  let add_error_ s = {s with errors=s.errors+1}
+  let add_timeout_ s = {s with timeout=s.timeout+1}
+
+  let pp out (s:t) : unit =
+    fpf out
+      "(@[<hv>:unsat %d@ :sat %d@ :solved %d@ :errors %d@ :unknown %d@ \
+       :timeout %d@ :total %d@ :total_time %.2f@])"
+      s.unsat s.sat (s.sat + s.unsat) s.errors s.unknown s.timeout
+      (s.unsat + s.sat + s.errors + s.unknown + s.timeout)
+      s.total_time
+end
+
+module Raw : sig
+  type t = result MStr.t
+
+  val empty: t
+
+  val add : result -> t -> t
+
+  val merge : t -> t -> t
+
+  val stat : t -> Stat.t
+end = struct
   type t = result MStr.t
   let empty = MStr.empty
 
@@ -54,47 +101,11 @@ module Raw = struct
 
   let of_list l = List.fold_left (fun acc r -> add r acc) empty l
 
-  type stat = {
-    unsat: int;
-    sat: int;
-    errors: int;
-    unknown: int;
-    timeout: int;
-    total_time: float; (* for sat+unsat *)
-  }
-
-  let stat_empty =
-    {unsat=0; sat=0; errors=0; unknown=0; timeout=0; total_time=0.; }
-
-  let as_printbox_record s : _ list =
-    let open PB in
-    [ "sat", int s.sat; "unsat", int s.unsat; "errors", int s.errors;
-      "unknown", int s.unknown; "timeout", int s.timeout;
-      "total_time", line (Misc.human_time s.total_time) ]
-
-
-  let printbox_stat (s:stat) : PrintBox.t =
-    pb_v_record @@ as_printbox_record s
-
-  let add_sat_ t s = {s with sat=s.sat+1; total_time=s.total_time+. t; }
-  let add_unsat_ t s = {s with unsat=s.unsat+1; total_time=s.total_time+. t; }
-  let add_unknown_ s = {s with unknown=s.unknown+1}
-  let add_error_ s = {s with errors=s.errors+1}
-  let add_timeout_ s = {s with timeout=s.timeout+1}
-
-  let pp_stat out s =
-    fpf out
-      "(@[<hv>:unsat %d@ :sat %d@ :solved %d@ :errors %d@ :unknown %d@ \
-       :timeout %d@ :total %d@ :total_time %.2f@])"
-      s.unsat s.sat (s.sat + s.unsat) s.errors s.unknown s.timeout
-      (s.unsat + s.sat + s.errors + s.unknown + s.timeout)
-      s.total_time
-
   let stat r =
     (* stats *)
-    let stat = ref stat_empty in
+    let stat = ref Stat.empty in
     let add_res time res =
-      stat := (match res with
+      stat := Stat.(match res with
           | Res.Unsat -> add_unsat_ time | Res.Sat -> add_sat_ time
           | Res.Unknown -> add_unknown_ | Res.Error -> add_error_
           | Res.Timeout -> add_timeout_
@@ -102,28 +113,35 @@ module Raw = struct
     in
     MStr.iter (fun _ r -> add_res (time_of_res r) r.res) r;
     !stat
-
-  let decode =
-    let open J.Decode in
-    list Run_event.decode
-    >|= CCList.filter_map (function Run_event.Prover_run r -> Some r | _ -> None)
-    >|= of_list
-
-  let decode_stat =
-    let open J.Decode in
-    field "sat" int >>= fun sat ->
-    field "unsat" int >>= fun unsat ->
-    field "unsat" int >>= fun unknown ->
-    field "errors" int >>= fun errors ->
-    field "timeout" int >>= fun timeout ->
-    field "total_time" float >>= fun total_time ->
-    succeed {sat;unsat;errors;unknown;timeout;total_time}
 end
 
-module Analyze = struct
+module Analyze : sig
   type t = {
     raw: Raw.t;
-    stat: Raw.stat;
+    stat: Stat.t;
+    improved  : result list;
+    ok        : result list;
+    disappoint: result list;
+    errors    : result list;
+    bad       : result list; (* mismatch *)
+  }
+
+  val make : Raw.t -> t
+
+  val to_printbox : t -> PrintBox.t
+  val to_printbox_bad : t -> PrintBox.t
+
+  val is_ok : t -> bool
+
+  val num_failed : t -> int
+
+  val pp : t Fmt.printer
+  val pp_compact : t Fmt.printer
+  val pp_bad : t Fmt.printer
+end = struct
+  type t = {
+    raw: Raw.t;
+    stat: Stat.t;
     improved: result list;
     ok: result list;
     disappoint: result list;
@@ -166,7 +184,7 @@ module Analyze = struct
       "disappoint", pb_int_color Style.(fg_color Blue) @@ List.length r.disappoint;
       "errors", pb_int_color Style.(fg_color Cyan) @@ List.length r.errors;
       "bad", pb_int_color Style.(fg_color Red) @@ List.length r.bad;
-    ] @ Raw.as_printbox_record r.stat in
+    ] @ Stat.as_printbox_record r.stat in
     pb_v_record ~bars:true fields
 
   let to_printbox_bad r : PrintBox.t =
@@ -189,9 +207,9 @@ module Analyze = struct
 
   let pp_raw_res_ ?(color="reset") out r =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
-      CCFormat.(with_color color string) r.Run_result.problem.Problem.name
-      (CCFormat.with_color color Res.pp) r.Run_result.problem.Problem.expected
-      (CCFormat.with_color color Res.pp) r.res
+      Fmt.(with_color color string) r.Run_result.problem.Problem.name
+      (Fmt.with_color color Res.pp) r.Run_result.problem.Problem.expected
+      (Fmt.with_color color Res.pp) r.res
       r.Run_result.raw.rtime
 
   let pp_bad out t =
@@ -202,8 +220,8 @@ module Analyze = struct
 
   let pp_summary out t: unit =
     let pp_z_or_err out d =
-      if d=0 then CCFormat.int out d
-      else CCFormat.(with_color "Red" int) out d
+      if d=0 then Fmt.int out d
+      else Fmt.(with_color "Red" int) out d
     in
     Format.fprintf out
       "(@[<hv>:ok %d@ :improved %d@ :disappoint %d@ :bad %a@ :errors %a@ :total %d@])%a"
@@ -222,7 +240,7 @@ module Analyze = struct
       "(@[<hv2>:summary %a@ :stat %a@ :%-12s %a@ \
        :%-12s %a@ :%-12s %a@ :%-12s %a@ :%-12s %a@])"
       pp_summary  r
-      Raw.pp_stat stat
+      Stat.pp stat
       "ok" pp_l ok
       "improved" pp_l improved
       "disappoint" pp_l disappoint
@@ -232,10 +250,30 @@ module Analyze = struct
   let pp_compact out ({stat; _} as r) =
     fpf out
       "(@[<hv2>:summary %a@ :stat %a@])"
-      pp_summary r Raw.pp_stat stat
+      pp_summary r Stat.pp stat
 end
 
-module ResultsComparison = struct
+module ResultsComparison : sig
+  type t = {
+    appeared: (Problem.t * Res.t) list;  (* new problems *)
+    disappeared: (Problem.t * Res.t) list; (* problems that disappeared *)
+    improved: (Problem.t * Res.t * Res.t) list;
+    regressed: (Problem.t * Res.t * Res.t) list;
+    mismatch: (Problem.t * Res.t * Res.t) list;
+    same: (Problem.t * Res.t * float * float) list; (* same result *)
+  }
+
+  val compare : Raw.t -> Raw.t -> t
+
+  val pp : t Fmt.printer
+  (** Display comparison in a readable way *)
+
+  val pp_short : t Fmt.printer
+  (** Display comparison in a compact way *)
+
+  val to_printbox : t -> PrintBox.t
+  val to_printbox_short : t -> PrintBox.t
+end = struct
   type t = {
     appeared: (Problem.t * Res.t) list;  (* new problems *)
     disappeared: (Problem.t * Res.t) list; (* problems that disappeared *)
@@ -285,7 +323,7 @@ module ResultsComparison = struct
   let pp_pb_same out (pb,res,t1,t2) =
     fpf out "@[<h>%s: %a (%.2f vs %.2f)@]" pb.Problem.name Res.pp res t1 t2
   let pp_pb_res2 ?(color="reset") ~bold out (pb,res1,res2) =
-    let module F = CCFormat in
+    let module F = Fmt in
     fpf out "@[<h>%s: %a@]" pb.Problem.name
       ((if bold then F.with_color (CCString.capitalize_ascii color) else F.with_color color)
          (fun out () -> fpf out "%a -> %a" Res.pp res1 Res.pp res2))
@@ -347,6 +385,12 @@ module ResultsComparison = struct
     ]
 end
 
+
+(** {2 Top Result}
+
+    Main result of testing: a snapshot of the work done, + the analysis
+    per prover *)
+
 type top_result = {
   timestamp: float; (* timestamp *)
   events: Run_event.t list;
@@ -355,7 +399,76 @@ type top_result = {
   analyze: Analyze.t MStr.t lazy_t;
 }
 
-module Top_result = struct
+module Top_result : sig 
+  type t = top_result
+
+  val pp : t Fmt.printer
+  (** Full printer, including results *)
+
+  val pp_header : t Fmt.printer
+  (** Print only meta-information: UUID and timestamp *)
+
+  val pp_compact : t Fmt.printer
+  (** Print meta-informations + compact results *)
+
+  val pp_bad : t Fmt.printer
+
+  (* FIXME:
+     request a Uuid as a unique name (along with timestamp), provided
+     from main. *)
+
+  val make :
+    ?total_wall_time:float -> ?timestamp:float ->
+    Prover.name Run_result.t list ->
+    t
+
+  type comparison_result = {
+    both: ResultsComparison.t MStr.t;
+    left: Analyze.t MStr.t;
+    right: Analyze.t MStr.t;
+  }
+
+  val compare : t -> t -> comparison_result
+
+  val pp_comparison : comparison_result Fmt.printer
+  val comparison_to_printbox : ?short:bool -> comparison_result -> PrintBox.t
+
+  type table_row = {
+    tr_problem: string;
+    tr_res: (string * Res.t * float) list; (* prover, result, time *)
+  }
+
+  type table = {
+    t_meta: string;
+    t_rows: table_row list;
+    t_provers: string list;
+  }
+
+  val to_table : t -> table
+
+  val table_to_csv : table -> Csv.t
+
+  val table_to_printbox : table -> PrintBox.t
+
+  val to_printbox_summary : t -> (string * PrintBox.t) list
+  val to_printbox_table : t -> PrintBox.t
+  val to_printbox_bad : t -> (string * PrintBox.t) list
+
+  val to_csv : t -> Csv.t
+
+  val to_csv_chan : out_channel -> t -> unit
+
+  val to_csv_string : t -> string
+
+  val to_csv_file : string -> t -> unit
+  (** Write as CSV into given file *)
+
+  val decode : t J.Decode.t
+
+  val to_db : Db.t -> t -> unit or_error
+
+  val of_db : Db.t -> t or_error
+end = struct
   type t = top_result
 
   let make ?total_wall_time ?timestamp (l:Prover.name Run_result.t list) : t =
@@ -667,18 +780,38 @@ module Top_result = struct
 
   let of_db (db:Db.t) : t or_error =
     let open E.Infix in
-    get_meta db "timestamp" >>= fun timestamp ->
-    get_meta db "total-wall-time" >>= fun total_wall_time ->
-    let timestamp = float_of_string timestamp in
-    let total_wall_time = float_of_string total_wall_time in
-    Run_event.of_db_l db >>= fun events ->
-    Ok (make ~total_wall_time ~timestamp events)
+    try
+      get_meta db "timestamp" >>= fun timestamp ->
+      get_meta db "total-wall-time" >>= fun total_wall_time ->
+      let timestamp = float_of_string timestamp in
+      let total_wall_time = float_of_string total_wall_time in
+      Run_event.of_db_l db >>= fun events ->
+      Ok (make ~total_wall_time ~timestamp events)
+    with Db.Type_error d ->
+      Error ("type error: unexpected " ^ Db.Data.to_string_debug d)
 end
 
 (** {2 Benchmark, within one Top Result} *)
-module Bench = struct
+
+module Bench : sig
   type per_prover = {
-    stat: Raw.stat;
+    stat: Stat.t;
+    sat: (string * float) list;
+    unsat: (string * float) list;
+  }
+
+  type t = {
+    from: top_result;
+    per_prover: per_prover MStr.t;
+  }
+
+  val make : top_result -> t
+
+  val pp : t Fmt.printer
+  (** Full printer that compares provers against one another *)
+end = struct
+  type per_prover = {
+    stat: Stat.t;
     sat: (string * float) list;
     unsat: (string * float) list;
   }
@@ -714,7 +847,7 @@ module Bench = struct
   let pp out (r:t): unit =
     let pp_stat out (p,per_prover) =
       Format.fprintf out "@[<h2>%s:@ %a@]"
-        p Raw.pp_stat per_prover.stat
+        p Stat.pp per_prover.stat
     and pp_full _out (_p,_res) =
       () (* TODO *)
     in

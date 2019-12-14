@@ -15,7 +15,7 @@ let basic_css = {|
   h1,h2,h3{line-height:1.2} table {width: 100%;} .framed {border-width:0.3rem; border-style: solid}
   |}
 
-let src = Logs.Src.create "logitest.serve"
+let src = Logs.Src.create "benchpress.serve"
 let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 
 (* show individual files *)
@@ -28,7 +28,6 @@ let handle_show server : unit =
       | Ok res ->
         let box_summary = Test.Top_result.to_printbox_summary res in
         let bad = Test.Top_result.to_printbox_bad res in
-        let full_table = Test.Top_result.to_printbox_table res in
         let h =
           let open Html in
           let pb_html pb = PrintBox_html.to_html pb in
@@ -43,8 +42,31 @@ let handle_show server : unit =
                 CCList.flat_map
                   (fun (n,p) -> [h3 [txt ("bad for " ^ n)]; div [pb_html p]])
                   bad;
+                [a ~a:[a_href ("/show_full/"^file)] [txt "show full results"]];
+            ])
+        in
+        Logs.debug ~src (fun k->k "successful reply for %S" file);
+        H.Response.make_string (Ok (string_of_html h))
+    )
+
+(* show full table for a file *)
+let handle_show_full server : unit =
+  H.add_path_handler server ~meth:`GET "/show_full/%s%!" (fun file _req ->
+      match Utils.load_file file with
+      | Error e ->
+        Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
+        H.Response.fail ~code:500 "could not load %S:\n%s" file e
+      | Ok res ->
+        let full_table = Test.Top_result.to_printbox_table res in
+        let h =
+          let open Html in
+          let pb_html pb = PrintBox_html.to_html pb in
+          html
+            (head (title (txt "show full table")) [style [txt basic_css]])
+            (body @@ List.flatten [
+                [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"]];
                 [h3 [txt "full results"];
-                 details (summary [txt "table"]) [pb_html full_table]];
+                 div [pb_html full_table]];
             ])
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
@@ -147,6 +169,7 @@ let main ?port () =
     let data_dir = Filename.concat (Xdg.data_dir()) !Xdg.name_of_project in
     handle_root server data_dir;
     handle_show server;
+    handle_show_full server;
     handle_compare server;
     H.run server |> E.map_err Printexc.to_string
   with e ->

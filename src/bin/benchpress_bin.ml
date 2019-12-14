@@ -257,6 +257,36 @@ module Prover_list = struct
     Term.(pure run $ Utils.definitions_term), Term.info ~doc "prover-list"
 end
 
+(** {2 Show Task} *)
+
+module Task_show = struct
+  let run defs names =
+    let open E.Infix in
+    E.map_l (Definitions.find_task defs) names >>= fun l ->
+    Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
+    Ok ()
+
+  let cmd =
+    let open Cmdliner in
+    let doc = "show definitions of given task(s)" in
+    let names = Arg.(value & pos_all string [] & info []) in
+    Term.(pure run $ Utils.definitions_term $ names ), Term.info ~doc "task-show"
+end
+
+(** {2 List Tasks} *)
+
+module Task_list = struct
+  let run defs =
+    let l = Definitions.all_tasks defs in
+    Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp_name) l;
+    Ok ()
+
+  let cmd =
+    let open Cmdliner in
+    let doc = "list task(s) defined in config" in
+    Term.(pure run $ Utils.definitions_term), Term.info ~doc "task-list"
+end
+
 (** {2 Convert results to Sql} *)
 
 module Sql_convert = struct
@@ -299,6 +329,8 @@ let parse_opt () =
     Prover_show.cmd;
     Prover_list.cmd;
     Sql_convert.cmd;
+    Task_list.cmd;
+    Task_show.cmd;
   ]
 
 let () =
