@@ -522,7 +522,7 @@ module Top_result : sig
   val to_csv_file : string -> t -> unit
   (** Write as CSV into given file *)
 
-  val decode : t J.Decode.t
+  val decode : ?uuid:string -> unit -> t J.Decode.t
 end = struct
   type t = top_result
 
@@ -845,11 +845,14 @@ end = struct
       ~f:Db.Cursor.next
     |> CCOpt.to_result ("did not find metadata " ^ k)
 
-  let decode : t J.Decode.t =
+  let decode ?uuid:uuid_g () : t J.Decode.t =
     let open J.Decode in
     field "timestamp" float >>= fun timestamp ->
     field_opt "total_wall_time" float >>= fun total_wall_time ->
     field_opt "uuid" string >>= fun uuid ->
+    let uuid = match uuid with
+      | None -> uuid_g | Some _ -> uuid
+    in
     let uuid =
       uuid
       |> CCOpt.flat_map Uuidm.of_string

@@ -178,6 +178,15 @@ let mk_file_full (f:string) : string or_error =
     Ok file
   )
 
+let guess_uuid (f:string) =
+  let f = Filename.chop_extension @@ Filename.basename f in
+  try
+    Scanf.sscanf f "res-%[^-%]-%s%!"
+      (fun _ s -> Some s)
+  with e ->
+    Logs.err (fun k->k"cannot find UUID for %s: %s" f(Printexc.to_string e));
+    None
+
 (** Load file by name *)
 let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
   try
@@ -195,11 +204,13 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
           CCUnix.with_process_in (Printf.sprintf "zcat '%s'" file)
             ~f:Misc.Json.J.from_channel in
         (* Format.printf "%a@." (Misc.Json.J.pretty_print ?std:None) v; *)
-        Misc.Json.Decode.decode_value T.Top_result.decode v
+        let uuid = guess_uuid f in
+        Misc.Json.Decode.decode_value (T.Top_result.decode ?uuid ()) v
         |> E.map_err Misc.Json.Decode.string_of_error
         |> E.map (fun r -> file, r)
       ) else (
-        Misc.Json.Decode.decode_file T.Top_result.decode file
+        let uuid = guess_uuid f in
+        Misc.Json.Decode.decode_file (T.Top_result.decode ?uuid ()) file
         |> E.map_err Misc.Json.Decode.string_of_error
         |> E.map (fun r -> file, r)
       )
