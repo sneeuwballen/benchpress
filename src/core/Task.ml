@@ -1,9 +1,11 @@
 
 module Fmt = CCFormat
 
+type name = string
+
 (** Description of a given task *)
 type t = {
-  name: string; (* name of this task *)
+  name: name; (* name of this task *)
   synopsis: string option;
   action: Action.t;
 }

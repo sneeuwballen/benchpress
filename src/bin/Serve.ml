@@ -18,9 +18,23 @@ let basic_css = {|
 let src = Logs.Src.create "benchpress.serve"
 let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 
+type t = {
+  server: H.t;
+  task_q: Task_queue.t;
+  data_dir: string;
+}
+
+let html_redirect (s:string) =
+  let open Html in
+  html
+    (head (title @@ txt s)
+       [style [txt basic_css];
+        meta ~a:[a_http_equiv "Refresh"; a_content "0; url=/"] ()])
+    (body [txt s])
+
 (* show individual files *)
-let handle_show server : unit =
-  H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
+let handle_show (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/show/%s%!" (fun file _req ->
       match Utils.load_file_summary file with
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
@@ -60,8 +74,8 @@ let handle_show server : unit =
     )
 
 (* show full table for a file *)
-let handle_show_full server : unit =
-  H.add_path_handler server ~meth:`GET "/show_full/%s%!" (fun file _req ->
+let handle_show_full (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/show_full/%s%!" (fun file _req ->
       match Utils.load_file file with
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
@@ -84,8 +98,8 @@ let handle_show_full server : unit =
     )
 
 (* export as CSV *)
-let handle_show_csv server : unit =
-  H.add_path_handler server ~meth:`GET "/show_csv/%s%!" (fun file _req ->
+let handle_show_csv (self:t): unit =
+  H.add_path_handler self.server ~meth:`GET "/show_csv/%s%!" (fun file _req ->
       match Utils.load_file file with
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
@@ -151,8 +165,8 @@ let handle_compare server : unit =
     )
    *)
 
-let handle_provers server : unit =
-  H.add_path_handler server ~meth:`GET "/provers/" (fun _r ->
+let handle_provers (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/provers/" (fun _r ->
       let defs = Utils.get_definitions () |> E.get_or_failwith in
       let provers = Definitions.all_provers defs in
       let h =
@@ -171,8 +185,8 @@ let handle_provers server : unit =
       H.Response.make_string (Ok (string_of_html h))
     )
 
-let handle_tasks server : unit =
-  H.add_path_handler server ~meth:`GET "/tasks/" (fun _r ->
+let handle_tasks (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/tasks/" (fun _r ->
       let defs = Utils.get_definitions () |> E.get_or_failwith in
       let tasks = Definitions.all_tasks defs in
       let h =
@@ -203,37 +217,68 @@ let handle_tasks server : unit =
       H.Response.make_string (Ok (string_of_html h))
     )
 
-let handle_run server : unit =
-  H.add_path_handler server ~meth:`POST "/run/%s" (fun name _r ->
+let handle_run (self:t) : unit =
+  H.add_path_handler self.server ~meth:`POST "/run/%s" (fun name _r ->
       Logs.debug (fun k->k "run task %S" name);
       let defs = Utils.get_definitions () |> E.get_or_failwith in
       let name =
         U.percent_decode name
         |> CCOpt.get_lazy (fun () -> H.Response.fail_raise ~code:404 "cannot find task %S" name)
       in
-      let _task =
+      let task =
         match Definitions.find_task defs name with
         | Ok t -> t
         | Error e -> H.Response.fail_raise ~code:404 "cannot find task %s: %s" name e
       in
-      Logs.debug (fun k->k "found task %s" name);
-      H.Response.fail_raise ~code:500 "not implemented: run task"
-        (* TODO: push the task into a global queue *)
+      Logs.debug (fun k->k "found task %s, run it" name);
+      Task_queue.push self.task_q task;
+      let msg =
+        Format.asprintf "task queued (%d in queue)!" (Task_queue.size self.task_q)
+      in
+      H.Response.make_string @@ Ok (string_of_html @@ html_redirect msg)
+    )
+
+let handle_job_interrupt (self:t) : unit =
+  H.add_path_handler self.server ~meth:`POST "/interrupt/" (fun _r ->
+      Logs.debug (fun k->k "interrupt current task");
+      let r =
+        match Task_queue.cur_job self.task_q with
+        | None -> Ok (string_of_html @@ html_redirect "no job to interrupt.")
+        | Some j ->
+          Task_queue.Job.interrupt j;
+          Ok (string_of_html @@ html_redirect "job interrupted")
+      in
+      H.Response.make_string r
     )
 
 (* index *)
-let handle_root server data_dir : unit =
-  H.add_path_handler server ~meth:`GET "/%!" (fun _req ->
-      let entries = Utils.list_entries data_dir in
+let handle_root (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/%!" (fun _req ->
+      let entries = Utils.list_entries self.data_dir in
       let h =
         let open Html in
         html
           (head(title (txt "index")) [style [txt basic_css]])
           (body [
-              (* TODO: display running queue *)
-              ul [
-                li [a ~a:[a_href "/provers/"] [txt "provers"]];
-                li [a ~a:[a_href "/tasks/"] [txt "tasks"]];
+              ul @@ List.flatten [
+                [li [a ~a:[a_href "/provers/"] [txt "provers"]];
+                 li [a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+                (match Task_queue.cur_job self.task_q with
+                 | None -> []
+                 | Some j ->
+                   (* display current job *)
+                   [li [txt @@
+                        Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)];
+                    li
+                      [pre [txt @@
+                             Format.asprintf "current task: %a" Task_queue.Job.pp j];
+                        form ~a:[a_id (uri_of_string "cancel");
+                            a_action (uri_of_string "/interrupt/");
+                                a_method `Post;]
+                          [button ~a:[a_button_type `Submit; a_class ["stick"]]
+                             [txt "interrupt"]]];
+                   ];
+                )
               ];
               h3 [txt "list of results"];
               let l = 
@@ -263,20 +308,25 @@ let handle_root server data_dir : unit =
 let main ?port () =
   try
     let server = H.create ?port () in
+    let data_dir = Utils.data_dir () in
+    let defs = Utils.get_definitions () |> E.get_or_failwith in
+    let self = { server; data_dir; task_q=Task_queue.create ~defs (); } in
+    (* thread to execute tasks *)
+    let _th_r = Thread.create Task_queue.loop self.task_q in
     (* trick: see if debug level is active *)
     Logs.debug (fun k ->
       H._enable_debug true;
       k "enable http debug"
       );
     Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
-    let data_dir = Filename.concat (Xdg.data_dir()) !Xdg.name_of_project in
-    handle_root server data_dir;
-    handle_show server;
-    handle_show_full server;
-    handle_show_csv server;
-    handle_tasks server;
-    handle_provers server;
-    handle_run server;
+    handle_root self;
+    handle_show self;
+    handle_show_full self;
+    handle_show_csv self;
+    handle_tasks self;
+    handle_provers self;
+    handle_run self;
+    handle_job_interrupt self;
     (* FIXME:
        handle_compare server; *)
     H.run server |> E.map_err Printexc.to_string

@@ -2,35 +2,6 @@ module T = Test
 module E = CCResult
 type 'a or_error = ('a, string) E.t
 
-(* callback that prints a result *)
-let progress_dynamic len =
-  let start = Unix.gettimeofday () in
-  let count = ref 0 in
-  fun _ ->
-    let time_elapsed = Unix.gettimeofday () -. start in
-    incr count;
-    let len_bar = 50 in
-    let bar = String.init len_bar
-        (fun i -> if i * len <= len_bar * !count then '#' else '-') in
-    let percent = if len=0 then 100. else (float_of_int !count *. 100.) /. float_of_int len in
-    (* elapsed=(percent/100)*total, so total=elapsed*100/percent; eta=total-elapsed *)
-    let eta = time_elapsed *. (100. -. percent) /. percent in
-    Misc.synchronized
-      (fun () ->
-         Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?"
-           !count len percent (Misc.human_time time_elapsed) bar (Misc.human_time eta));
-    if !count = len then (
-      Misc.synchronized (fun() -> Format.printf "@.")
-    )
-
-let progress ~w_prover ~w_pb ?(dyn=false) n =
-  let pp_bar = progress_dynamic n in
-  (function res ->
-     if dyn then output_string stdout Misc.reset_line;
-     Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
-     if dyn then pp_bar res;
-     ())
-
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action
     ?j ?timestamp ?dyn ?timeout ?memory ~notify
@@ -38,24 +9,14 @@ let execute_run_prover_action
   : T.Top_result.t or_error =
   let open E.Infix in
   begin
-    Action.Exec_run_provers.expand ?j ?timeout ?memory r >>= fun r ->
+    Exec_action.Exec_run_provers.expand ?j ?timeout ?memory r >>= fun r ->
     let len = List.length r.problems in
     Notify.sendf notify "testing with %d provers, %d problems…"
       (List.length r.provers) len;
-    let on_solve =
-      let w_prover =
-        List.fold_left (fun m p -> max m (String.length (Prover.name p)+1)) 0
-          r.provers
-        |> min 25
-      and w_pb =
-        List.fold_left (fun m pb -> max m (String.length pb.Problem.name+1)) 0 r.problems
-        |> min 60
-      in
-      progress ~w_prover ~w_pb ?dyn (len * List.length r.provers)
-    in
+    let progress = Exec_action.Progress_run_provers.make ?dyn r in
     (* solve *)
     begin
-      Action.Exec_run_provers.run ?timestamp ~on_solve r
+      Exec_action.Exec_run_provers.run ?timestamp ~on_solve:progress r
       |> E.add_ctxf "running %d tests" len
     end
     >>= fun results ->
