@@ -6,14 +6,14 @@ jobs:
     runs-on: ${{ matrix.operating-system }}
     strategy:
       matrix:
-        operating-system: [macos-latest, ubuntu-latest, windows-latest]
         ocaml-version: [ '4.06.0' ]
+        operating-system: [macos-latest, ubuntu-latest]
+        #operating-system: [macos-latest, ubuntu-latest, windows-latest]
     steps:
     - uses: actions/checkout@master
     - uses: avsm/setup-ocaml@master
       with:
         ocaml-version: ${{ matrix.ocaml-version }}
-    - run: opam upd
     - run: opam pin -n .
     - run: opam depext -yt benchpress
     - run: opam install -t . --deps-only
