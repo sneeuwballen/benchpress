@@ -119,7 +119,6 @@ end = struct
     (* prepare DB *)
     let db_file = db_file_for_uuid ~timestamp uuid in
     let db = Sqlite3.db_open db_file in
-    defer_close_db db @@ fun () ->
     T.Top_result.db_prepare db >>= fun () ->
     on_start self;
     (* build list of tasks *)
@@ -161,6 +160,7 @@ end = struct
       ) in
       T.Compact_result.of_db ~total_wall_time ~uuid ~timestamp db >>= fun r ->
       on_done r;
+      ignore (Sqlite3.db_close db : bool);
       Ok (top_res, r)
     )
 end
