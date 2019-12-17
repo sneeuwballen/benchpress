@@ -4,138 +4,112 @@
 
 module E = CCResult
 module J = Misc.Json
+module Db = Sqlite3_utils
+module Fmt = CCFormat
 
 type 'a or_error = ('a, string) CCResult.t
 
 type prover  = Prover.t
 type checker = unit
 
-type +'a result = {
-  program : 'a;
-  problem : Problem.t;
-  timeout: int;
-  raw : Proc_run_result.t;
-}
-
-let analyze_p_opt self = Prover.analyze_p_opt self.program self.raw
-let analyze_p (self:_ result) =
-  match analyze_p_opt self with
-  | Some x -> x
-  | None ->
-    if self.raw.errcode = 0 then Res.Unknown
-    else if self.raw.rtime > float self.timeout then Res.Timeout
-    else Res.Error
-
 type t =
-  | Prover_run of prover result
-  | Checker_run of checker result
+  | Prover_run of Prover.name Run_result.t
+  | Checker_run of checker Run_result.t
 
 type event = t
 
-let program e = e.program
-let problem e = e.problem
-let raw e = e.raw
-
-let pp_inner pp_prog out (r:_ result): unit =
-  Format.fprintf out "(@[<hv2>:program %a@ :problem %a@ :raw %a@])"
-    pp_prog (program r) Problem.pp (problem r) Proc_run_result.pp (raw r)
-
 let pp out = function
-  | Prover_run r -> pp_inner Prover.pp_name out r
-  | Checker_run r -> pp_inner CCFormat.unit out r
+  | Prover_run r -> Run_result.pp Fmt.string out r
+  | Checker_run r -> Run_result.pp Fmt.unit out r
 
 let to_string = CCFormat.to_string pp
 
 let mk_prover r = Prover_run r
 let mk_checker r = Checker_run r
 
-type timestamp = float
-
-type snapshot = {
-  timestamp: timestamp;
-  events: t list;
-  meta: string; (* additional metadata *)
-}
-
 let assoc_or def x l =
   try List.assoc x l
   with Not_found -> def
 
-module Snapshot = struct
-  type t = snapshot
-
-  let make ?(meta="") ?(timestamp=Unix.gettimeofday()) l =
-    { timestamp; events=l; meta; }
-
-  let pp out (r:t) =
-    Format.fprintf out
-      "(@[<hv>snapshot@ :timestamp %.2f@ :events (@[<v>%a@])@])"
-      r.timestamp CCFormat.(list ~sep:(return "@ ") pp) r.events
-
-  let provers t =
-    List.fold_left
-      (fun set e -> match e with
-         | Prover_run {program=p;_} ->
-           Prover.Set.add p set
-         | Checker_run _ -> set)
-      Prover.Set.empty
-      t.events
-end
-
-type prover_set = Prover.Set.t
-
-type snapshot_meta = {
-  s_timestamp: float;
-  s_meta: string;
-  s_provers: prover_set;
-  s_len: int;
-}
-
-module Meta = struct
-  type t = snapshot_meta
-  let timestamp s = s.s_timestamp
-  let provers s = s.s_provers
-  let length s = s.s_len
-
-  let pp out r: unit =
-    Format.fprintf out
-      "(@[<hv>meta@ :timestamp %.2f@ :len %d@])" r.s_timestamp r.s_len
-end
-
-let meta s = {
-  s_timestamp=s.timestamp;
-  s_meta=s.meta;
-  s_provers=Snapshot.provers s;
-  s_len=List.length s.events;
-}
-
-let encode_result f self =
-  let open J.Encode in
-  let {program; problem; timeout; raw} = self in
-  obj [
-    "program", f program;
-    "problem", Problem.encode problem;
-    "timeout", int timeout;
-    "raw", Proc_run_result.encode raw;
-  ]
-
-let decode_result f =
-  let open J.Decode in
-  field "problem" Problem.decode >>= fun problem ->
-  field "timeout" int >>= fun timeout ->
-  field "program" f >>= fun program ->
-  field "raw" Proc_run_result.decode >>= fun raw ->
-  succeed {problem;timeout;program;raw}
-
-let encode self =
-  let open J.Encode in
-  match self with
-  | Prover_run r -> list value [string "prover"; encode_result Prover.encode r]
-  | Checker_run r -> list value [string "prover"; encode_result (fun ()->null) r]
-
 let decode =
   let open J.Decode in
   string >>:: function
-  | "prover" -> (list1 (decode_result Prover.decode) >|= fun r -> Prover_run r)
-  | "checker" -> (list1 (decode_result @@ succeed ()) >|= fun r -> Checker_run r)
+  | "prover" ->
+    (list1 (Run_result.decode Prover.decode) >|= fun r ->
+     Prover_run (Run_result.analyze_self r))
+  | "checker" -> (list1 (Run_result.decode @@ succeed ()) >|= fun r -> Checker_run r)
   | _ -> fail "expected prover/checker run event"
+
+(* main schema for results! *)
+let db_prepare (db:Db.t) : unit or_error =
+  let open E.Infix in
+  Prover.db_prepare db >>= fun () ->
+  Db.exec0 db
+    {|create table if not exists
+      prover_res (
+        prover text not null,
+        file text not null,
+        res text not null,
+        file_expect text not null,
+        timeout int, 
+        errcode int not null,
+        stdout blob,
+        stderr blob,
+        rtime float,
+        utime float,
+        stime float,
+        unique (prover, file) on conflict fail
+      );
+    create index if not exists pr_prover on prover_res(prover);
+    create index if not exists pr_file on prover_res(file);
+    |}
+  |> Misc.db_err ~ctx:"run-event.db-prepare"
+
+let to_db_prover_result (db:Db.t) (self:Prover.name Run_result.t) : _ or_error =
+  Db.exec_no_cursor db
+    {|insert into prover_res
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    |}
+    ~ty:Db.Ty.(p4 text text text text @>> p2 int int @>> p2 blob blob @>> p3 float float float)
+        self.program
+        self.problem.Problem.name
+        (self.res |> Res.to_string)
+        (self.problem.Problem.expected |> Res.to_string)
+        self.timeout
+        self.raw.errcode
+        self.raw.stdout
+        self.raw.stderr
+        self.raw.rtime
+        self.raw.utime
+        self.raw.stime
+  |> Misc.db_err ~ctx:"run-event.to-db-prover-result"
+
+let to_db db self : _ or_error =
+  match self with
+  | Prover_run r -> to_db_prover_result db r
+  | Checker_run _ ->
+    Error "not implemented: conversion of checker res to DB" (* TODO *)
+
+let of_db_map db ~f : _ list or_error =
+  Db.exec_no_params db {|
+    select
+      prover, file, res, file_expect, timeout, errcode, stdout, stderr,
+      rtime, utime, stime
+     from prover_res;
+    |}
+    ~ty:Db.Ty.(
+        p4 text text text text @>> p2 int int @>> p2 blob blob @>> p3 float float float,
+        (fun pname pb_name res expected timeout errcode stdout stderr rtime utime stime ->
+           let pb = 
+             {Problem.name=pb_name; expected=Res.of_string expected}
+           in
+           let p =
+             Run_result.make pname pb ~timeout ~res:(Res.of_string res)
+             {errcode;stderr;stdout;rtime;utime;stime}
+           in
+           f p))
+    ~f:Db.Cursor.to_list_rev
+  |> Misc.db_err ~ctx:"run-event.of-db-map"
+
+let of_db_l db : Prover.name Run_result.t list or_error =
+  of_db_map ~f:(fun x->x) db

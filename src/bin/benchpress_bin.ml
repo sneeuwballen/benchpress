@@ -7,11 +7,6 @@ module E = CCResult
 
 type 'a or_error = ('a, string) E.t
 
-let snapshot_name_term : string option Cmdliner.Term.t =
-  let open Cmdliner in
-  Arg.(value & pos 0 (some string) None
-       & info [] ~docv:"FILE" ~doc:"file/name containing results (default: last)")
-
 (** {2 Run} *)
 module Run = struct
   (* sub-command for running tests *)
@@ -21,7 +16,8 @@ module Run = struct
         meta provers csv summary no_color
       : (unit,string) E.t =
       if no_color then CCFormat.set_color_default false;
-      Run_main.main ~dyn ~j ?timeout ?memory ?csv ?provers
+      let dyn = if dyn then Some true else None in
+      Run_main.main ?dyn ~j ?timeout ?memory ?csv ?provers
         ~meta ?task ?summary ?dir_file defs paths ()
     in
     let defs = Utils.definitions_term
@@ -61,7 +57,7 @@ end
 module List_files = struct
   let main ?(abs=false) () =
     try
-      let data_dir = Filename.concat (Xdg.data_dir()) "benchpress" in
+      let data_dir = Utils.data_dir() in
       let entries = Utils.list_entries data_dir in
       List.iter
         (fun (s,size) ->
@@ -89,9 +85,9 @@ module Show = struct
     let open Cmdliner in
     let csv =
       Arg.(value & opt (some string) None & info ["csv"] ~doc:"CSV output file")
-    and files =
-      Arg.(non_empty & pos_all string [] &
-           info [] ~docv:"FILES" ~doc:"files to read")
+    and file =
+      Arg.(required & pos 0 (some string) None &
+           info [] ~docv:"FILE" ~doc:"file to read")
     and no_color =
       Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
     and check =
@@ -100,13 +96,16 @@ module Show = struct
       Arg.(value & opt ~vopt:true bool true & info ["bad"] ~doc:"list bad results")
     and summary =
       Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
+    and debug =
+      Logs_cli.level ()
     in
-    let aux check bad csv summary no_color files : _ E.t = 
+    let aux check bad csv summary no_color debug file : _ E.t = 
+      Misc.setup_logs debug;
       if no_color then CCFormat.set_color_default false;
-      Show.main ~check ~bad ?csv ?summary files
+      Show.main ~check ~bad ?csv ?summary file
     in
     let doc = "show benchmark results (see `list-files`)" in
-    Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ files),
+    Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ debug $ file),
     Term.info ~doc "show"
 end
 
@@ -164,16 +163,18 @@ end
 (** {2 Embedded web server} *)
 
 module Serve = struct
-  (* sub-command to sample a directory *)
+  (* sub-command to serve the web UI *)
   let cmd =
     let open Cmdliner in
     let port =
       Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
     and debug =
-      Arg.(value & opt int 0 & info ["d"; "debug"] ~doc:"enable debug")
+      Logs_cli.level ()
     in
     let doc = "serve embedded web UI on given port" in
-    let aux debug port () = Serve.main ~debug ?port () in
+    let aux debug port () =
+      Misc.setup_logs debug;
+      Serve.main ?port () in
     Term.(pure aux $ debug $ port $ pure () ), Term.info ~doc "serve"
 end
 
@@ -185,11 +186,10 @@ module Dir = struct
   let which_conv = Cmdliner.Arg.(enum ["config", Config; "state", State])
 
   let run c =
-    let (//) = Filename.concat in
     Format.printf "%s@."
       (match c with
-       | Config -> Xdg.config_dir() // ! Xdg.name_of_project
-       | State -> Xdg.data_dir() // ! Xdg.name_of_project);
+       | Config -> Utils.config_dir()
+       | State -> Utils.data_dir ());
     Ok ()
 
   (* sub-command for showing results *)
@@ -208,11 +208,11 @@ end
 
 module Check_config = struct
   let run with_default f =
-    let default_file = Utils.default_conf () in
+    let default_file = Utils.default_config () in
     let f =
       if f=[] then (
         if Sys.file_exists default_file then [default_file] else []
-      ) else if with_default && Sys.file_exists default_file then Utils.default_conf() :: f else f in
+      ) else if with_default && Sys.file_exists default_file then Utils.default_config() :: f else f in
     match Stanza.parse_files f with
     | Ok c ->
       Format.printf "@[<v>%a@]@." Stanza.pp_l c;
@@ -261,6 +261,51 @@ module Prover_list = struct
     Term.(pure run $ Utils.definitions_term), Term.info ~doc "prover-list"
 end
 
+(** {2 Show Task} *)
+
+module Task_show = struct
+  let run defs names =
+    let open E.Infix in
+    E.map_l (Definitions.find_task defs) names >>= fun l ->
+    Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
+    Ok ()
+
+  let cmd =
+    let open Cmdliner in
+    let doc = "show definitions of given task(s)" in
+    let names = Arg.(value & pos_all string [] & info []) in
+    Term.(pure run $ Utils.definitions_term $ names ), Term.info ~doc "task-show"
+end
+
+(** {2 List Tasks} *)
+
+module Task_list = struct
+  let run defs =
+    let l = Definitions.all_tasks defs in
+    Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp_name) l;
+    Ok ()
+
+  let cmd =
+    let open Cmdliner in
+    let doc = "list task(s) defined in config" in
+    Term.(pure run $ Utils.definitions_term), Term.info ~doc "task-list"
+end
+
+(** {2 Convert results to Sql} *)
+
+module Sql_convert = struct
+  (* sub-command for showing results *)
+  let cmd =
+    let open Cmdliner in
+    let files =
+      Arg.(non_empty & pos_all string [] &
+           info [] ~docv:"FILES" ~doc:"files to read")
+    in
+    let doc = "convert result(s) into sqlite files" in
+    Term.(pure Sql_res.run $ Utils.definitions_term $ files),
+    Term.info ~doc "sql-convert"
+end
+
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -287,6 +332,9 @@ let parse_opt () =
     Check_config.cmd;
     Prover_show.cmd;
     Prover_list.cmd;
+    Sql_convert.cmd;
+    Task_list.cmd;
+    Task_show.cmd;
   ]
 
 let () =

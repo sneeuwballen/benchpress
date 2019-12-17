@@ -59,19 +59,20 @@ let execute_run_prover_action
       |> E.add_ctxf "running %d tests" len
     end
     >>= fun results ->
-    Prover.Map_name.iter
-      (fun p r ->
+    let analyze = T.Top_result.analyze results in
+    List.iter
+      (fun (p,r) ->
          Misc.synchronized (fun () ->
          Format.printf "(@[<2>:prover %s @[<2>:results@ %a@]@])@."
-           (Prover.name p) T.Analyze.pp r))
-      (Lazy.force results.T.analyze);
+           p T.Analyze.pp r))
+      analyze;
     E.return results
   end |> E.add_ctxf "running tests"
 
 let main ?j ?dyn ?timeout ?memory ?csv ?provers
     ?meta:_ ?summary ?task ?dir_file (defs:Definitions.t) paths () =
   let open E.Infix in
-  Misc.Debug.debugf 2
+  Logs.info
     (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
   let timestamp = Unix.gettimeofday() in
   let notify = Notify.make defs in
@@ -103,12 +104,14 @@ let main ?j ?dyn ?timeout ?memory ?csv ?provers
       ) >>= fun provers ->
       Definitions.mk_run_provers ?timeout ?memory ?j ~provers ~paths defs
   end >>= fun run_provers_action ->
-  execute_run_prover_action ?dyn ?timeout ?memory ?j ~notify ~timestamp
+  let j = CCOpt.Infix.( j <+> Definitions.option_j defs) in
+  let progress = CCOpt.Infix.( dyn <+> Definitions.option_progress defs) in
+  execute_run_prover_action ?dyn:progress ?timeout ?memory ?j ~notify ~timestamp
     run_provers_action
   >>= fun (results:T.Top_result.t) ->
   Utils.dump_csv ~csv results;
   Utils.dump_summary ~summary results;
-  Utils.dump_results_json ~timestamp results;
+  Utils.dump_results_sqlite results;
   (* now fail if results were bad *)
   let r = Utils.check_res notify results in
   Notify.sync notify;

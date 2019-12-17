@@ -55,5 +55,4 @@ val to_string : t -> string
 
 module J = Misc.Json
 
-val encode : t J.Encode.t
 val decode : t J.Decode.t

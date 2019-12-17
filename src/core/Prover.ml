@@ -3,6 +3,12 @@
 (** {1 Run Prover} *)
 
 module Fmt = CCFormat
+module E = CCResult
+module Db = Sqlite3_utils
+module J = Misc.Json
+type 'a or_error = ('a, string) E.t
+
+let src_log = Logs.Src.create "prover"
 
 type version =
   | Tag of string
@@ -11,16 +17,18 @@ type version =
       commit: string;  (* branch & commit hash *)
     }
 
+type name = string
+
 type t = {
   (* Prover identification *)
-  name : string;
+  name : name;
   version : version;
 
-  (* Pover execution *)
-  binary: string;       (* name of the program itself *)
+  (* Prover execution *)
+  binary: string; (* name of the program itself *)
   binary_deps: (string list [@default []]); (* additional list of binaries this depends on *)
-  cmd: string;          (* the command line to run.
-                           possibly contains $binary, $file, $memory and $timeout *)
+  cmd: string;
+  (* the command line to run. Possibly contains $binary, $file, $memory and $timeout *)
 
   (* Result analysis *)
   unsat   : string option;  (* regex for "unsat" *)
@@ -34,19 +42,62 @@ type t_ = t
 
 let equal p1 p2 = p1.name = p2.name
 
-let version_to_string = function
-  | Tag s -> s
-  | Git {branch=b; commit=c} -> Printf.sprintf "%s#%s" b c
-
 let name p = p.name
 
 let pp_name out p = Fmt.string out p.name
-let pp_version out =
-  let open Misc.Pp in
-  function
-  | Tag s -> Fmt.fprintf out "(tag %a)" pp_str s
-  | Git {branch=b; commit=c} ->
-    Fmt.fprintf out "(@[git@ branch=%a@ commit=%a@])" pp_str b pp_str c
+let decode_name = J.Decode.string
+
+module Version = struct
+  type t = version
+
+  let to_string_short = function
+    | Tag s -> s
+    | Git {branch=b; commit=c} -> Printf.sprintf "%s#%s" b c
+
+  let pp out =
+    let open Misc.Pp in
+    function
+    | Tag s -> Fmt.fprintf out "(tag %a)" pp_str s
+    | Git {branch=b; commit=c} ->
+      Fmt.fprintf out "(@[git@ branch=%a@ commit=%a@])" pp_str b pp_str c
+
+  let to_sexp = function
+    | Tag s -> Sexp_loc.atom s
+    | Git {branch; commit} ->
+      let open Sexp_loc in
+      of_list [
+        atom "git";
+        of_list [atom "branch"; atom branch];
+        of_list [atom "commit"; atom commit];
+      ]
+
+  let sexp_decode =
+    let open Sexp_loc.D in
+    one_of [
+      ("atom", string >|= fun s -> Tag s);
+      ("list", string >>:: function
+        | "git" ->
+          field "branch" string >>= fun branch ->
+          field "commit" string >>= fun commit ->
+          succeed (Git{branch;commit})
+        | _ -> fail "constructor should be 'git'")
+    ]
+
+  let decode =
+    let open J.Decode in
+    string >>:: function
+    | "tag" -> (list1 string >|= fun s -> Tag s)
+    | "git" ->
+      (list string >>= function
+      | [branch;commit] -> succeed (Git {branch;commit})
+      | _ -> fail "need 2 arguments")
+    | _ -> fail "unknown constructor, expect tag/git"
+
+  let ser_sexp v = Sexp_loc.to_string @@ to_sexp v
+  let deser_sexp s =
+    Sexp_loc.D.decode_string sexp_decode s
+    |> E.map_err Sexp_loc.D.string_of_error
+end
 
 let pp out self =
   let open Misc.Pp in
@@ -55,7 +106,7 @@ let pp out self =
   Fmt.fprintf out
     "(@[<hv1>prover%a%a%a%a%a%a%a%a%a@])"
     (pp_f "name" pp_str) name
-    (pp_f "version" pp_version) version
+    (pp_f "version" Version.pp) version
     (pp_f "cmd" pp_str) cmd
     (pp_f "binary" pp_str) binary
     (pp_opt "sat" pp_regex) sat
@@ -112,49 +163,11 @@ module As_key = struct
 
   let compare p1 p2 =
     let c = String.compare p1.name p2.name in
-    if c<>0 then c else Pervasives.compare p1.version p2.version
+    if c<>0 then c else CCOrd.compare p1.version p2.version
 end
 
 module Map = CCMap.Make(As_key)
 module Set = CCSet.Make(As_key)
-    
-module J = Misc.Json
-
-let encode_version v =
-  let open J.Encode in
-  match v with
-  | Tag s -> list string ["tag"; s]
-  | Git {branch;commit} ->
-    list string ["git"; branch; commit]
-
-let decode_version =
-  let open J.Decode in
-  string >>:: function
-  | "tag" -> (list1 string >|= fun s -> Tag s)
-  | "git" ->
-    (list string >>= function
-    | [branch;commit] -> succeed (Git {branch;commit})
-    | _ -> fail "need 2 arguments")
-  | _ -> fail "unknown constructor, expect tag/git"
-
-let encode p =
-  let open J.Encode in
-  let {
-    name;version;binary;binary_deps;cmd;
-    sat; unsat; unknown; timeout; memory;
-  } = p in
-  obj [
-    "name", string name;
-    "version", encode_version version;
-    "binary", string binary;
-    "binary_deps", list string binary_deps;
-    "cmd", string cmd;
-    "unsat", option string unsat;
-    "sat", option string sat;
-    "unknown", option string unknown;
-    "timeout", option string timeout;
-    "memory", option string memory;
-  ]
 
 let decode =
   let open J.Decode in
@@ -165,7 +178,7 @@ let decode =
   field "cmd" string >>= fun cmd ->
   field "binary" string >>= fun binary ->
   field "binary_deps" (list string) >>= fun binary_deps ->
-  field "version" decode_version >>= fun version ->
+  field "version" Version.decode >>= fun version ->
   f_opt_null "unsat" >>= fun unsat ->
   f_opt_null "sat" >>= fun sat ->
   f_opt_null "unknown" >>= fun unknown ->
@@ -189,7 +202,7 @@ let run_proc cmd =
       end
   in
   let errcode = p#errcode in
-  Misc.Debug.debugf 5
+  Logs.debug ~src:src_log
     (fun k->k "(@[prover.run.done errcode: %d@ cmd %a@]" errcode Misc.Pp.pp_str cmd);
   (* Compute time used by the prover *)
   let rtime = Unix.gettimeofday () -. start in
@@ -197,12 +210,12 @@ let run_proc cmd =
   let stime = 0. in
   let stdout = p#stdout in
   let stderr = p#stderr in
-  Misc.Debug.debugf 10
+  Logs.debug ~src:src_log
     (fun k->k "stdout:\n%s\nstderr:\n%s" stdout stderr);
   { Proc_run_result. stdout; stderr; errcode; rtime; utime; stime; }
 
 let run ?env ~timeout ~memory ~file (self:t) : Proc_run_result.t =
-  Misc.Debug.debugf 5
+  Logs.debug ~src:src_log
     (fun k->k "(@[Prover.run %s timeout: %d, memory: %d@])" self.name timeout memory);
   (* limit time and memory ('v' is virtual memory, needed because 'm' ignored on linux) *)
   let memory' = memory * 1000 in
@@ -228,3 +241,41 @@ let analyze_p_opt (self:t) (r:Proc_run_result.t) : Res.t option =
   else if find_opt_ self.timeout then Some Res.Timeout
   else if find_opt_ self.unknown then Some Res.Unknown
   else None
+
+let db_prepare (db:Db.t) : unit or_error =
+  Db.exec0 db {|
+  create table if not exists
+    prover (
+      name text not null unique,
+      version text not null,
+      binary blob not null,
+      unsat text not null,
+      sat text not null,
+      unknown text not null,
+      timeout text not null,
+      memory text not null
+    );
+  |}
+  |> Misc.db_err ~ctx:"creating prover table"
+
+let to_db db (self:t) : unit or_error =
+  let str_or = CCOpt.get_or ~default:"" in
+  Db.exec_no_cursor db
+    {|insert into prover values (?,?,?,?,?,?,?,?);
+    |}
+    ~ty:Db.Ty.(p3 text text blob @>> text @> p4 text text text text)
+    self.name
+    (Version.ser_sexp self.version)
+    self.binary
+    (self.unsat |> str_or)
+    (self.sat |> str_or)
+    (self.unknown |> str_or)
+    (self.timeout |> str_or)
+    (self.memory |> str_or)
+  |> Misc.db_err ~ctx:"prover.to-db"
+
+let db_names db : _ list or_error =
+  Db.exec_no_params db
+    {| select distinct name from prover order by name; " |}
+    ~ty:Db.Ty.(p1 text,id) ~f:Db.Cursor.to_list_rev
+    |> Misc.db_err ~ctx:"listing provers"

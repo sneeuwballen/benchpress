@@ -14,6 +14,18 @@ $ benchpress run -c foo.sexp dir_a/ dir_b
 …
 ```
 
+## System dependencies
+
+Logitest relies on a bunch of utilities, besides OCaml libraries:
+
+- `gzip`/`zcat` for compressing files
+- `sqlite3` (with development headers)
+- `time`, `ulimit`, etc
+- (optional) `grep` + access to `/proc/cpuinfo` for guessing number of cores
+- (optional) `git` for tagging solvers from their repository
+
+**TODO** use cgroups or similar for CPU affinity
+
 ## Options
 
 Most of the commands accept `-c <config file>` to specify which config files to use.
@@ -138,3 +150,6 @@ same repository).
   * `name` should be unique (used to refer to the task)
   * `action` defines what the task should do.
     For now there's only `(run_provers …)` to run provers on files locally.
+- `(set-options…)` defines global options:
+  * `j` integer for number of parallel tasks in `run`
+  * `progress` boolean for progress bar in `run`

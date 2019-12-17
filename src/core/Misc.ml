@@ -2,7 +2,9 @@
 
 module Fmt = CCFormat
 module Str_map = CCMap.Make(String)
+module Str_set = CCSet.Make(String)
 module E = CCResult
+module Db = Sqlite3_utils
 type 'a or_error = ('a, string) E.t
 
 let _lock = CCLock.create()
@@ -10,27 +12,11 @@ let _lock = CCLock.create()
 let reset_line = "\x1b[2K\r"
 let synchronized f = CCLock.with_lock _lock f
 
-module Debug : sig
-  val set_level : int -> unit
-
-  val debugf : int -> ((('a, Format.formatter, unit, unit) format4 -> 'a) -> unit) -> unit
-  val debug : int -> string -> unit
-end = struct
-  let lev_ = ref 0
-  let set_level = (:=) lev_
-
-  let debugf l k =
-    if l <= !lev_ then (
-      let out = Format.std_formatter in
-      synchronized
-        (fun () ->
-           Format.fprintf out "[%d] " l;
-           k (Format.kfprintf
-               (fun fmt -> Format.fprintf fmt "@.") out))
-    )
-
-  let debug l msg = debugf l (fun k->k "%s" msg)
-end
+(** Setup the logging infra *)
+let setup_logs (lvl:Logs.level option) : unit =
+  Logs.set_reporter (Logs.format_reporter ());
+  Logs.set_level ~all:true lvl;
+  ()
 
 let pp_list ?(sep=" ") f out l =
   let sep out () = Fmt.fprintf out "%s@," sep in
@@ -95,7 +81,7 @@ let truncate_right (n:int) (s:string) : string =
   if String.length s > n then String.sub s 0 (n-1) ^ "…" else s
       
 let get_cmd_out cmd =
-  Debug.debugf 10 (fun k->k "get-cmd-out %S" cmd);
+  Logs.debug (fun k->k "get-cmd-out %S" cmd);
   CCUnix.with_process_in cmd
     ~f:(fun ic -> CCIO.read_all ic |> String.trim)
 
@@ -106,6 +92,32 @@ let mk_abs_path (s:string) : string =
 let guess_cpu_count () =
   try get_cmd_out "grep -c processor /proc/cpuinfo" |> int_of_string
   with _ -> 2
+
+let mk_uuid () : Uuidm.t =
+  Uuidm.v4_gen (Random.State.make_self_init()) ()
+
+(** A scope for {!err_with} *)
+type 'a try_scope = {
+  unwrap: 'x. ('x,'a) result -> 'x;
+  unwrap_with: 'x 'b. ('b -> 'a) -> ('x,'b) result -> 'x;
+}
+
+(** Open a local block with an [unwrap] to unwrap results *)
+let err_with (type a) ?(map_err=fun e -> e) f : (_,a) result =
+  let module E = struct exception Local of a end in
+  let scope = {
+    unwrap=(function Ok x -> x | Error e -> raise (E.Local e));
+    unwrap_with=(fun ferr -> function Ok x -> x | Error e -> raise (E.Local (ferr e)));
+  } in
+  try
+    let res = f scope in
+    Ok res
+  with E.Local e ->
+    Error (map_err e)
+
+(** Turn the DB error into a normal string error *)
+let db_err ~ctx (x:(_,Db.Rc.t) result) : _ result =
+  E.map_err (fun e -> Printf.sprintf "DB error in %s: %s" ctx @@ Db.Rc.to_string e) x
 
 (** Parallel map *)
 module Par_map = struct
@@ -119,7 +131,7 @@ module Par_map = struct
     let f_with_sem x =
       CCSemaphore.with_acquire ~n:1 sem ~f:(fun () -> f x)
     in
-    Debug.debugf 5 (fun k->k "par-map: create pool j=%d" j);
+    Logs.debug (fun k->k "par-map: create pool j=%d" j);
     let module P = CCPool.Make(struct
         let max_size = j
       end) in
@@ -128,7 +140,7 @@ module Par_map = struct
       |> P.Fut.sequence_l
       |> P.Fut.get
     in
-    Debug.debugf 5 (fun k->k "par-map: stop pool");
+    Logs.debug (fun k->k "par-map: stop pool");
     P.stop();
     res
 end

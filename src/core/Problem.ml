@@ -12,11 +12,12 @@ type t = {
   expected: Res.t; (* result expected *)
 }
 
+let src_log = Logs.Src.create "problem"
 let basename t = Filename.basename t.name
 
 let same_name t1 t2 = t1.name = t2.name
 let hash_name t = CCHash.string t.name
-let compare_name t1 t2 = Pervasives.compare t1.name t2.name
+let compare_name t1 t2 = CCOrd.compare t1.name t2.name
 
 let make name expected =
   { name; expected; }
@@ -59,7 +60,8 @@ end
 
 (* find expected result for [file] *)
 let find_expect ?default_expect ~expect file : Res.t or_error =
-  Misc.Debug.debugf 3 (fun k->k "(@[<2>find_expect `%s`@ using %a@])…" file Dir.pp_expect expect);
+  Logs.debug ~src:src_log
+    (fun k->k "(@[<2>find_expect `%s`@ using %a@])…" file Dir.pp_expect expect);
   let rec loop expect =
     match expect with
     | Dir.E_comment -> Exp_.find_expected_ ?default:default_expect file
@@ -110,14 +112,6 @@ let pp out p =
 
 let name p = p.name
 let to_string = CCFormat.to_string pp
-
-let encode self =
-  let open J.Encode in
-  let {name; expected} = self in
-  obj [
-    "name", string name;
-    "expected", Res.encode expected;
-  ]
 
 let decode =
   let open J.Decode in

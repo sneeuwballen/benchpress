@@ -7,7 +7,7 @@ module Fmt = CCFormat
 module Str_map = Misc.Str_map
 
 type path = string
-type 'a or_error = ('a, string) Result.result
+type 'a or_error = ('a, string) result
 
 open E.Infix
 
@@ -20,9 +20,14 @@ type t = {
   defs: def Str_map.t;
   dirs: Dir.t list; (* list of directories *)
   cur_dir: string; (* for relative paths *)
+  option_j : int option;
+  option_progress : bool option;
 }
 
-let empty : t = { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd(); }
+let empty : t =
+  { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd();
+    option_j=None; option_progress=None;
+  }
 
 let add_prover (p:Prover.t) self : t =
   { self with defs=Str_map.add (Prover.name p) (D_prover p) self.defs}
@@ -33,13 +38,18 @@ let add_task (t:Task.t) self : t =
 let add_dir (d:Dir.t) self : t =
   { self with dirs=d::self.dirs }
 
+let option_j self = self.option_j
+let option_progress self = self.option_progress
+
 let all_provers self : _ list =
-  Str_map.fold
-    (fun _ d acc ->
-       match d with
-       | D_prover p -> p :: acc
-       | _ -> acc)
-    self.defs []
+  Str_map.values self.defs
+  |> Iter.filter_map (function D_prover p -> Some p | _ -> None)
+  |> Iter.to_rev_list
+
+let all_tasks self : _ list =
+  Str_map.values self.defs
+  |> Iter.filter_map (function D_task t -> Some t | _ -> None)
+  |> Iter.to_rev_list
 
 (* compute a version for the prover *)
 let get_version ?(binary="") (v:Stanza.version_field) : Prover.version =
@@ -143,7 +153,7 @@ let mk_subdir self path : Subdir.t or_error =
   in
   CCList.find_map
     (fun dir ->
-       Misc.Debug.debugf 3 (fun k->k"check prefix dir=%S for %S" dir.Dir.path path);
+       Logs.debug (fun k->k"check prefix dir=%S for %S" dir.Dir.path path);
        if is_parent dir.Dir.path path
        then Some {Subdir.path; inside=dir}
        else None)
@@ -171,8 +181,9 @@ let mk_action (self:t) (a:Stanza.action) : _ or_error =
     mk_run_provers ?timeout ?memory ?pattern ~paths:dirs ~provers self
     >|= fun a -> Action.Act_run_provers a
 
+(* conversion from stanzas *)
 let add_stanza (st:Stanza.t) self : t or_error =
-  Misc.Debug.debugf 5 (fun k->k "add-stanza %a" Stanza.pp st);
+  Logs.info (fun k->k "add-stanza %a" Stanza.pp st);
   let open Stanza in
   match st with
   | St_enter_file file ->
@@ -212,6 +223,12 @@ let add_stanza (st:Stanza.t) self : t or_error =
     mk_action self action >>= fun action ->
     let t = {Task.name; synopsis; action; } in
     Ok (add_task t self)
+  | St_set_options {progress; j} ->
+    let open CCOpt.Infix in
+    Ok {self with
+     option_j = j <+> self.option_j;
+     option_progress = progress <+> self.option_progress;
+    }
 
 let add_stanza_l (l:Stanza.t list) self : t or_error =
   E.fold_l (fun self st -> add_stanza st self) self l
