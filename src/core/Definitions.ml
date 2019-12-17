@@ -205,11 +205,15 @@ let add_stanza (st:Stanza.t) self : t or_error =
     (* add prover *)
     let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
     let binary =
-      CCOpt.get_lazy
-        (fun () -> fst @@ CCString.Split.left_exn ~by:" " @@ String.trim cmd)
-        binary
-      |> Misc.str_replace ["cur_dir", self.cur_dir]
-    and version = match version with
+      match binary with
+      | Some b -> b
+      | None ->
+        let cmd = String.trim cmd in
+        (try fst @@ CCString.Split.left_exn ~by:" " cmd
+         with Not_found -> cmd)
+    in
+    let binary = Misc.str_replace ["cur_dir", self.cur_dir] binary in
+    let version = match version with
       | Some v -> v
       | None -> Version_exact (Prover.Tag "<unknown>")
     in
