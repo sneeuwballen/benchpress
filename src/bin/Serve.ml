@@ -27,6 +27,7 @@ let handle_show server : unit =
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
         let box_summary = Test.Top_result.to_printbox_summary res in
+        let box_stat = Test.Top_result.to_printbox_stat res in
         let bad = Test.Top_result.to_printbox_bad res in
         let h =
           let open Html in
@@ -36,6 +37,9 @@ let handle_show server : unit =
             (body @@ List.flatten [
                 [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  h3 [txt file]];
+                (CCList.flat_map 
+                  (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
+                  box_stat);
                 (CCList.flat_map 
                   (fun (n,p) -> [h3 [txt ("summary for " ^ n)]; div [pb_html p]])
                   box_summary);
@@ -73,6 +77,7 @@ let handle_show_full server : unit =
         H.Response.make_string (Ok (string_of_html h))
     )
 
+(* TODO: restore this
 (* compare files *)
 let handle_compare server : unit =
   H.add_path_handler server ~meth:`POST "/compare" (fun req ->
@@ -122,6 +127,7 @@ let handle_compare server : unit =
         H.Response.fail ~code:412 "precondition failed: select at least 2 files"
       )
     )
+   *)
 
 (* index *)
 let handle_root server data_dir : unit =
@@ -170,7 +176,8 @@ let main ?port () =
     handle_root server data_dir;
     handle_show server;
     handle_show_full server;
-    handle_compare server;
+    (* FIXME:
+       handle_compare server; *)
     H.run server |> E.map_err Printexc.to_string
   with e ->
     E.of_exn_trace e

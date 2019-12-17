@@ -56,6 +56,7 @@ module Exec_run_provers : sig
 
   val run :
     ?timestamp:float ->
+    ?uuid:Uuidm.t ->
     ?on_start:(expanded -> unit) ->
     ?on_solve:(Test.result -> unit) ->
     ?on_done:(Test.top_result -> unit) ->
@@ -116,10 +117,12 @@ end = struct
 
   let _nop _ = ()
 
-  let run ?timestamp
+  let run ?(timestamp=Unix.gettimeofday())
+      ?(uuid=Misc.mk_uuid())
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_done = _nop)
       (self:expanded) : _ E.t =
     let open E.Infix in
+    let start = Unix.gettimeofday() in
     on_start self;
     (* build list of tasks *)
     let jobs =
@@ -144,8 +147,9 @@ end = struct
       |> E.flatten_l
     end
     >>= fun res_l ->
-    let r = T.Top_result.make ?timestamp res_l in
-    on_done r;
-    E.return r
+    let total_wall_time =  Unix.gettimeofday() -. start in
+    let r = T.Top_result.make ~timestamp ~total_wall_time ~uuid res_l in
+    E.iter on_done r;
+    r
 end
 

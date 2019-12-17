@@ -2,6 +2,7 @@
 
 module Fmt = CCFormat
 module Str_map = CCMap.Make(String)
+module Str_set = CCSet.Make(String)
 module E = CCResult
 module Db = Sqlite3_utils
 type 'a or_error = ('a, string) E.t
@@ -91,6 +92,9 @@ let mk_abs_path (s:string) : string =
 let guess_cpu_count () =
   try get_cmd_out "grep -c processor /proc/cpuinfo" |> int_of_string
   with _ -> 2
+
+let mk_uuid () : Uuidm.t =
+  Uuidm.v4_gen (Random.State.make_self_init()) ()
 
 (** A scope for {!err_with} *)
 type 'a try_scope = {

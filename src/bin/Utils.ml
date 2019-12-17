@@ -72,13 +72,14 @@ let dump_summary ~summary results : unit =
   end
 
 let dump_results_sqlite results : unit =
+  let uuid = results.T.uuid in
   (* save results *)
   let dump_file =
     (* FIXME: results should have their own UUID already *)
     let filename =
       Printf.sprintf "res-%s-%s.sqlite"
         (ISO8601.Permissive.string_of_datetime_basic results.Test.timestamp)
-        (Uuidm.v4_gen (Random.State.make_self_init()) () |> Uuidm.to_string)
+        (Uuidm.to_string uuid)
     in
     let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
     (try Unix.mkdir data_dir 0o744 with _ -> ());
@@ -100,31 +101,45 @@ let dump_results_sqlite results : unit =
   ()
 
 let check_res notify (results:T.top_result) : unit or_error =
-  let lazy map = results.T.analyze in
-  if MStr.for_all (fun _ r -> T.Analyze.is_ok r) map
+  let a = T.Top_result.analyze results in
+  if List.for_all (fun (_,r) -> T.Analyze.is_ok r) a
   then (
     Notify.send notify "OK";
     E.return ()
   ) else (
     let n_fail =
-      MStr.fold (fun _ r n -> n + T.Analyze.num_failed r) map 0
+      List.fold_left (fun n (_,r) -> n + T.Analyze.num_failed r) 0 a
     in
     Notify.sendf notify "FAIL (%d failures)" n_fail;
     E.fail_fprintf "FAIL (%d failures)" n_fail
   )
 
 let printbox_results (results:T.top_result) : unit =
-  let lazy map = results.T.analyze in
-  let box =
-    let open PrintBox in
-    MStr.to_list map
-    |> List.map
-      (fun (p,r) -> frame @@ hlist [
-           center_hv @@ pad @@ text p;
-           T.Analyze.to_printbox r])
-    |> hlist ~bars:false ~pad:(hpad 1)
-  in
-  Printf.printf "%s\n%!" (PrintBox_text.to_string box);
+  let open PrintBox in
+  begin
+    let st = T.Top_result.stat results in
+    let box_st =
+      st
+      |> List.map
+        (fun (p,r) -> frame @@ hlist [
+             center_hv @@ pad @@ text p;
+             T.Stat.to_printbox r])
+      |> hlist ~bars:false ~pad:(hpad 1)
+    in
+    Printf.printf "STAT:\n%s\n%!" (PrintBox_text.to_string box_st);
+  end;
+  begin
+    let a = T.Top_result.analyze results in
+    let box_a =
+      a
+      |> List.map
+        (fun (p,r) -> frame @@ hlist [
+             center_hv @@ pad @@ text p;
+             T.Analyze.to_printbox r])
+      |> hlist ~bars:false ~pad:(hpad 1)
+    in
+    Printf.printf "ANALYSIS:\n%s\n%!" (PrintBox_text.to_string box_a);
+  end;
   ()
 
 let list_entries data_dir =

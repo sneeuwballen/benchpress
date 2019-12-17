@@ -274,3 +274,8 @@ let to_db db (self:t) : unit or_error =
     (self.memory |> str_or)
   |> Misc.db_err ~ctx:"prover.to-db"
 
+let db_names db : _ list or_error =
+  Db.exec_no_params db
+    {| select distinct name from prover order by name; " |}
+    ~ty:Db.Ty.(p1 text,id) ~f:Db.Cursor.to_list_rev
+    |> Misc.db_err ~ctx:"listing provers"
