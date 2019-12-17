@@ -212,7 +212,7 @@ let load_file_summary (f:string) :
     match mk_file_full f with
     | Error _ as e -> e
     | Ok file ->
-      Db.with_db ~mode:`NO_CREATE file
+      Db.with_db ~mode:`READONLY file
         (fun db ->
            T.Stat.of_db db >>= fun stats ->
            T.Analyze.of_db db >>= fun analyze ->
