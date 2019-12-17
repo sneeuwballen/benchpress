@@ -169,14 +169,21 @@ let list_entries data_dir =
       | _ -> None)
   |> List.sort (fun x y->CCOrd.compare y x)
 
+let mk_file_full (f:string) : string or_error =
+  let dir = Filename.concat (Xdg.data_dir()) !(Xdg.name_of_project) in
+  let file = Filename.concat dir f in
+  if not @@ Sys.file_exists file then (
+    Error ("cannot find file " ^ f)
+  ) else (
+    Ok file
+  )
+
 (** Load file by name *)
 let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
   try
-    let dir = Filename.concat (Xdg.data_dir()) !(Xdg.name_of_project) in
-    let file = Filename.concat dir f in
-    if not @@ Sys.file_exists file then (
-      Error ("cannot find file " ^ f)
-    ) else (
+    match mk_file_full f with
+    | Error _ as e -> e
+    | Ok file ->
       if Filename.check_suffix f ".sqlite" then (
         try
           Db.with_db ~mode:`NO_CREATE file
@@ -196,8 +203,24 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
         |> E.map_err Misc.Json.Decode.string_of_error
         |> E.map (fun r -> file, r)
       )
-    )
   with e ->
     E.of_exn_trace e
 
 let load_file f = E.map snd @@ load_file_full f
+
+let load_file_summary (f:string) :
+  (string * (string *T.Stat.t) list * (string * T.Analyze.t) list, _) E.t =
+  let open E.Infix in
+  if Filename.check_suffix f ".sqlite" then (
+    match mk_file_full f with
+    | Error _ as e -> e
+    | Ok file ->
+      Db.with_db ~mode:`NO_CREATE file
+        (fun db ->
+           T.Stat.of_db db >>= fun stats ->
+           T.Analyze.of_db db >>= fun analyze ->
+           E.return (file, stats, analyze))
+  ) else (
+    load_file_full f >|= fun (f,res) ->
+    f, T.Top_result.stat res, T.Top_result.analyze res
+  )

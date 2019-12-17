@@ -73,6 +73,9 @@ module Stat = struct
   let to_printbox (s:t) : PrintBox.t =
     pb_v_record @@ as_printbox_record s
 
+  let to_printbox_l =
+    List.map (fun ((p:string), a) -> p, to_printbox a)
+
   (* obtain stats for this prover *)
   let of_db_for ~(prover:Prover.name) (db:Db.t) : t or_error =
     Misc.err_with
@@ -132,7 +135,9 @@ module Analyze : sig
   val of_db : Db.t -> (Prover.name * t) list or_error
 
   val to_printbox : t -> PrintBox.t
+  val to_printbox_l : (Prover.name * t) list -> (string*PrintBox.t) list
   val to_printbox_bad : t -> PrintBox.t
+  val to_printbox_bad_l : (Prover.name * t) list -> (string*PrintBox.t) list
 
   val is_ok : t -> bool
 
@@ -235,6 +240,9 @@ end = struct
     ] in
     pb_v_record ~bars:true fields
 
+  let to_printbox_l =
+    List.map (fun (p, a) -> p, to_printbox a)
+
   let to_printbox_bad r : PrintBox.t =
     let open PB in
     if r.bad <> 0 then (
@@ -252,6 +260,12 @@ end = struct
         [tb "problem"; tb "res"; tb "expected"] in
       grid_l (header :: l)
     ) else empty
+
+  let to_printbox_bad_l =
+    CCList.filter_map
+      (fun ((p:string), a) ->
+         if a.bad = 0 then None
+         else Some (p, to_printbox_bad a))
 
   let pp_raw_res_ ?(color="reset") out (self:_) =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
@@ -709,7 +723,7 @@ end = struct
 
   let to_printbox_summary (self:t) : (_ * PB.t) list =
     let a = analyze self in
-    List.map (fun (p, a) -> p, Analyze.to_printbox a) a
+    Analyze.to_printbox_l a
 
   let to_printbox_table self = table_to_printbox @@ to_table self
   let to_printbox_bad self =
@@ -814,7 +828,7 @@ end = struct
       (fun scope ->
         let l = List.rev_map Run_event.mk_prover l in
         (* create a temporary in-memory DB *)
-        let db = Sqlite3.db_open ~memory:true ":memory:" in
+        let db = Sqlite3.db_open ":memory:" in
         db_prepare db |> scope.unwrap;
         to_db_events_ db l |> scope.unwrap;
         Logs.debug (fun k->k "computing stats");

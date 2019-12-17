@@ -21,14 +21,14 @@ let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 (* show individual files *)
 let handle_show server : unit =
   H.add_path_handler server ~meth:`GET "/show/%s%!" (fun file _req ->
-      match Utils.load_file file with
+      match Utils.load_file_summary file with
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok res ->
-        let box_summary = Test.Top_result.to_printbox_summary res in
-        let box_stat = Test.Top_result.to_printbox_stat res in
-        let bad = Test.Top_result.to_printbox_bad res in
+      | Ok (_, stat, analyze) ->
+        let box_summary = Test.Analyze.to_printbox_l analyze in
+        let box_stat = Test.Stat.to_printbox_l stat in
+        let bad = Test.Analyze.to_printbox_bad_l analyze in
         let h =
           let open Html in
           let pb_html pb = PrintBox_html.to_html pb in
