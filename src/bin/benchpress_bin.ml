@@ -57,7 +57,7 @@ end
 module List_files = struct
   let main ?(abs=false) () =
     try
-      let data_dir = Utils.data_dir() in
+      let data_dir = Misc.data_dir() in
       let entries = Utils.list_entries data_dir in
       List.iter
         (fun (s,size) ->
@@ -168,14 +168,13 @@ module Serve = struct
     let open Cmdliner in
     let port =
       Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
-    and debug =
-      Logs_cli.level ()
+    and defs =
+      Utils.definitions_term
     in
     let doc = "serve embedded web UI on given port" in
-    let aux debug port () =
-      Misc.setup_logs debug;
-      Serve.main ?port () in
-    Term.(pure aux $ debug $ port $ pure () ), Term.info ~doc "serve"
+    let aux defs port () =
+      Serve.main ?port defs () in
+    Term.(pure aux $ defs $ port $ pure () ), Term.info ~doc "serve"
 end
 
 (** {2 Show directories} *)
@@ -188,8 +187,8 @@ module Dir = struct
   let run c =
     Format.printf "%s@."
       (match c with
-       | Config -> Utils.config_dir()
-       | State -> Utils.data_dir ());
+       | Config -> Misc.config_dir()
+       | State -> Misc.data_dir ());
     Ok ()
 
   (* sub-command for showing results *)
@@ -208,11 +207,11 @@ end
 
 module Check_config = struct
   let run with_default f =
-    let default_file = Utils.default_config () in
+    let default_file = Misc.default_config () in
     let f =
       if f=[] then (
         if Sys.file_exists default_file then [default_file] else []
-      ) else if with_default && Sys.file_exists default_file then Utils.default_config() :: f else f in
+      ) else if with_default && Sys.file_exists default_file then Misc.default_config() :: f else f in
     match Stanza.parse_files f with
     | Ok c ->
       Format.printf "@[<v>%a@]@." Stanza.pp_l c;

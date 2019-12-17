@@ -19,6 +19,7 @@ let src = Logs.Src.create "benchpress.serve"
 let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 
 type t = {
+  mutable defs: Definitions.t;
   server: H.t;
   task_q: Task_queue.t;
   data_dir: string;
@@ -167,8 +168,7 @@ let handle_compare server : unit =
 
 let handle_provers (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/provers/" (fun _r ->
-      let defs = Utils.get_definitions () |> E.get_or_failwith in
-      let provers = Definitions.all_provers defs in
+      let provers = Definitions.all_provers self.defs in
       let h =
         let open Html in
         let l =
@@ -187,8 +187,7 @@ let handle_provers (self:t) : unit =
 
 let handle_tasks (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/tasks/" (fun _r ->
-      let defs = Utils.get_definitions () |> E.get_or_failwith in
-      let tasks = Definitions.all_tasks defs in
+      let tasks = Definitions.all_tasks self.defs in
       let h =
         let open Html in
         let l =
@@ -220,13 +219,12 @@ let handle_tasks (self:t) : unit =
 let handle_run (self:t) : unit =
   H.add_path_handler self.server ~meth:`POST "/run/%s" (fun name _r ->
       Logs.debug (fun k->k "run task %S" name);
-      let defs = Utils.get_definitions () |> E.get_or_failwith in
       let name =
         U.percent_decode name
         |> CCOpt.get_lazy (fun () -> H.Response.fail_raise ~code:404 "cannot find task %S" name)
       in
       let task =
-        match Definitions.find_task defs name with
+        match Definitions.find_task self.defs name with
         | Ok t -> t
         | Error e -> H.Response.fail_raise ~code:404 "cannot find task %s: %s" name e
       in
@@ -305,12 +303,11 @@ let handle_root (self:t) : unit =
       H.Response.make_string (Ok (string_of_html h))
     )
 
-let main ?port () =
+let main ?port (defs:Definitions.t) () =
   try
     let server = H.create ?port () in
-    let data_dir = Utils.data_dir () in
-    let defs = Utils.get_definitions () |> E.get_or_failwith in
-    let self = { server; data_dir; task_q=Task_queue.create ~defs (); } in
+    let data_dir = Misc.data_dir () in
+    let self = { defs; server; data_dir; task_q=Task_queue.create ~defs (); } in
     (* thread to execute tasks *)
     let _th_r = Thread.create Task_queue.loop self.task_q in
     (* trick: see if debug level is active *)

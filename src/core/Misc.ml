@@ -170,3 +170,9 @@ module Git = struct
     get_cmd_out (
       Printf.sprintf "git -C %s branch | grep '*' | cut -d ' ' -f2" dir)
 end
+
+let (//) = Filename.concat
+
+let data_dir () = Xdg.data_dir () // !(Xdg.name_of_project)
+let config_dir () = Xdg.config_dir () // !(Xdg.name_of_project)
+let default_config () = config_dir() // "conf.sexp"

@@ -5,19 +5,13 @@ module MStr = Misc.Str_map
 
 type 'a or_error = ('a, string) E.t
 
-let (//) = Filename.concat
-
-let data_dir () = Xdg.data_dir () // !(Xdg.name_of_project)
-let config_dir () = Xdg.config_dir () // !(Xdg.name_of_project)
-let default_config () = config_dir() // "conf.sexp"
-
 let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in
   let aux config config_toml logs_cmd =
     Misc.setup_logs logs_cmd;
     let conf_files = match config with None -> [] | Some c -> [c] in
     let conf_files =
-      let default_conf = default_config () in
+      let default_conf = Misc.default_config () in
       (* always add default config file if it exists *)
       if Sys.file_exists (Xdg.interpolate_home default_conf)
       then default_conf :: conf_files else conf_files
@@ -52,7 +46,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
 
 let get_definitions () : Definitions.t or_error =
   let conf_files =
-    let default_conf = default_config () in
+    let default_conf = Misc.default_config () in
     (* always add default config file if it exists *)
     if Sys.file_exists (Xdg.interpolate_home default_conf)
     then [default_conf] else []
@@ -85,37 +79,7 @@ let dump_summary ~summary results : unit =
            Format.fprintf out "%a@." T.Top_result.pp_compact results);
   end
 
-let dump_results_sqlite results : unit =
-  let uuid = results.T.uuid in
-  (* save results *)
-  let dump_file =
-    (* FIXME: results should have their own UUID already *)
-    let filename =
-      Printf.sprintf "res-%s-%s.sqlite"
-        (ISO8601.Permissive.string_of_datetime_basic results.Test.timestamp)
-        (Uuidm.to_string uuid)
-    in
-    let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
-    (try Unix.mkdir data_dir 0o744 with _ -> ());
-    Filename.concat data_dir filename
-  in
-  Logs.app (fun k->k "write results into sqlite DB `%s`" dump_file);
-  (try
-     match Db.with_db dump_file
-       (fun db -> Test.Top_result.to_db db results)
-     with
-     | Ok () -> ()
-     | Error e ->
-       Logs.err (fun k->k"error when saving to %s:@ %s" dump_file e);
-   with e ->
-     Logs.err (fun k->k"error when saving to %s:@ %s"
-       dump_file (Printexc.to_string e));
-     exit 1
-  );
-  ()
-
-let check_res notify (results:T.top_result) : unit or_error =
-  let a = T.Top_result.analyze results in
+let check_res_an notify a : unit or_error =
   if List.for_all (fun (_,r) -> T.Analyze.is_ok r) a
   then (
     Notify.send notify "OK";
@@ -128,31 +92,52 @@ let check_res notify (results:T.top_result) : unit or_error =
     E.fail_fprintf "FAIL (%d failures)" n_fail
   )
 
-let printbox_results (results:T.top_result) : unit =
+let check_compact_res notify (results:T.Compact_result.t) : unit or_error =
+  check_res_an notify (results.T.cr_analyze)
+
+let check_res notify (results:T.top_result) : unit or_error =
+  let a = T.Top_result.analyze results in
+  check_res_an notify a
+
+let printbox_stat st : unit =
   let open PrintBox in
+  let box_st =
+    st
+    |> List.map
+      (fun (p,r) -> frame @@ hlist [
+           center_hv @@ pad @@ text p;
+           T.Stat.to_printbox r])
+    |> hlist ~bars:false ~pad:(hpad 1)
+  in
+  Printf.printf "STAT:\n%s\n%!" (PrintBox_text.to_string box_st);
+  ()
+
+let printbox_analyze a =
+  let open PrintBox in
+  let box_a =
+    a
+    |> List.map
+      (fun (p,r) -> frame @@ hlist [
+           center_hv @@ pad @@ text p;
+           T.Analyze.to_printbox r])
+    |> hlist ~bars:false ~pad:(hpad 1)
+  in
+  Printf.printf "ANALYSIS:\n%s\n%!" (PrintBox_text.to_string box_a);
+  ()
+
+let printbox_compact_results (results:T.Compact_result.t) : unit =
+  printbox_stat results.T.cr_stat;
+  printbox_analyze results.T.cr_analyze;
+  ()
+
+let printbox_results (results:T.top_result) : unit =
   begin
     let st = T.Top_result.stat results in
-    let box_st =
-      st
-      |> List.map
-        (fun (p,r) -> frame @@ hlist [
-             center_hv @@ pad @@ text p;
-             T.Stat.to_printbox r])
-      |> hlist ~bars:false ~pad:(hpad 1)
-    in
-    Printf.printf "STAT:\n%s\n%!" (PrintBox_text.to_string box_st);
+    printbox_stat st;
   end;
   begin
     let a = T.Top_result.analyze results in
-    let box_a =
-      a
-      |> List.map
-        (fun (p,r) -> frame @@ hlist [
-             center_hv @@ pad @@ text p;
-             T.Analyze.to_printbox r])
-      |> hlist ~bars:false ~pad:(hpad 1)
-    in
-    Printf.printf "ANALYSIS:\n%s\n%!" (PrintBox_text.to_string box_a);
+    printbox_analyze a;
   end;
   ()
 

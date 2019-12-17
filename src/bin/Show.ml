@@ -3,6 +3,7 @@
 module T = Test
 module E = CCResult
 
+(* TODO: only load full results if needed *)
 let main ?(check=true) ?(bad=true) ?csv ?summary (file:string) =
   let open E.Infix in
   Logs.debug (fun k->k "loading file %S..." file);

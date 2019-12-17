@@ -500,6 +500,31 @@ end = struct
 end
    *)
 
+(** A kind of lightweight result *)
+type compact_result = {
+  cr_uuid: Uuidm.t;
+  cr_timestamp: float;
+  cr_total_wall_time: float;
+  cr_stat: (Prover.name * Stat.t) list;
+  cr_analyze: (Prover.name * Analyze.t) list;
+  cr_comparison: (Prover.name * Prover.name * Comparison_short.t) list;
+}
+
+module Compact_result = struct
+  type t = compact_result
+
+  let of_db ~uuid ~timestamp ~total_wall_time db : t or_error =
+    let open E.Infix in
+    Stat.of_db db >>= fun cr_stat ->
+    Analyze.of_db db >>= fun cr_analyze ->
+    Comparison_short.of_db db >>= fun cr_comparison ->
+    Ok {cr_stat; cr_analyze; cr_comparison;
+        cr_uuid=uuid; cr_timestamp=timestamp;
+        cr_total_wall_time=total_wall_time;
+       }
+
+  let pp out _self = Fmt.fprintf out "<compact result>"
+end
 
 (** {2 Top Result}
 
@@ -542,6 +567,15 @@ module Top_result : sig
 
   val of_db : Db.t -> t or_error
   (** Parse from a DB *)
+
+  val db_prepare : Db.t -> unit or_error
+
+  val to_db_meta :
+    Db.t ->
+    timestamp:float ->
+    uuid:Uuidm.t ->
+    total_wall_time:float ->
+    unit or_error
 
   val to_db : Db.t -> t -> unit or_error
   (** Dump into the DB *)
@@ -854,6 +888,8 @@ end = struct
     >|= CCList.filter_map (function Run_event.Prover_run r -> Some r | _ -> None)
 
   let db_prepare (db:Db.t) : _ or_error =
+    let open E.Infix in
+    Run_event.db_prepare db >>= fun () ->
     Db.exec0 db {|
         create table if not exists
         meta(
@@ -863,22 +899,27 @@ end = struct
         create index if not exists meta_k on meta(key);
         |} |> Misc.db_err ~ctx:"top-res.db-prepare"
 
-  let add_meta (db:Db.t) (self:t) : unit or_error =
+  let to_db_meta (db:Db.t) ~timestamp ~uuid ~total_wall_time : unit or_error =
     Db.exec_no_cursor db
       "insert into meta values
       ('timestamp', ?), ('total-wall-time', ?), ('uuid', ?);"
       ~ty:Db.Ty.(p3 blob blob text)
-      (string_of_float self.timestamp)
-      (string_of_float self.total_wall_time)
-      (Uuidm.to_string self.uuid)
+      (string_of_float timestamp)
+      (string_of_float total_wall_time)
+      (Uuidm.to_string uuid)
     |> Misc.db_err ~ctx:"inserting metadata"
+
+  let add_meta (db:Db.t) (self:t) : unit or_error =
+    to_db_meta db
+      ~timestamp:self.timestamp
+      ~total_wall_time:self.total_wall_time
+      ~uuid:self.uuid
 
   let to_db (db:Db.t) (self:t) : unit or_error =
     Logs.info (fun k->k "dump top-result into DB");
     Misc.err_with ~map_err:(Printf.sprintf "while dumping top-res to DB: %s")
       (fun scope ->
         scope.unwrap @@ db_prepare db;
-        scope.unwrap @@ Run_event.db_prepare db;
         (* insert within one transaction, much faster *)
         scope.unwrap @@ add_meta db self;
         Db.transact db (fun _ ->
