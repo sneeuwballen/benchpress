@@ -50,6 +50,20 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
   in
   Term.(ret (pure aux $ arg $ arg_toml $ debug))
 
+let get_definitions () : Definitions.t or_error =
+  let conf_files =
+    let default_conf = default_config () in
+    (* always add default config file if it exists *)
+    if Sys.file_exists (Xdg.interpolate_home default_conf)
+    then [default_conf] else []
+  in
+  let conf_files = List.map Xdg.interpolate_home conf_files in
+  Logs.info (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
+  let open E.Infix in
+  Stanza.parse_files conf_files >>= fun l ->
+  (* combine configs *)
+  Definitions.of_stanza_l l
+
 (* CSV output *)
 let dump_csv ~csv results : unit =
   begin match csv with

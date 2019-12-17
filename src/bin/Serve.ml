@@ -129,6 +129,76 @@ let handle_compare server : unit =
     )
    *)
 
+let handle_provers server : unit =
+  H.add_path_handler server ~meth:`GET "/provers/" (fun _r ->
+      let defs = Utils.get_definitions () |> E.get_or_failwith in
+      let provers = Definitions.all_provers defs in
+      let h =
+        let open Html in
+        let l =
+          List.map (fun p -> li [pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p]]) provers
+        in
+        html
+          (head (title (txt "tasks")) [style [txt basic_css]])
+          (body [
+              a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+              h3 [txt "list of provers"];
+              ul l
+            ])
+      in
+      H.Response.make_string (Ok (string_of_html h))
+    )
+
+let handle_tasks server : unit =
+  H.add_path_handler server ~meth:`GET "/tasks/" (fun _r ->
+      let defs = Utils.get_definitions () |> E.get_or_failwith in
+      let tasks = Definitions.all_tasks defs in
+      let h =
+        let open Html in
+        let l =
+          List.map
+            (fun t ->
+               let s = t.Task.name in
+               li [
+                 pre [txt @@Format.asprintf "%a@?" Task.pp t];
+                 form ~a:[a_id (uri_of_string @@ "launch_task"^s);
+                          a_action (uri_of_string @@ "/run/" ^ U.percent_encode s);
+                          a_method `Post;]
+                   [button ~a:[a_button_type `Submit; a_class ["stick"]]
+                      [txt "run"];
+                   ];
+               ])
+            tasks
+        in
+        html
+          (head (title (txt "tasks")) [style [txt basic_css]])
+          (body [
+              a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+              h3 [txt "list of tasks"];
+              ul l;
+            ])
+      in
+      H.Response.make_string (Ok (string_of_html h))
+    )
+
+let handle_run server : unit =
+  H.add_path_handler server ~meth:`POST "/run/%s" (fun name _r ->
+      Logs.debug (fun k->k "run task %S" name);
+      let defs = Utils.get_definitions () |> E.get_or_failwith in
+      let name =
+        U.percent_decode name
+        |> CCOpt.get_lazy (fun () -> H.Response.fail_raise ~code:404 "cannot find task %S" name)
+      in
+      let _task =
+        match Definitions.find_task defs name with
+        | Ok t -> t
+        | Error e -> H.Response.fail_raise ~code:404 "cannot find task %s: %s" name e
+      in
+      Logs.debug (fun k->k "found task %s" name);
+      H.Response.fail_raise ~code:500 "not implemented: run task"
+        (* TODO: push the task into a global queue *)
+    )
+
 (* index *)
 let handle_root server data_dir : unit =
   H.add_path_handler server ~meth:`GET "/%!" (fun _req ->
@@ -136,8 +206,13 @@ let handle_root server data_dir : unit =
       let h =
         let open Html in
         html
-          (head(title (txt "list")) [style [txt basic_css]])
+          (head(title (txt "index")) [style [txt basic_css]])
           (body [
+              (* TODO: display running queue *)
+              ul [
+                li [a ~a:[a_href "/provers/"] [txt "provers"]];
+                li [a ~a:[a_href "/tasks/"] [txt "tasks"]];
+              ];
               h3 [txt "list of results"];
               let l = 
                 List.map
@@ -176,6 +251,9 @@ let main ?port () =
     handle_root server data_dir;
     handle_show server;
     handle_show_full server;
+    handle_tasks server;
+    handle_provers server;
+    handle_run server;
     (* FIXME:
        handle_compare server; *)
     H.run server |> E.map_err Printexc.to_string

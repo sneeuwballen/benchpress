@@ -162,7 +162,7 @@ end
 (** {2 Embedded web server} *)
 
 module Serve = struct
-  (* sub-command to sample a directory *)
+  (* sub-command to serve the web UI *)
   let cmd =
     let open Cmdliner in
     let port =
