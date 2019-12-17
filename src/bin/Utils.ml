@@ -220,7 +220,8 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
 let load_file f = E.map snd @@ load_file_full f
 
 let load_file_summary (f:string) :
-  (string * (string *T.Stat.t) list * (string * T.Analyze.t) list, _) E.t =
+  (string * (string *T.Stat.t) list * (string * T.Analyze.t) list
+   * (string*string*T.Comparison_short.t) list, _) E.t =
   let open E.Infix in
   if Filename.check_suffix f ".sqlite" then (
     match mk_file_full f with
@@ -230,8 +231,10 @@ let load_file_summary (f:string) :
         (fun db ->
            T.Stat.of_db db >>= fun stats ->
            T.Analyze.of_db db >>= fun analyze ->
-           E.return (file, stats, analyze))
+           T.Comparison_short.of_db db >>= fun comp ->
+           E.return (file, stats, analyze, comp))
   ) else (
-    load_file_full f >|= fun (f,res) ->
-    f, T.Top_result.stat res, T.Top_result.analyze res
+    load_file_full f >>= fun (f,res) ->
+    T.Comparison_short.of_db res.db >>= fun comp ->
+    E.return (f, T.Top_result.stat res, T.Top_result.analyze res, comp)
   )

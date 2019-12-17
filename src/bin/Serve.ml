@@ -25,10 +25,11 @@ let handle_show server : unit =
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok (_, stat, analyze) ->
+      | Ok (_, stat, analyze, comp) ->
         let box_summary = Test.Analyze.to_printbox_l analyze in
         let box_stat = Test.Stat.to_printbox_l stat in
         let bad = Test.Analyze.to_printbox_bad_l analyze in
+        let box_compare_l = Test.Comparison_short.to_printbox_l comp in
         let h =
           let open Html in
           let pb_html pb = PrintBox_html.to_html pb in
@@ -49,6 +50,9 @@ let handle_show server : unit =
                 CCList.flat_map
                   (fun (n,p) -> [h3 [txt ("bad for " ^ n)]; div [pb_html p]])
                   bad;
+                (CCList.flat_map 
+                  (fun (n1,n2,p) -> [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)]; div [pb_html p]])
+                  box_compare_l);
             ])
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
