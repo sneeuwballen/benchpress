@@ -37,6 +37,9 @@ let handle_show server : unit =
             (body @@ List.flatten [
                 [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  h3 [txt file]];
+                [a ~a:[a_href ("/show_full/"^file)] [p [txt "show full results"]];
+                 a ~a:[a_href ("/show_csv/"^file)] [p [txt "download as csv"]];
+                ];
                 (CCList.flat_map 
                   (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
                   box_stat);
@@ -46,7 +49,6 @@ let handle_show server : unit =
                 CCList.flat_map
                   (fun (n,p) -> [h3 [txt ("bad for " ^ n)]; div [pb_html p]])
                   bad;
-                [a ~a:[a_href ("/show_full/"^file)] [txt "show full results"]];
             ])
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
@@ -75,6 +77,22 @@ let handle_show_full server : unit =
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (string_of_html h))
+    )
+
+(* export as CSV *)
+let handle_show_csv server : unit =
+  H.add_path_handler server ~meth:`GET "/show_csv/%s%!" (fun file _req ->
+      match Utils.load_file file with
+      | Error e ->
+        Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
+        H.Response.fail ~code:500 "could not load %S:\n%s" file e
+      | Ok res ->
+        let csv = Test.Top_result.to_csv_string res in
+        Logs.debug ~src (fun k->k "successful reply for /show_csv/%S" file);
+        H.Response.make_string
+          ~headers:["Content-Type", "plain/csv";
+                    "Content-Disposition", "attachment; filename=\"results.csv\""]
+          (Ok csv)
     )
 
 (* TODO: restore this
@@ -251,6 +269,7 @@ let main ?port () =
     handle_root server data_dir;
     handle_show server;
     handle_show_full server;
+    handle_show_csv server;
     handle_tasks server;
     handle_provers server;
     handle_run server;

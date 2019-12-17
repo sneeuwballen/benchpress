@@ -827,8 +827,7 @@ end = struct
   let get_meta db k : _ =
     Db.exec_exn db {|select value from meta where key=? ;|}
       k
-      ~ty:Db.Ty.(p1 text, p1 data,
-                 function Db.Data.TEXT s | Db.Data.BLOB s ->s | _ -> assert false)
+      ~ty:Db.Ty.(p1 text, p1 any_str, id)
       ~f:Db.Cursor.next
     |> CCOpt.to_result ("did not find metadata " ^ k)
 
