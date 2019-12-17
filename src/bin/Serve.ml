@@ -99,7 +99,7 @@ let handle_show_csv server : unit =
           (Ok csv)
     )
 
-(* TODO: restore this
+(* TODO: restore this (with "attach")
 (* compare files *)
 let handle_compare server : unit =
   H.add_path_handler server ~meth:`POST "/compare" (fun req ->
