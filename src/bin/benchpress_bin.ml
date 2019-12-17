@@ -16,7 +16,8 @@ module Run = struct
         meta provers csv summary no_color
       : (unit,string) E.t =
       if no_color then CCFormat.set_color_default false;
-      Run_main.main ~dyn ~j ?timeout ?memory ?csv ?provers
+      let dyn = if dyn then Some true else None in
+      Run_main.main ?dyn ~j ?timeout ?memory ?csv ?provers
         ~meta ?task ?summary ?dir_file defs paths ()
     in
     let defs = Utils.definitions_term

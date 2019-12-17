@@ -21,6 +21,9 @@ val find_task : t -> string -> Task.t or_error
 val all_provers : t -> Prover.t list
 val all_tasks : t -> Task.t list
 
+val option_j : t -> int option
+val option_progress : t -> bool option
+
 val of_config : Config.t -> t or_error
 [@@ocaml.deprecated "use sexp stanzas"]
 (** Get a list of supported provers from a config file. *)

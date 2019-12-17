@@ -20,9 +20,14 @@ type t = {
   defs: def Str_map.t;
   dirs: Dir.t list; (* list of directories *)
   cur_dir: string; (* for relative paths *)
+  option_j : int option;
+  option_progress : bool option;
 }
 
-let empty : t = { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd(); }
+let empty : t =
+  { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd();
+    option_j=None; option_progress=None;
+  }
 
 let add_prover (p:Prover.t) self : t =
   { self with defs=Str_map.add (Prover.name p) (D_prover p) self.defs}
@@ -32,6 +37,9 @@ let add_task (t:Task.t) self : t =
 
 let add_dir (d:Dir.t) self : t =
   { self with dirs=d::self.dirs }
+
+let option_j self = self.option_j
+let option_progress self = self.option_progress
 
 let all_provers self : _ list =
   Str_map.values self.defs
@@ -215,6 +223,12 @@ let add_stanza (st:Stanza.t) self : t or_error =
     mk_action self action >>= fun action ->
     let t = {Task.name; synopsis; action; } in
     Ok (add_task t self)
+  | St_set_options {progress; j} ->
+    let open CCOpt.Infix in
+    Ok {self with
+     option_j = j <+> self.option_j;
+     option_progress = progress <+> self.option_progress;
+    }
 
 let add_stanza_l (l:Stanza.t list) self : t or_error =
   E.fold_l (fun self st -> add_stanza st self) self l

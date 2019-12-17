@@ -150,3 +150,6 @@ same repository).
   * `name` should be unique (used to refer to the task)
   * `action` defines what the task should do.
     For now there's only `(run_provers …)` to run provers on files locally.
+- `(set-options…)` defines global options:
+  * `j` integer for number of parallel tasks in `run`
+  * `progress` boolean for progress bar in `run`

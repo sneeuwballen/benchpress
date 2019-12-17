@@ -62,6 +62,10 @@ type t =
       synopsis: string option;
       action: action;
     }
+  | St_set_options of {
+      progress: bool option;
+      j: int option;
+    }
 
 (** {2 Printers} *)
 
@@ -115,6 +119,10 @@ let pp out =
       (pp_f "name" pp_str) name
       (pp_opt "synopsis" pp_str) synopsis
       (pp_f "action" pp_action) action
+  | St_set_options {j; progress} ->
+    Fmt.fprintf out "(@[<v>set-options%a%a])"
+      (pp_opt "progress" Fmt.bool) progress
+      (pp_opt "j" Fmt.int) j
 
 let pp_l out l =
   Fmt.fprintf out "@[<v>%a@]" (Misc.pp_list pp) l
@@ -226,6 +234,10 @@ let dec : t Se.D.decoder =
     field_opt "synopsis" string >>= fun synopsis ->
     field "action" dec_action >>= fun action ->
     succeed @@ St_task {name;synopsis;action}
+  | "set-options" -> 
+    field_opt "progress" bool >>= fun progress ->
+    field_opt "j" int >>= fun j ->
+    succeed @@ St_set_options {progress; j}
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
 

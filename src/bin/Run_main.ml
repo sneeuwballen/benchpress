@@ -104,7 +104,9 @@ let main ?j ?dyn ?timeout ?memory ?csv ?provers
       ) >>= fun provers ->
       Definitions.mk_run_provers ?timeout ?memory ?j ~provers ~paths defs
   end >>= fun run_provers_action ->
-  execute_run_prover_action ?dyn ?timeout ?memory ?j ~notify ~timestamp
+  let j = CCOpt.Infix.( j <+> Definitions.option_j defs) in
+  let progress = CCOpt.Infix.( dyn <+> Definitions.option_progress defs) in
+  execute_run_prover_action ?dyn:progress ?timeout ?memory ?j ~notify ~timestamp
     run_provers_action
   >>= fun (results:T.Top_result.t) ->
   Utils.dump_csv ~csv results;
