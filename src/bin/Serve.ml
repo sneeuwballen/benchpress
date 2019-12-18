@@ -172,6 +172,36 @@ let handle_compare server : unit =
       )
     )
 
+(* delete files *)
+let handle_delete server : unit =
+  H.add_path_handler server ~meth:`POST "/delete/" (fun req ->
+      let body = H.Request.body req |> String.trim in
+      Logs.debug (fun k->k "/delete: body is %s" body);
+      let names =
+        CCString.split_on_char '&' body
+        |> CCList.filter_map
+          (fun s -> match CCString.Split.left ~by:"=" (String.trim s) with
+             | Some (name, "on") -> Some name
+             | _ -> None)
+      in
+      Logs.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
+      let files =
+        names
+        |> List.map
+          (fun s -> match Utils.mk_file_full s with
+             | Error e ->
+               Logs.err ~src (fun k->k "cannot load file %S" s);
+               H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
+             | Ok x -> x)
+      in
+      List.iter (fun file ->
+          Logs.info ~src (fun k->k  "delete file %s" @@ Filename.quote file);
+          Sys.remove file)
+        files;
+      let h = html_redirect @@ Format.asprintf "deleted %d files" (List.length files) in
+      H.Response.make_string (Ok (string_of_html h))
+    )
+
 let handle_provers (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/provers/" (fun _r ->
       let provers = Definitions.all_provers self.defs in
@@ -300,10 +330,12 @@ let handle_root (self:t) : unit =
                   entries
               in
               form ~a:[a_id (uri_of_string "compare");
-                       a_action (uri_of_string "/compare/");
                        a_method `Post;]
-                [button ~a:[a_button_type `Submit; a_class ["stick"]]
-                   [txt "compare selected"]; ul l];
+                [button ~a:[a_button_type `Submit; a_class ["stick"]; a_formaction "/compare/"]
+                   [txt "compare selected"];
+                 button ~a:[a_button_type `Submit; a_class ["stick"]; a_formaction "/delete/"]
+                   [txt "delete selected"];
+                 ul l];
             ])
       in
       H.Response.make_string (Ok (string_of_html h))
@@ -331,6 +363,7 @@ let main ?port (defs:Definitions.t) () =
     handle_run self;
     handle_job_interrupt self;
     handle_compare server;
+    handle_delete server;
     H.run server |> E.map_err Printexc.to_string
   with e ->
     E.of_exn_trace e

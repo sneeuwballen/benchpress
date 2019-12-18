@@ -205,6 +205,7 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
 
 let load_file f = E.map snd @@ load_file_full f
 
+(* TODO: return T.compact_result instead *)
 let load_file_summary (f:string) :
   (string * (string *T.Stat.t) list * (string * T.Analyze.t) list
    * (string*string*T.Comparison_short.t) list, _) E.t =
