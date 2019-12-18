@@ -83,9 +83,10 @@ module Stat = struct
       (fun scope ->
         let f c = Db.Cursor.next c |> CCOpt.to_result "no result" |> scope.unwrap in
         let get_res r =
+          Logs.debug (fun k->k "get-res %s" r);
           Db.exec db
             {| select count(*) from prover_res where prover=? and res=?; |}
-            prover r ~ty:Db.Ty.(p2 text text, p1 int, fun x->x) ~f
+            prover r ~ty:Db.Ty.(p2 text text, p1 (nullable int), CCOpt.get_or ~default:0) ~f
           |> scope.unwrap_with Db.Rc.to_string
         in
         let sat = get_res "sat" in
@@ -95,9 +96,10 @@ module Stat = struct
         let memory = get_res "memory" in
         let errors = get_res "error" in
         let total_time =
-          Db.exec_no_params db {|
-          select sum(rtime) from prover_res where res in ('sat', 'unsat');
-            |} ~ty:Db.Ty.(p1 float, fun x->x) ~f
+          Db.exec db {|
+          select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
+            |} prover
+            ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.) ~f
           |> scope.unwrap_with Db.Rc.to_string
         in
         { sat; unsat; timeout; memory; unknown; errors; total_time; }
@@ -369,9 +371,9 @@ end
 
 (** A kind of lightweight result *)
 type compact_result = {
-  cr_uuid: Uuidm.t;
-  cr_timestamp: float;
-  cr_total_wall_time: float;
+  cr_uuid: Uuidm.t option;
+  cr_timestamp: float option;
+  cr_total_wall_time: float option;
   cr_stat: (Prover.name * Stat.t) list;
   cr_analyze: (Prover.name * Analyze.t) list;
   cr_comparison: (Prover.name * Prover.name * Comparison_short.t) list;
@@ -399,10 +401,10 @@ end
     per prover *)
 
 type top_result = {
-  uuid: Uuidm.t; (* unique ID *)
-  timestamp: float; (* timestamp *)
+  uuid: Uuidm.t option; (* unique ID *)
+  timestamp: float option; (* timestamp *)
+  total_wall_time: float option;
   events: Run_event.t list;
-  total_wall_time: float;
   stats: (Prover.name * Stat.t) list;
   analyze: (Prover.name * Analyze.t) list;
   db: Db.t; (* in-memory database *)
@@ -425,9 +427,9 @@ module Top_result : sig
   val is_ok : t -> bool
 
   val make :
-    total_wall_time:float ->
-    timestamp:float ->
-    uuid:Uuidm.t ->
+    total_wall_time:float option ->
+    timestamp:float option ->
+    uuid:Uuidm.t option ->
     Prover.name Run_result.t list ->
     t or_error
   (** Make from a list of results *)
@@ -439,9 +441,9 @@ module Top_result : sig
 
   val to_db_meta :
     Db.t ->
-    timestamp:float ->
-    uuid:Uuidm.t ->
-    total_wall_time:float ->
+    timestamp:float option ->
+    uuid:Uuidm.t option ->
+    total_wall_time:float option ->
     unit or_error
 
   val to_db : Db.t -> t -> unit or_error
@@ -507,8 +509,8 @@ end = struct
 
   let pp_header out self =
     Format.fprintf out "(@[(uuid %s)(date %a)@])"
-      (Uuidm.to_string self.uuid)
-      ISO8601.Permissive.pp_datetime self.timestamp
+      (CCOpt.map_or ~default:"<none>" Uuidm.to_string self.uuid)
+      (Misc.Pp.pp_opt "timestamp" ISO8601.Permissive.pp_datetime) self.timestamp
 
   let pp_compact out (self:t) =
     let pp_tup out (p,res) =
@@ -610,8 +612,8 @@ end = struct
   let to_table (self:t): table =
     let line0 =
       Printf.sprintf "(snapshot :uuid %s :date %s)"
-        (Uuidm.to_string self.uuid)
-        (ISO8601.Permissive.string_of_datetime self.timestamp)
+        (CCOpt.map_or ~default:"<none>" Uuidm.to_string self.uuid)
+        (CCOpt.map_or ~default:"<none>" ISO8601.Permissive.string_of_datetime self.timestamp)
     in
     Misc.err_with
       ~map_err:(Printf.sprintf "while converting to CSV table: %s")
@@ -770,10 +772,10 @@ end = struct
     Db.exec_no_cursor db
       "insert into meta values
       ('timestamp', ?), ('total-wall-time', ?), ('uuid', ?);"
-      ~ty:Db.Ty.(p3 blob blob text)
-      (string_of_float timestamp)
-      (string_of_float total_wall_time)
-      (Uuidm.to_string uuid)
+      ~ty:Db.Ty.(p3 (nullable blob) (nullable blob) (nullable text))
+      (CCOpt.map string_of_float timestamp)
+      (CCOpt.map string_of_float total_wall_time)
+      (CCOpt.map Uuidm.to_string uuid)
     |> Misc.db_err ~ctx:"inserting metadata"
 
   let add_meta (db:Db.t) (self:t) : unit or_error =
@@ -822,24 +824,19 @@ end = struct
   let get_meta db k : _ =
     Db.exec_exn db {|select value from meta where key=? ;|}
       k
-      ~ty:Db.Ty.(p1 text, p1 any_str, id)
+      ~ty:Db.Ty.(p1 text, p1 (nullable any_str), id)
       ~f:Db.Cursor.next
     |> CCOpt.to_result ("did not find metadata " ^ k)
 
   let decode ?uuid:uuid_g () : t J.Decode.t =
     let open J.Decode in
-    field "timestamp" float >>= fun timestamp ->
+    field_opt "timestamp" float >>= fun timestamp ->
     field_opt "total_wall_time" float >>= fun total_wall_time ->
     field_opt "uuid" string >>= fun uuid ->
-    let uuid = match uuid with
-      | None -> uuid_g | Some _ -> uuid
-    in
     let uuid =
-      uuid
+      CCOpt.Infix.(uuid <+> uuid_g)
       |> CCOpt.flat_map Uuidm.of_string
-      |> CCOpt.get_lazy (fun () -> Misc.mk_uuid())
     in
-    let total_wall_time = CCOpt.get_or ~default:0. total_wall_time in
     field "events" decode_events >>= fun events ->
     match make ~uuid ~timestamp ~total_wall_time events with
     | Ok x -> succeed x
@@ -852,13 +849,11 @@ end = struct
         Logs.debug (fun k->k "loading metadata from DB");
         let timestamp = get_meta db "timestamp" |> scope.unwrap in
         let total_wall_time = get_meta db "total-wall-time" |> scope.unwrap in
-        let timestamp = float_of_string timestamp in
-        Logs.debug (fun k->k "ts: %f" timestamp);
+        let timestamp = CCOpt.map float_of_string timestamp in
+        CCOpt.iter (fun ts -> Logs.debug (fun k->k "ts: %f" ts)) timestamp;
         let uuid = get_meta db "uuid" |> scope.unwrap in
-        let uuid =
-          Uuidm.of_string uuid |> CCOpt.to_result "invalid uuid" |> scope.unwrap
-        in
-        let total_wall_time = float_of_string total_wall_time in
+        let uuid = CCOpt.flat_map Uuidm.of_string uuid in
+        let total_wall_time = CCOpt.map float_of_string total_wall_time in
         Logs.debug (fun k->k "loading events from DB");
         let events =
           Run_event.of_db_l db |> scope.unwrap

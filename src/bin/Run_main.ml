@@ -77,6 +77,6 @@ let main ?j ?dyn ?timeout ?memory ?csv ?provers
   Utils.printbox_compact_results results;
   (* try to send a desktop notification *)
   (try CCUnix.call "notify-send 'benchmark done (%s)'"
-         (Misc.human_time results.T.cr_total_wall_time) |> ignore
+         (CCOpt.map_or ~default:"?" Misc.human_time results.T.cr_total_wall_time) |> ignore
    with _ -> ());
   r

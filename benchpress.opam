@@ -28,6 +28,9 @@ depends: [
     "decoders-yojson" { >= "0.3.0" & < "0.4" }
     "ocaml" {>= "4.02" }
 ]
+pin-depends: [
+  ["sqlite3_utils.dev" "git+https://github.com/c-cube/sqlite3_utils.git"]
+]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
 bug-reports: "https://github.com/sneeuwballen/benchpress/issues"

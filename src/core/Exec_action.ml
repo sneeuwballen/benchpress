@@ -146,7 +146,9 @@ end = struct
     if interrupted() then (
       Error "interrupted"
     ) else (
-      let total_wall_time = Unix.gettimeofday() -. start in
+      let total_wall_time = Some (Unix.gettimeofday() -. start) in
+      let uuid = Some uuid in
+      let timestamp = Some timestamp in
       T.Top_result.to_db_meta db ~timestamp ~uuid ~total_wall_time >>= fun () ->
       let top_res = lazy (
         T.Top_result.make ~total_wall_time ~uuid ~timestamp res_l
@@ -217,8 +219,8 @@ let dump_results_sqlite results : unit =
     (* FIXME: results should have their own UUID already *)
     let filename =
       Printf.sprintf "res-%s-%s.sqlite"
-        (ISO8601.Permissive.string_of_datetime_basic results.Test.timestamp)
-        (Uuidm.to_string uuid)
+        (CCOpt.map_or ~default:"date" ISO8601.Permissive.string_of_datetime_basic results.Test.timestamp)
+        (CCOpt.map_or ~default:"uuid" Uuidm.to_string uuid)
     in
     let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
     (try Unix.mkdir data_dir 0o744 with _ -> ());
