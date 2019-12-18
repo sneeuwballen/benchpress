@@ -19,3 +19,10 @@
   (version "cmd:z3 --version")
   (unsat "unsat")
   (sat "^sat"))
+
+(prover
+  (name cvc4)
+  (cmd "cvc4 $file ")
+  (version "cmd:cvc4 --version | head -n 3")
+  (unsat "unsat")
+  (sat "^sat"))
