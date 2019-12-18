@@ -20,6 +20,7 @@ depends: [
     "logs"
     "uuidm"
     "base64"
+    "gnuplot"
     "sqlite3"
     "sqlite3_utils" { >= "0.3" & < "0.4" }
     "tiny_httpd" { >= "0.2" & < "0.4" }
@@ -31,6 +32,7 @@ depends: [
 ]
 pin-depends: [
   ["sqlite3_utils.0.3" "git+https://github.com/c-cube/sqlite3_utils.git"]
+  [ "gnuplot.dev" "git+https://github.com/c-cube/ocaml-gnuplot.git"]
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
