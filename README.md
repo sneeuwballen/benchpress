@@ -10,17 +10,21 @@ License: BSD.
 ## Basic usage
 
 ```sh
-$ benchpress run -c foo.sexp dir_a/ dir_b
+$ benchpress run -c foo.sexp dir_a/ dir_b/ -p z3
 …
 ```
+
+this tells `benchpress` to run the prover `z3` on directories `dir_a`
+and `dir_b`. `foo.sexp` contains additional configuration parameters
+as described below.
 
 ## System dependencies
 
 Logitest relies on a bunch of utilities, besides OCaml libraries:
 
-- `gzip`/`zcat` for compressing files
 - `sqlite3` (with development headers)
 - `time`, `ulimit`, etc
+- ~~`gzip`/`zcat` for compressing files~~
 - (optional) `grep` + access to `/proc/cpuinfo` for guessing number of cores
 - (optional) `git` for tagging solvers from their repository
 
@@ -45,7 +49,7 @@ Most of the commands accept `-c <config file>` to specify which config files to 
 - `benchpress list-files` to list the results
 - `benchpress show <result>` to show the content of the result file
 - `benchpress serve` to open a HTTP server on a port (default `8080`),
-  which provides a basic web UI
+  which provides a basic web UI.
 
 ## Config File
 
@@ -76,16 +80,24 @@ Benchpress ships with a builtin config that contains, roughly:
   (sat "^sat"))
 ```
 
-
 The configuration is based on _stanzas_ that define available provers, available
 sets of benchmarks (based on directories that contain  them), and _tasks_.
 For now the only kind of supported task is to run provers on problems,
 but it should get richer as we go (e.g. run proof checkers, do some basic CI,
 run a task daily, etc.).
 
+In this default file we also define a pseudo-prover, "smtlib-read-status",
+which is used to parse SMTLIB benchmarks and find an annotation
+`(set-info :status <…>)`. This is useful when running provers later
+because it makes it easy to find bugs (if a prover reports a wrong answer).
+
+We also define provers `minisat` and `z3` as common reference points,
+providing info on how to run them (with `cmd …`) and how to parse their
+results using regexes.
+
 ### Example of config file
 
-A more complete example:
+A more complete example, taken from [mc2](https://github.com/c-cube/mc2):
 
 ```sexp
 
@@ -128,6 +140,8 @@ Then one can run, say,
 $ benchpress run -c the_file.sexp --task glob-all-smtlib-QF_UF -t 30
 ```
 to run mc2 and z3 on the QF_UF problems in the SMTLIB directory.
+The `task` stanza defines a pre-packaged task that can be launched easily
+from the command line or the embedded web server (a bit like a makefile target).
 
 ### List of stanzas
 
