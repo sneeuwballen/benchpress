@@ -103,12 +103,6 @@ end = struct
 
   let _nop _ = ()
 
-  (* close DB after [f] is done *)
-  let defer_close_db db f =
-    let x = f() in
-    ignore (Sqlite3.db_close db: bool);
-    x
-
   let run ?(timestamp=Unix.gettimeofday())
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_done = _nop)
       ?(interrupted=fun _->false)

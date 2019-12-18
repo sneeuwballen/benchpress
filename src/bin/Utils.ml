@@ -154,6 +154,7 @@ let list_entries data_dir =
       | _ -> None)
   |> List.sort (fun x y->CCOrd.compare y x)
 
+(* find absolute path of [f] in the data dir *)
 let mk_file_full (f:string) : string or_error =
   let dir = Filename.concat (Xdg.data_dir()) !(Xdg.name_of_project) in
   let file = Filename.concat dir f in

@@ -114,7 +114,6 @@ let handle_show_csv (self:t): unit =
           (Ok csv)
     )
 
-(* TODO: restore this (with "attach")
 (* compare files *)
 let handle_compare server : unit =
   H.add_path_handler server ~meth:`POST "/compare" (fun req ->
@@ -132,20 +131,29 @@ let handle_compare server : unit =
         let files =
           names
           |> List.map
-            (fun s -> match Utils.load_file s with
+            (fun s -> match Utils.mk_file_full s with
                | Error e ->
                  Logs.err ~src (fun k->k "cannot load file %S" s);
                  H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
-               | Ok x -> s, x)
+               | Ok x -> x)
         in
         let box_compare_l =
           let open PrintBox in
           CCList.diagonal files
-          |> List.map (fun ((f1,r1),(f2,r2)) ->
-              let c = Test.Top_result.compare r1 r2 in
+          |> List.map (fun (f1,f2) ->
+              let c =
+                match Test_compare.Short.make f1 f2 with
+                | Ok x -> x
+                | Error e ->
+                  Logs.err ~src (fun k->k"cannot compare %s and %s: %s" f1 f2 e);
+                  H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1 f2
+              in
               vlist ~bars:false [
                 text f1; text f2;
-                Test.Top_result.comparison_to_printbox ~short:true c])
+                Test.pb_v_record @@
+                List.map (fun (pr,c) -> pr, Test_compare.Short.to_printbox c)
+                  c
+              ])
           |> vlist
         in
         let h =
@@ -158,13 +166,11 @@ let handle_compare server : unit =
                 div [PrintBox_html.to_html box_compare_l];
               ])
         in
-        Logs.err ~src (fun k->k "ok reply for compare %s" @@ String.concat ";" names);
         H.Response.make_string (Ok (string_of_html h))
       ) else (
         H.Response.fail ~code:412 "precondition failed: select at least 2 files"
       )
     )
-   *)
 
 let handle_provers (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/provers/" (fun _r ->
@@ -324,8 +330,7 @@ let main ?port (defs:Definitions.t) () =
     handle_provers self;
     handle_run self;
     handle_job_interrupt self;
-    (* FIXME:
-       handle_compare server; *)
+    handle_compare server;
     H.run server |> E.map_err Printexc.to_string
   with e ->
     E.of_exn_trace e
