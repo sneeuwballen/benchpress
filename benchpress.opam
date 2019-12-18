@@ -19,6 +19,7 @@ depends: [
     "iter" { >= "1.0" } # TODO: remove
     "logs"
     "uuidm"
+    "base64"
     "sqlite3"
     "sqlite3_utils" { >= "0.3" & < "0.4" }
     "tiny_httpd" { >= "0.2" & < "0.4" }

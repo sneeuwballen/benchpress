@@ -4,6 +4,7 @@
 
 module T = Test
 module E = CCResult
+module Db = Sqlite3_utils
 
 type 'a or_error = ('a, string) E.t
 
@@ -107,6 +108,39 @@ module Show = struct
     let doc = "show benchmark results (see `list-files`)" in
     Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ debug $ file),
     Term.info ~doc "show"
+end
+
+(** {2 plot results} *)
+
+module Plot = struct
+  let main file : unit or_error =
+    let open E.Infix in
+    Logs.debug (fun k->k "plot file %s" file);
+    try
+      Utils.mk_file_full file >>= fun file ->
+      Db.with_db ~mode:`READONLY file
+        (fun db ->
+           T.Cactus_plot.of_db db >>= fun p ->
+           T.Cactus_plot.show p;
+           Ok ())
+    with e -> E.of_exn_trace e
+
+  (* sub-command for showing results *)
+  let cmd =
+    let open Cmdliner in
+    let file =
+      Arg.(required & pos 0 (some string) None &
+           info [] ~docv:"FILE" ~doc:"file to read")
+    and debug =
+      Logs_cli.level ()
+    in
+    let aux debug file : _ E.t = 
+      Misc.setup_logs debug;
+      main file
+    in
+    let doc = "plot benchmark results" in
+    Term.(pure aux $ debug $ file),
+    Term.info ~doc "plot"
 end
 
 (** {2 Sample} *)
@@ -334,6 +368,7 @@ let parse_opt () =
     Sql_convert.cmd;
     Task_list.cmd;
     Task_show.cmd;
+    Plot.cmd;
   ]
 
 let () =

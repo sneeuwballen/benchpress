@@ -40,12 +40,22 @@ let handle_show (self:t) : unit =
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok (_file, cr) ->
+      | Ok (file_full, cr) ->
         let box_meta = Test.Metadata.to_printbox cr.T.cr_meta in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
         let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
         let bad = Test.Analyze.to_printbox_bad_l cr.T.cr_analyze in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
+        let cactus_plot =
+          let open E.Infix in
+          try
+            Test.Cactus_plot.of_file file_full >|= fun plot ->
+            Test.Cactus_plot.to_png plot
+          with e ->
+            let e = Printexc.to_string e in
+            Logs.err ~src (fun k->k "failure to build a cactus plot: %s" e);
+            Error e
+        in
         let h =
           let open Html in
           let pb_html pb = PrintBox_html.to_html pb in
@@ -67,6 +77,15 @@ let handle_show (self:t) : unit =
                 CCList.flat_map
                   (fun (n,p) -> [h3 [txt ("bad for " ^ n)]; div [pb_html p]])
                   bad;
+                (match cactus_plot with
+                 | Error e -> [p ~a:[a_style "color: red"] [txt "could not load cactus plot"; txt e]]
+                 | Ok p ->
+                   Logs.debug ~src (fun k->k "encode png file of %d bytes" (String.length p));
+                   [img
+                      ~src:("data:image/png;base64, " ^ Base64.encode_string p)
+                      ~a:[a_style "display:block; width: 100%"]
+                      ~alt:"cactus plot of provers" ()]
+                );
                 (CCList.flat_map 
                   (fun (n1,n2,p) -> [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)]; div [pb_html p]])
                   box_compare_l);

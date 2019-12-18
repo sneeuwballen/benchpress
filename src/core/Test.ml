@@ -46,6 +46,8 @@ let list_provers db : string list or_error =
     ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
   |> Misc.db_err ~ctx:"listing provers"
 
+(** {2 Basic stats on results} *)
+
 module Stat = struct
   type t = {
     unsat: int;
@@ -123,6 +125,8 @@ module Stat = struct
       (s.unsat + s.sat + s.errors + s.unknown + s.timeout)
       s.total_time
 end
+
+(** {2 Basic analysis of results} *)
 
 module Analyze : sig
   type t = {
@@ -297,6 +301,8 @@ end = struct
       pp_bad self
 end
 
+(** {2 Lightweight Comparison between bench runs} *)
+
 module Comparison_short : sig
   type t = {
     better: int;
@@ -432,6 +438,8 @@ module Metadata = struct
         { timestamp; total_wall_time; uuid; })
 end
 
+(** {2 Lightweight Results} *)
+
 (** A kind of lightweight result *)
 type compact_result = {
   cr_meta: metadata;
@@ -452,6 +460,83 @@ module Compact_result = struct
     Ok {cr_stat; cr_analyze; cr_comparison; cr_meta; }
 
   let pp out _self = Fmt.fprintf out "<compact result>"
+end
+
+(** {2 Cactus plots} *)
+
+module Cactus_plot : sig
+  type t
+
+  val of_db : Db.t -> t or_error
+  val of_file : string -> t or_error
+
+  val show : t -> unit
+  val save_to_file : t -> string -> unit
+  val to_png : t -> string
+end = struct
+  module Gp = Gnuplot
+
+  type t = {
+    lines: (Prover.name * float list) list;
+  }
+
+  let of_db db =
+    Misc.err_with
+      ~map_err:(Printf.sprintf "while plotting DB: %s")
+      (fun scope ->
+        let provers = list_provers db |> scope.unwrap in
+        Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
+        let get_prover prover =
+          Db.exec db
+            {| select rtime from prover_res
+              where prover=? and res in ('sat','unsat')
+              order by rtime|} prover
+            ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
+          |> scope.unwrap_with Db.Rc.to_string
+        in
+        let lines = List.map (fun p -> p, get_prover p) provers in
+        { lines }
+      )
+
+  let of_file file : t or_error =
+    try
+      Db.with_db ~mode:`READONLY file of_db
+    with e -> E.of_exn_trace e
+
+  let to_gp ~output self = 
+    Gp.with_ (fun gp ->
+      let series = self.lines
+        |> List.map
+          (fun (prover,l) ->
+             let l =
+               let sum = ref 0. in
+               List.mapi
+                 (fun i rtime ->
+                    sum := !sum +. rtime;
+                    (!sum, float i))
+                 l
+             in
+             Gp.Series.linespoints_xy ~title:prover l)
+      in
+      Gp.plot_many
+        ~labels:(Gp.Labels.create ~x:"time (s)" ~y:"problems solved" ())
+        ~title:"provers" gp series ~output);
+    ()
+
+  let show (self:t) =
+    to_gp self ~output:(Gp.Output.create `X11)
+
+  let save_to_file (self:t) file =
+    to_gp self ~output:(Gp.Output.create ~size:(1024,760) @@ `Png file)
+
+  let to_png (self:t) : string =
+    CCIO.File.with_temp ~prefix:"benchpress_plot" ~suffix:".png"
+      (fun file ->
+         Logs.debug (fun k->k "plot into file %s" file);
+         save_to_file self file;
+         let s = CCIO.with_in file CCIO.read_all in
+         Logs.debug (fun k->k "read %d bytes from file" (String.length s));
+         s)
 end
 
 (** {2 Top Result}
