@@ -17,7 +17,7 @@ module Run = struct
       : (unit,string) E.t =
       if no_color then CCFormat.set_color_default false;
       let dyn = if dyn then Some true else None in
-      Run_main.main ?dyn ~j ?timeout ?memory ?csv ?provers
+      Run_main.main ?dyn ~j ?timeout ?memory ?csv ~provers
         ~meta ?task ?summary ?dir_file defs paths ()
     in
     let defs = Utils.definitions_term
@@ -43,7 +43,7 @@ module Run = struct
       Arg.(value & pos_all string [] &
            info [] ~docv:"PATH" ~doc:"target paths (or directories containing tests)")
     and provers =
-      Arg.(value & opt (some (list string)) None & info ["p"; "provers"] ~doc:"select provers")
+      Arg.(value & opt_all string [] & info ["p"; "provers"] ~doc:"select provers")
     and no_color =
       Arg.(value & flag & info ["no-color"; "nc"] ~doc:"disable colored output")
     and summary =

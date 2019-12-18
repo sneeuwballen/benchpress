@@ -23,7 +23,7 @@ let execute_run_prover_action
     E.return results
   end |> E.add_ctxf "running tests"
 
-let main ?j ?dyn ?timeout ?memory ?csv ?provers
+let main ?j ?dyn ?timeout ?memory ?csv ?(provers=[])
     ?meta:_ ?summary ?task ?dir_file (defs:Definitions.t) paths () =
   let open E.Infix in
   Logs.info
@@ -44,8 +44,7 @@ let main ?j ?dyn ?timeout ?memory ?csv ?provers
         | {Task.action=Action.Act_run_provers r;_} ->
           (* convert paths and provers *)
           E.map_l (Definitions.mk_subdir defs) paths >>= fun paths ->
-          E.map_l (Definitions.find_prover defs)
-            (CCOpt.get_or ~default:[] provers) >>= fun provers ->
+          E.map_l (Definitions.find_prover defs) provers >>= fun provers ->
           let r = {r with provers=provers @ r.provers; dirs=paths @ r.dirs} in
           (* TODO: more general framework for running and reporting actions *)
           Ok r
@@ -53,8 +52,8 @@ let main ?j ?dyn ?timeout ?memory ?csv ?provers
       end
     | None ->
       (match provers with
-       | None | Some [] -> E.fail_fprintf "please provide at least one prover"
-       | Some l -> Ok l
+       | [] -> E.fail_fprintf "please provide at least one prover"
+       | l -> Ok l
       ) >>= fun provers ->
       Definitions.mk_run_provers ?timeout ?memory ?j ~provers ~paths defs
   end >>= fun run_provers_action ->
