@@ -7,9 +7,9 @@ type 'a or_error = ('a, string) E.t
 
 let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in
-  let aux config config_toml logs_cmd =
+  let aux conf_files config_toml logs_cmd =
     Misc.setup_logs logs_cmd;
-    let conf_files = match config with None -> [] | Some c -> [c] in
+    let conf_files = CCList.flatten conf_files in
     let conf_files =
       let default_conf = Misc.default_config () in
       (* always add default config file if it exists *)
@@ -36,13 +36,13 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
   let arg_toml =
     Arg.(value & opt (some string) None &
          info ["ct"; "config-toml"] ~doc:"configuration file (toml; in target directory; DEPRECATED)")
-  and arg =
-    Arg.(value & opt (some string) None &
+  and args =
+    Arg.(value & opt_all (list ~sep:',' string) [] &
          info ["c"; "config"] ~doc:"configuration file (sexp)")
   and debug =
     Logs_cli.level ()
   in
-  Term.(ret (pure aux $ arg $ arg_toml $ debug))
+  Term.(ret (pure aux $ args $ arg_toml $ debug))
 
 let get_definitions () : Definitions.t or_error =
   let conf_files =
