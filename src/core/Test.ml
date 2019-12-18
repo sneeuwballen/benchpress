@@ -192,11 +192,12 @@ end = struct
             ~ty:Db.Ty.(p1 text, p1 int, id)
             {| select count(*) from prover_res where prover=?;|} prover
         and bad =
-          get1_int ~ctx:"get improved results"
+          get1_int ~ctx:"get bad results"
             ~ty:Db.Ty.(p1 text, p1 int, id)
             {| select count(*) from prover_res where prover=?
                 and res in ('sat','unsat')
-                and not (file_expect in ('sat','unsat')); |}
+                and res != file_expect
+                and file_expect in ('sat','unsat'); |}
             prover
         and bad_full =
           Db.exec db
