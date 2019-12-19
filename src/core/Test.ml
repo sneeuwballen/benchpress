@@ -54,11 +54,9 @@ module Stat = struct
     unknown: int;
     timeout: int;
     memory: int;
+    total: int;
     total_time: float; (* for sat+unsat *)
   }
-
-  let empty : t =
-    {unsat=0; sat=0; errors=0; unknown=0; timeout=0; total_time=0.; memory=0; }
 
   let as_printbox_record s : _ list =
     let open PB in
@@ -68,7 +66,9 @@ module Stat = struct
       "unknown", int s.unknown;
       "timeout", int s.timeout;
       "memory", int s.memory;
-      "total_time", line (Misc.human_time s.total_time) ]
+      "total", int s.total;
+      "total_time", line (Misc.human_time s.total_time);
+    ]
 
   let to_printbox (s:t) : PrintBox.t =
     pb_v_record @@ as_printbox_record s
@@ -95,6 +95,7 @@ module Stat = struct
         let timeout = get_res "timeout" in
         let memory = get_res "memory" in
         let errors = get_res "error" in
+        let total = sat+unsat+unknown+timeout+memory+errors in
         let total_time =
           Db.exec db {|
           select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
@@ -102,7 +103,7 @@ module Stat = struct
             ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.) ~f
           |> scope.unwrap_with Db.Rc.to_string
         in
-        { sat; unsat; timeout; memory; unknown; errors; total_time; }
+        { sat; unsat; timeout; memory; unknown; errors; total; total_time; }
       )
 
   let of_db (db:Db.t) : (Prover.name * t) list or_error =
