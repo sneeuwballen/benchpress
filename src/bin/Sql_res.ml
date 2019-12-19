@@ -11,7 +11,7 @@ let run _defs files =
       List.iter
         (fun (file, res) ->
            Logs.app (fun k->k "convert to sql file %S (uuid %a)"
-                        file (Fmt.Dump.option Uuidm.pp) res.T.uuid);
+                        file Uuidm.pp res.T.meta.uuid);
            let file = (Filename.chop_suffix file ".json.gz") ^ ".sqlite" in
            Logs.app (fun k->k "sql file is %S" file);
            Exec_action.dump_results_sqlite res

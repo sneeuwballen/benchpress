@@ -206,9 +206,7 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
 let load_file f = E.map snd @@ load_file_full f
 
 (* TODO: return T.compact_result instead *)
-let load_file_summary (f:string) :
-  (string * (string *T.Stat.t) list * (string * T.Analyze.t) list
-   * (string*string*T.Comparison_short.t) list, _) E.t =
+let load_file_summary (f:string) : (string * T.compact_result,_) E.t =
   let open E.Infix in
   if Filename.check_suffix f ".sqlite" then (
     match mk_file_full f with
@@ -216,12 +214,10 @@ let load_file_summary (f:string) :
     | Ok file ->
       Db.with_db ~mode:`READONLY file
         (fun db ->
-           T.Stat.of_db db >>= fun stats ->
-           T.Analyze.of_db db >>= fun analyze ->
-           T.Comparison_short.of_db db >>= fun comp ->
-           E.return (file, stats, analyze, comp))
+           T.Compact_result.of_db db >>= fun cr ->
+           E.return (file, cr))
   ) else (
     load_file_full f >>= fun (f,res) ->
-    T.Comparison_short.of_db res.db >>= fun comp ->
-    E.return (f, T.Top_result.stat res, T.Top_result.analyze res, comp)
+    T.Top_result.to_compact_result res >>= fun cr ->
+    E.return (f, cr)
   )

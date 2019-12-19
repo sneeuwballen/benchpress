@@ -114,6 +114,7 @@ end = struct
     let db_file = db_file_for_uuid ~timestamp uuid in
     let db = Sqlite3.db_open db_file in
     T.Top_result.db_prepare db >>= fun () ->
+    T.Metadata.to_db db {T.timestamp=Some timestamp; uuid; total_wall_time=None} >>= fun () ->
     on_start self;
     (* build list of tasks *)
     let jobs =
@@ -147,14 +148,15 @@ end = struct
       Error "interrupted"
     ) else (
       let total_wall_time = Some (Unix.gettimeofday() -. start) in
-      let uuid = Some uuid in
+      let uuid = uuid in
       let timestamp = Some timestamp in
-      T.Top_result.to_db_meta db ~timestamp ~uuid ~total_wall_time >>= fun () ->
+      let meta = {T.uuid; timestamp; total_wall_time} in
+      T.Metadata.to_db db meta >>= fun () ->
       let top_res = lazy (
-        T.Top_result.make ~total_wall_time ~uuid ~timestamp res_l
+        T.Top_result.make ~meta res_l
         |> E.get_or_failwith
       ) in
-      T.Compact_result.of_db ~total_wall_time ~uuid ~timestamp db >>= fun r ->
+      T.Compact_result.of_db db >>= fun r ->
       on_done r;
       ignore (Sqlite3.db_close db : bool);
       Ok (top_res, r)
@@ -212,15 +214,14 @@ end = struct
     progress ~w_prover ~w_pb ?dyn (len * List.length r.provers)
 end
 
-let dump_results_sqlite results : unit =
-  let uuid = results.T.uuid in
+let dump_results_sqlite (results:T.top_result) : unit =
+  let uuid = results.T.meta.uuid in
   (* save results *)
   let dump_file =
-    (* FIXME: results should have their own UUID already *)
     let filename =
       Printf.sprintf "res-%s-%s.sqlite"
-        (CCOpt.map_or ~default:"date" ISO8601.Permissive.string_of_datetime_basic results.Test.timestamp)
-        (CCOpt.map_or ~default:"uuid" Uuidm.to_string uuid)
+        (CCOpt.map_or ~default:"date" ISO8601.Permissive.string_of_datetime_basic results.T.meta.timestamp)
+        (Uuidm.to_string uuid)
     in
     let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
     (try Unix.mkdir data_dir 0o744 with _ -> ());

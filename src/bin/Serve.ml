@@ -40,11 +40,12 @@ let handle_show (self:t) : unit =
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok (_, stat, analyze, comp) ->
-        let box_summary = Test.Analyze.to_printbox_l analyze in
-        let box_stat = Test.Stat.to_printbox_l stat in
-        let bad = Test.Analyze.to_printbox_bad_l analyze in
-        let box_compare_l = Test.Comparison_short.to_printbox_l comp in
+      | Ok (_file, cr) ->
+        let box_meta = Test.Metadata.to_printbox cr.T.cr_meta in
+        let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
+        let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
+        let bad = Test.Analyze.to_printbox_bad_l cr.T.cr_analyze in
+        let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
         let h =
           let open Html in
           let pb_html pb = PrintBox_html.to_html pb in
@@ -56,6 +57,7 @@ let handle_show (self:t) : unit =
                 [a ~a:[a_href ("/show_full/"^file)] [p [txt "show full results"]];
                  a ~a:[a_href ("/show_csv/"^file)] [p [txt "download as csv"]];
                 ];
+                [div [pb_html box_meta]];
                 (CCList.flat_map 
                   (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
                   box_stat);

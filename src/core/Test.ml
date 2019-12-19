@@ -369,11 +369,71 @@ end = struct
      *)
 end
 
+type metadata = {
+  uuid: Uuidm.t; (* unique ID *)
+  timestamp: float option; (* timestamp *)
+  total_wall_time: float option;
+}
+
+module Metadata = struct
+  type t = metadata
+
+  let to_printbox self : PB.t =
+    let open PB in
+    pb_v_record [
+      "uuid", text @@ Uuidm.to_string self.uuid;
+      "timestamp", (match self.timestamp with
+          | None -> text "none"
+          | Some f -> text @@ ISO8601.Permissive.string_of_datetime_basic f);
+      "total_wall_time", (match self.total_wall_time with
+          | None -> text "none" | Some f -> text @@ Misc.human_time f);
+    ]
+
+  let db_prepare (db:Db.t) : _ or_error =
+    Db.exec0 db {|
+        create table if not exists
+        meta(
+          key text not null unique,
+          value blob
+          );
+        create index if not exists meta_k on meta(key);
+        |} |> Misc.db_err ~ctx:"top-res.db-prepare"
+
+  let get_meta db k : _ =
+    Db.exec_exn db {|select value from meta where key=? ;|}
+      k
+      ~ty:Db.Ty.(p1 text, p1 (nullable any_str), id)
+      ~f:Db.Cursor.next
+    |> CCOpt.to_result ("did not find metadata " ^ k)
+
+  let to_db (db:Db.t) (self:t) : unit or_error =
+    Db.exec_no_cursor db
+      "insert or replace into meta values
+      ('timestamp', ?), ('total-wall-time', ?), ('uuid', ?);"
+      ~ty:Db.Ty.(p3 (nullable blob) (nullable blob) text)
+      (CCOpt.map string_of_float self.timestamp)
+      (CCOpt.map string_of_float self.total_wall_time)
+      (Uuidm.to_string self.uuid)
+    |> Misc.db_err ~ctx:"inserting metadata"
+
+  let of_db db : t or_error =
+    Misc.err_with
+      ~map_err:(Printf.sprintf "while reading metadata: %s")
+      (fun scope ->
+        let timestamp = get_meta db "timestamp" |> scope.unwrap in
+        let total_wall_time = get_meta db "total-wall-time" |> scope.unwrap in
+        let timestamp = CCOpt.map float_of_string timestamp in
+        let uuid = get_meta db "uuid" |> scope.unwrap
+                   |> CCOpt.flat_map Uuidm.of_string
+                   |> CCOpt.to_result "no uuid found in DB"
+                   |> scope.unwrap in
+        let total_wall_time = CCOpt.map float_of_string total_wall_time in
+        { timestamp; total_wall_time; uuid; })
+end
+
 (** A kind of lightweight result *)
 type compact_result = {
-  cr_uuid: Uuidm.t option;
-  cr_timestamp: float option;
-  cr_total_wall_time: float option;
+  cr_meta: metadata;
   cr_stat: (Prover.name * Stat.t) list;
   cr_analyze: (Prover.name * Analyze.t) list;
   cr_comparison: (Prover.name * Prover.name * Comparison_short.t) list;
@@ -382,15 +442,13 @@ type compact_result = {
 module Compact_result = struct
   type t = compact_result
 
-  let of_db ~uuid ~timestamp ~total_wall_time db : t or_error =
+  let of_db db : t or_error =
     let open E.Infix in
+    Metadata.of_db db >>= fun cr_meta ->
     Stat.of_db db >>= fun cr_stat ->
     Analyze.of_db db >>= fun cr_analyze ->
     Comparison_short.of_db db >>= fun cr_comparison ->
-    Ok {cr_stat; cr_analyze; cr_comparison;
-        cr_uuid=uuid; cr_timestamp=timestamp;
-        cr_total_wall_time=total_wall_time;
-       }
+    Ok {cr_stat; cr_analyze; cr_comparison; cr_meta; }
 
   let pp out _self = Fmt.fprintf out "<compact result>"
 end
@@ -401,9 +459,7 @@ end
     per prover *)
 
 type top_result = {
-  uuid: Uuidm.t option; (* unique ID *)
-  timestamp: float option; (* timestamp *)
-  total_wall_time: float option;
+  meta: metadata;
   events: Run_event.t list;
   stats: (Prover.name * Stat.t) list;
   analyze: (Prover.name * Analyze.t) list;
@@ -427,9 +483,7 @@ module Top_result : sig
   val is_ok : t -> bool
 
   val make :
-    total_wall_time:float option ->
-    timestamp:float option ->
-    uuid:Uuidm.t option ->
+    meta:metadata ->
     Prover.name Run_result.t list ->
     t or_error
   (** Make from a list of results *)
@@ -439,13 +493,6 @@ module Top_result : sig
 
   val db_prepare : Db.t -> unit or_error
 
-  val to_db_meta :
-    Db.t ->
-    timestamp:float option ->
-    uuid:Uuidm.t option ->
-    total_wall_time:float option ->
-    unit or_error
-
   val to_db : Db.t -> t -> unit or_error
   (** Dump into the DB *)
 
@@ -453,6 +500,8 @@ module Top_result : sig
   (** Compute or retrieve stats *)
 
   val analyze : t -> (Prover.name * Analyze.t) list
+
+  val to_compact_result : t -> compact_result or_error
 
   (* TODO: move to another file 
   type comparison_result = {
@@ -507,10 +556,10 @@ end = struct
 
   let is_ok self = List.for_all (fun (_,a) -> Analyze.is_ok a) @@ analyze self
 
-  let pp_header out self =
+  let pp_header out (self:t) : unit =
     Format.fprintf out "(@[(uuid %s)(date %a)@])"
-      (CCOpt.map_or ~default:"<none>" Uuidm.to_string self.uuid)
-      (Misc.Pp.pp_opt "timestamp" ISO8601.Permissive.pp_datetime) self.timestamp
+      (Uuidm.to_string self.meta.uuid)
+      (Misc.Pp.pp_opt "timestamp" ISO8601.Permissive.pp_datetime) self.meta.timestamp
 
   let pp_compact out (self:t) =
     let pp_tup out (p,res) =
@@ -539,64 +588,12 @@ end = struct
     Format.fprintf out "(@[<2>%a@ %a@])"
       pp_header self (pp_list_ pp_tup) a
 
-  (* TODO
-  type comparison_result = {
-    both: ResultsComparison.t MStr.t;
-    left: Analyze.t MStr.t;
-    right: Analyze.t MStr.t;
-  }
-
-  (* TODO: use that in web UI *)
-  (* any common problem? *)
-  let should_compare (a:t)(b:t): bool =
-    let {raw=lazy a; _} = a in
-    let {raw=lazy b; _} = b in
-    MStr.exists
-      (fun p r1 -> match MStr.get p b with
-         | Some r2 -> MStr.exists (fun k _ -> MStr.mem k r2) r1
-         | None -> false)
-      a
-
-  let compare (a:t) (b:t): comparison_result =
-    let {analyze=lazy a; _} = a in
-    let {analyze=lazy b; _} = b in
-    let both, left =
-      MStr.fold
-        (fun p r_left (both,left) ->
-           try
-             (* find same (problem,dir) in [b], and compare *)
-             let r_right = MStr.find p b in
-             let cmp =
-               ResultsComparison.compare r_left.Analyze.raw r_right.Analyze.raw
-             in
-             (p, cmp) :: both, left
-           with Not_found ->
-             both, (p,r_left)::left)
-        a ([],[])
-    in
-    let right =
-      MStr.filter
-        (fun p _ -> not (MStr.mem p a))
-        b
-    in
-    let both = MStr.of_list both in
-    let left = MStr.of_list left in
-    { both; left; right; }
-
-  let pp_comparison out (r:comparison_result) =
-    let pp_tup out (p,cmp) =
-      Format.fprintf out "@[<2>%s:@ @[%a@]@]"
-        p ResultsComparison.pp cmp
-    and pp_one which out (p,res) =
-      Format.fprintf out "@[<2>%s (only on %s):@ @[%a@]@]"
-        p which Analyze.pp res
-    in
-    Format.fprintf out "(@[<hv>%a@ %a@ %a@])@."
-      (pp_hvlist_ pp_tup) (MStr.to_list r.both)
-      (pp_hvlist_ (pp_one "left")) (MStr.to_list r.left)
-      (pp_hvlist_ (pp_one "right")) (MStr.to_list r.right)
-
-     *)
+  let to_compact_result (self:t) : compact_result or_error =
+    let open E.Infix in
+    Comparison_short.of_db self.db >>= fun cr_comparison ->
+    let cr_analyze = analyze self in
+    let cr_stat = stat self in
+    E.return {cr_analyze; cr_meta=self.meta; cr_stat; cr_comparison; }
 
   type table_row = {
     tr_problem: string;
@@ -612,8 +609,8 @@ end = struct
   let to_table (self:t): table =
     let line0 =
       Printf.sprintf "(snapshot :uuid %s :date %s)"
-        (CCOpt.map_or ~default:"<none>" Uuidm.to_string self.uuid)
-        (CCOpt.map_or ~default:"<none>" ISO8601.Permissive.string_of_datetime self.timestamp)
+        (Uuidm.to_string self.meta.uuid)
+        (CCOpt.map_or ~default:"<none>" ISO8601.Permissive.string_of_datetime self.meta.timestamp)
     in
     Misc.err_with
       ~map_err:(Printf.sprintf "while converting to CSV table: %s")
@@ -758,31 +755,9 @@ end = struct
 
   let db_prepare (db:Db.t) : _ or_error =
     let open E.Infix in
+    Metadata.db_prepare db >>= fun () ->
     Run_event.db_prepare db >>= fun () ->
-    Db.exec0 db {|
-        create table if not exists
-        meta(
-          key text not null unique,
-          value blob
-          );
-        create index if not exists meta_k on meta(key);
-        |} |> Misc.db_err ~ctx:"top-res.db-prepare"
-
-  let to_db_meta (db:Db.t) ~timestamp ~uuid ~total_wall_time : unit or_error =
-    Db.exec_no_cursor db
-      "insert into meta values
-      ('timestamp', ?), ('total-wall-time', ?), ('uuid', ?);"
-      ~ty:Db.Ty.(p3 (nullable blob) (nullable blob) (nullable text))
-      (CCOpt.map string_of_float timestamp)
-      (CCOpt.map string_of_float total_wall_time)
-      (CCOpt.map Uuidm.to_string uuid)
-    |> Misc.db_err ~ctx:"inserting metadata"
-
-  let add_meta (db:Db.t) (self:t) : unit or_error =
-    to_db_meta db
-      ~timestamp:self.timestamp
-      ~total_wall_time:self.total_wall_time
-      ~uuid:self.uuid
+    Ok ()
 
   let to_db (db:Db.t) (self:t) : unit or_error =
     Logs.info (fun k->k "dump top-result into DB");
@@ -790,7 +765,7 @@ end = struct
       (fun scope ->
         scope.unwrap @@ db_prepare db;
         (* insert within one transaction, much faster *)
-        scope.unwrap @@ add_meta db self;
+        scope.unwrap @@ Metadata.to_db db self.meta;
         Db.transact db (fun _ ->
             List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
         ())
@@ -804,7 +779,7 @@ end = struct
             List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) events);
         ())
 
-  let make ~total_wall_time ~timestamp ~uuid
+  let make ~meta
       (l:Prover.name Run_result.t list) : t or_error =
     Misc.err_with
       ~map_err:(Printf.sprintf "making top result: %s")
@@ -819,14 +794,7 @@ end = struct
         Logs.debug (fun k->k "computing analyze");
         let analyze = Analyze.of_db db |> scope.unwrap in
         Logs.debug (fun k->k "done");
-        { db; timestamp; events=l; uuid; total_wall_time; stats; analyze; })
-
-  let get_meta db k : _ =
-    Db.exec_exn db {|select value from meta where key=? ;|}
-      k
-      ~ty:Db.Ty.(p1 text, p1 (nullable any_str), id)
-      ~f:Db.Cursor.next
-    |> CCOpt.to_result ("did not find metadata " ^ k)
+        { db; events=l; meta; stats; analyze; })
 
   let decode ?uuid:uuid_g () : t J.Decode.t =
     let open J.Decode in
@@ -836,9 +804,11 @@ end = struct
     let uuid =
       CCOpt.Infix.(uuid <+> uuid_g)
       |> CCOpt.flat_map Uuidm.of_string
+      |> CCOpt.get_lazy (fun () -> failwith "unable to parse UUID")
     in
     field "events" decode_events >>= fun events ->
-    match make ~uuid ~timestamp ~total_wall_time events with
+    let meta = {timestamp; uuid; total_wall_time} in
+    match make ~meta events with
     | Ok x -> succeed x
     | Error e -> fail e
 
@@ -847,18 +817,12 @@ end = struct
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
         Logs.debug (fun k->k "loading metadata from DB");
-        let timestamp = get_meta db "timestamp" |> scope.unwrap in
-        let total_wall_time = get_meta db "total-wall-time" |> scope.unwrap in
-        let timestamp = CCOpt.map float_of_string timestamp in
-        CCOpt.iter (fun ts -> Logs.debug (fun k->k "ts: %f" ts)) timestamp;
-        let uuid = get_meta db "uuid" |> scope.unwrap in
-        let uuid = CCOpt.flat_map Uuidm.of_string uuid in
-        let total_wall_time = CCOpt.map float_of_string total_wall_time in
+        let meta = Metadata.of_db db |> scope.unwrap in
         Logs.debug (fun k->k "loading events from DB");
         let events =
           Run_event.of_db_l db |> scope.unwrap
         in
-        make ~uuid ~total_wall_time ~timestamp events |> scope.unwrap)
+        make ~meta events |> scope.unwrap)
 end
 
 (** {2 Benchmark, within one Top Result} *)
