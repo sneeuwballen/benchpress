@@ -175,11 +175,27 @@ let mk_run_provers ?j ?timeout ?memory ?pattern ~paths ~provers (self:t) : _ or_
   } in
   Ok act
 
-let mk_action (self:t) (a:Stanza.action) : _ or_error =
+let rec mk_action (self:t) (a:Stanza.action) : _ or_error =
   match a with
   | Stanza.A_run_provers {provers; memory; dirs; timeout; pattern } ->
     mk_run_provers ?timeout ?memory ?pattern ~paths:dirs ~provers self
     >|= fun a -> Action.Act_run_provers a
+  | Stanza.A_progn l ->
+    E.map_l (mk_action self) l >|= fun l -> Action.Act_progn l
+  | Stanza.A_git_checkout {dir;ref;fetch_first} ->
+    let dir = norm_path ~cur_dir:self.cur_dir dir in
+    if Sys.file_exists dir && Sys.is_directory dir then (
+      let fetch_first =
+        CCOpt.map (function
+            | Stanza.GF_fetch -> Action.Git_fetch
+            | GF_pull -> Action.Git_pull) fetch_first
+      in
+      E.return @@ Action.Act_git_checkout {dir; ref; fetch_first}
+    ) else (
+      E.fail_printf "%s is not an existing directory" (Filename.quote dir)
+    )
+  | Stanza.A_run_cmd s ->
+    E.return @@ Action.Act_run_cmd s
 
 (* conversion from stanzas *)
 let add_stanza (st:Stanza.t) self : t or_error =

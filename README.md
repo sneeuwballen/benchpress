@@ -162,8 +162,22 @@ same repository).
     be compared to the actual result to detect bugs).
 - `(task …)` defines a task that can be run from the command line.
   * `name` should be unique (used to refer to the task)
-  * `action` defines what the task should do.
+  * `action` defines what the task should do, see [the action section](#actions)
     For now there's only `(run_provers …)` to run provers on files locally.
 - `(set-options…)` defines global options:
   * `j` integer for number of parallel tasks in `run`
   * `progress` boolean for progress bar in `run`
+
+### Actions
+
+- `(run_provers fields)` to run some provers on some benchmarks. Fields are:
+  * `(provers p1 … pn)` list of (names of) provers defined in other stanzas
+  * `(dirs p1 … pn)` paths containing benchmarks. The paths must be subdirectories
+    of already defined directories (see the `dir` stanza above)
+  * `(timeout n)` (optional) defines a timeout in seconds
+  * `(pattern regex)` (optional) an additional regex for files to consider in `dirs`
+- `(progn a1 … an)` runs actions in sequence. Fails if any action fails.
+- `(run_cmd "the command")` runs the given command.
+- `(git_checkout (dir d) (ref r) [(fetch_first fetch|pull)])` specifies
+  a directory in which to go (`(dir d)`), a git reference to checkout (`(ref r)`)
+  and optionally a tag to indicate whether to fetch/pull the repo first.

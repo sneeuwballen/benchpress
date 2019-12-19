@@ -23,6 +23,8 @@ type version_field =
 (** A regex in Perl syntax *)
 type regex = string
 
+type git_fetch = GF_fetch | GF_pull
+
 type action =
   | A_run_provers of {
     dirs: string list; (* list of directories to examine *)
@@ -31,6 +33,13 @@ type action =
     timeout: int option;
     memory: int option;
   }
+  | A_git_checkout of {
+      dir: string;
+      ref: string;
+      fetch_first: git_fetch option;
+    }
+  | A_run_cmd of string
+  | A_progn of action list
 
 (** Stanzas for the configuration *)
 type t =
@@ -81,7 +90,11 @@ let pp_version_field out =
   | Version_git {dir} -> pp_str out @@ Printf.sprintf {|git:%S|} dir
   | Version_cmd {cmd} -> pp_str out @@ Printf.sprintf {|cmd:%S|} cmd
 
-let pp_action out =
+let pp_git_fetch out = function
+  | GF_fetch -> Fmt.string out "fetch"
+  | GF_pull -> Fmt.string out "pull"
+
+let rec pp_action out =
   let open Misc.Pp in
   function
   | A_run_provers {dirs;provers;timeout;memory;pattern;} ->
@@ -91,6 +104,13 @@ let pp_action out =
       (pp_opt "pattern" pp_regex) pattern
       (pp_opt "timeout" Fmt.int) timeout
       (pp_opt "memory" Fmt.int) memory
+  | A_progn l -> Fmt.fprintf out "(@[progn %a@])" (pp_l pp_action) l
+  | A_run_cmd s -> Fmt.fprintf out "(@[run_cmd %a@])" pp_regex s
+  | A_git_checkout {dir;ref;fetch_first} ->
+    Fmt.fprintf out "(@[<v>git_checkout%a%a%a@])"
+      (pp_f "dir" pp_regex) dir
+      (pp_f "ref" pp_regex) ref
+      (pp_opt "fetch-first" pp_git_fetch) fetch_first
 
 let pp out =
   let open Misc.Pp in
@@ -194,19 +214,34 @@ let list_or_singleton d =
   in
   from_result (decode_value (list d) l)
 
+let dec_fetch_first =
+  let open Se.D in
+  string >>= function
+  | "fetch" -> succeed GF_fetch
+  | "pull" -> succeed GF_pull
+  | _ -> fail_f "expected `fetch` or `pull`"
+
 let dec_action : action Se.D.decoder =
   let open Se.D in
-  string >>:: function
-  | "run_provers" ->
-    field "dirs" (list_or_singleton string) >>= fun dirs ->
-    field "provers" (list_or_singleton string) >>= fun provers ->
-    field_opt "pattern" dec_regex >>= fun pattern ->
-    field_opt "timeout" int >>= fun timeout ->
-    field_opt "memory" int >>= fun memory ->
-    succeed @@ A_run_provers {dirs;provers;timeout;memory;pattern}
-  | s ->
-    fail_sexp_f "unknown config stanzas %s" s
-  
+  fix (fun self ->
+    string >>:: function
+    | "run_provers" ->
+      field "dirs" (list_or_singleton string) >>= fun dirs ->
+      field "provers" (list_or_singleton string) >>= fun provers ->
+      field_opt "pattern" dec_regex >>= fun pattern ->
+      field_opt "timeout" int >>= fun timeout ->
+      field_opt "memory" int >>= fun memory ->
+      succeed @@ A_run_provers {dirs;provers;timeout;memory;pattern}
+    | "progn" -> list_or_singleton self >|= fun l -> A_progn l
+    | "run_cmd" -> list1 string >|= fun s -> A_run_cmd s
+    | "git_checkout" ->
+      field "dir" string >>= fun dir ->
+      field "ref" string >>= fun ref ->
+      field_opt "fetch_first" dec_fetch_first >>= fun fetch_first ->
+      succeed @@ A_git_checkout {dir; ref; fetch_first}
+    | s ->
+      fail_sexp_f "unknown config stanzas %s" s)
+
 let dec : t Se.D.decoder =
   let open Se.D in
   string >>:: function
