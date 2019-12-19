@@ -13,7 +13,6 @@ depends: [
     "containers" { >= "2.7" }
     "re" { >= "1.8" & < "2.0" }
     "toml"
-    "olinq" # TODO: remove
     "csv"
     "cmdliner"
     "iter" { >= "1.0" } # TODO: remove
@@ -32,7 +31,7 @@ depends: [
 ]
 pin-depends: [
   ["sqlite3_utils.0.3" "git+https://github.com/c-cube/sqlite3_utils.git"]
-  [ "gnuplot.dev" "git+https://github.com/c-cube/ocaml-gnuplot.git"]
+  ["gnuplot.dev" "./vendor/gnuplot/"]
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
