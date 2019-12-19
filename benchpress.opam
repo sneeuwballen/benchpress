@@ -29,7 +29,7 @@ depends: [
     "ocaml" {>= "4.02" }
 ]
 pin-depends: [
-  ["sqlite3_utils.dev" "git+https://github.com/c-cube/sqlite3_utils.git"]
+  ["sqlite3_utils.0.3" "git+https://github.com/c-cube/sqlite3_utils.git"]
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
