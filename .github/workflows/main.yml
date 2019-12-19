@@ -17,9 +17,5 @@ jobs:
     - run: opam pin -n .
     - run: opam depext -yt benchpress
     - run: opam install -t . --deps-only
-    - run: opam exec -- dune build
+    - run: opam exec -- dune build @all
     - run: opam exec -- dune runtest
-    - uses: actions/upload-artifact@master
-      with:
-        name: benchpress-bin-${{ matrix.operating-system }}-${{ matrix.ocaml-version }}.exe
-        path: _build/default/src/bin/benchpress_bin.exe
