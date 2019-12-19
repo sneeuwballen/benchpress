@@ -23,8 +23,12 @@ let execute_run_prover_action
     E.return results
   end |> E.add_ctxf "running tests"
 
+type top_task =
+  | TT_run_provers of Action.run_provers
+  | TT_other of Action.t
+
 let main ?j ?dyn ?timeout ?memory ?csv ?(provers=[])
-    ?meta:_ ?summary ?task ?dir_file (defs:Definitions.t) paths () =
+    ?meta:_ ?summary ?task ?dir_file (defs:Definitions.t) paths () : unit or_error =
   let open E.Infix in
   Logs.info
     (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
@@ -46,36 +50,42 @@ let main ?j ?dyn ?timeout ?memory ?csv ?(provers=[])
           E.map_l (Definitions.mk_subdir defs) paths >>= fun paths ->
           E.map_l (Definitions.find_prover defs) provers >>= fun provers ->
           let r = {r with provers=provers @ r.provers; dirs=paths @ r.dirs} in
-          (* TODO: more general framework for running and reporting actions *)
-          Ok r
-          (* | _ -> E.fail_fprintf "cannot run task %a yet" Task.pp t *)
+          Ok (TT_run_provers r)
+        | t ->
+          Ok (TT_other t.action)
       end
     | None ->
       (match provers with
        | [] -> E.fail_fprintf "please provide at least one prover"
        | l -> Ok l
       ) >>= fun provers ->
-      Definitions.mk_run_provers ?timeout ?memory ?j ~provers ~paths defs
-  end >>= fun run_provers_action ->
-  let j = CCOpt.Infix.( j <+> Definitions.option_j defs) in
-  let progress = CCOpt.Infix.( dyn <+> Definitions.option_progress defs) in
-  (* run action here! *)
-  let uuid = Misc.mk_uuid() in
-  execute_run_prover_action ~uuid ?dyn:progress ?timeout ?memory ?j ~notify ~timestamp
-    run_provers_action
-  >>= fun (top_res, (results:T.Compact_result.t)) ->
-  if CCOpt.is_some csv then (
-    Utils.dump_csv ~csv @@ Lazy.force top_res;
-  );
-  if CCOpt.is_some summary then (
-    Utils.dump_summary ~summary @@ Lazy.force top_res;
-  );
-  (* now fail if results were bad *)
-  let r = Utils.check_compact_res notify results in
-  Notify.sync notify;
-  Utils.printbox_compact_results results;
-  (* try to send a desktop notification *)
-  (try CCUnix.call "notify-send 'benchmark done (%s)'"
-         (CCOpt.map_or ~default:"?" Misc.human_time results.T.cr_meta.total_wall_time) |> ignore
-   with _ -> ());
-  r
+      Definitions.mk_run_provers ?timeout ?memory ?j ~provers ~paths defs >>= fun r ->
+      Ok (TT_run_provers r)
+  end >>= fun tt_task ->
+  begin match tt_task with
+    | TT_other a ->
+      Exec_action.run defs a
+    | TT_run_provers run_provers_action ->
+      let j = CCOpt.Infix.( j <+> Definitions.option_j defs) in
+      let progress = CCOpt.Infix.( dyn <+> Definitions.option_progress defs) in
+      (* run action here! *)
+      let uuid = Misc.mk_uuid() in
+      execute_run_prover_action ~uuid ?dyn:progress ?timeout ?memory ?j ~notify ~timestamp
+        run_provers_action
+      >>= fun (top_res, (results:T.Compact_result.t)) ->
+      if CCOpt.is_some csv then (
+        Utils.dump_csv ~csv @@ Lazy.force top_res;
+      );
+      if CCOpt.is_some summary then (
+        Utils.dump_summary ~summary @@ Lazy.force top_res;
+      );
+      (* now fail if results were bad *)
+      let r = Utils.check_compact_res notify results in
+      Notify.sync notify;
+      Utils.printbox_compact_results results;
+      (* try to send a desktop notification *)
+      (try CCUnix.call "notify-send 'benchmark done (%s)'"
+             (CCOpt.map_or ~default:"?" Misc.human_time results.T.cr_meta.total_wall_time) |> ignore
+       with _ -> ());
+      r
+  end

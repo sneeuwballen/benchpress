@@ -16,9 +16,22 @@ type run_provers = {
   memory: int option;
 }
 
+type git_fetch_action =
+  | Git_fetch
+  | Git_pull
+
+type git_checkout = {
+  dir: string;
+  ref: string;
+  fetch_first: git_fetch_action option;
+}
+
 (** An action to perform *)
 type t =
   | Act_run_provers of run_provers
+  | Act_git_checkout of git_checkout
+  | Act_run_cmd of string
+  | Act_progn of t list
 
 let pp_run_provers out (self:run_provers) =
   let open Misc.Pp in
@@ -31,7 +44,22 @@ let pp_run_provers out (self:run_provers) =
     (pp_opt "memory" Fmt.int) memory
     (pp_opt "j" Fmt.int) j
 
-let pp out (self:t) : unit =
+let pp_git_fetch out = function
+  | Git_fetch -> Fmt.string out "fetch"
+  | Git_pull -> Fmt.string out "pull"
+
+let pp_git_checkout out (self:git_checkout) =
+  let open Misc.Pp in
+  let {dir;ref;fetch_first} = self in
+  Fmt.fprintf out "(@[<v1>git-checkout%a%a%a@])"
+    (pp_f "dir" pp_regex) dir
+    (pp_f "ref" pp_regex) ref
+    (pp_opt "fetch-first" pp_git_fetch) fetch_first
+
+let rec pp out (self:t) : unit =
   match self with
   | Act_run_provers a -> pp_run_provers out a
+  | Act_git_checkout g -> pp_git_checkout out g
+  | Act_run_cmd s -> Fmt.fprintf out "(run-cmd %S)" s
+  | Act_progn l -> Fmt.fprintf out "(@[%a@])" (Misc.Pp.pp_l pp) l
 

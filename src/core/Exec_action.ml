@@ -245,30 +245,79 @@ let dump_results_sqlite (results:T.top_result) : unit =
   );
   ()
 
+let with_chdir d f =
+  let cur_dir = Sys.getcwd () in
+  Sys.chdir d;
+  try
+    let x=f() in
+    Sys.chdir cur_dir;
+    x
+  with e ->
+    Sys.chdir cur_dir;
+    raise e
+
+let run_cmd s : unit or_error =
+  try
+    let c = Sys.command s in
+    if c=0 then Ok ()
+    else Error (Printf.sprintf "command %S returned with error code %d" s c)
+  with e ->
+    E.of_exn_trace e
+
+module Git_checkout = struct
+  type t = Action.git_checkout
+
+  let run (self:t) : unit or_error =
+    Misc.err_with
+      ~map_err:(Printf.sprintf "while running action git-checkout: %s")
+      (fun scope ->
+        let {Action.dir; ref; fetch_first} = self in
+        begin match fetch_first with
+          | Some Git_fetch -> run_cmd "git fetch" |> scope.unwrap
+          | Some Git_pull -> run_cmd "git pull --ff-only" |> scope.unwrap
+          | _ -> ()
+        end;
+        with_chdir dir
+          (fun () -> run_cmd ("git checkout " ^ ref))
+        |> scope.unwrap)
+end
+
 (** Run the given action *)
-let run ?interrupted (defs:Definitions.t) (a:Action.t) : unit or_error =
+let rec run ?interrupted (defs:Definitions.t) (a:Action.t) : unit or_error =
   Misc.err_with
-    ~map_err:(Printf.sprintf "while running action: %s")
+    ~map_err:(fun e -> Printf.sprintf "while running action: %s" e)
     (fun scope ->
       begin match a with
-      | Action.Act_run_provers r ->
-        let r_expanded =
-          Exec_run_provers.expand ?interrupted
-            ?j:(Definitions.option_j defs) r
-          |> scope.unwrap
-        in
-        let on_solve = match Definitions.option_progress defs with
-          | Some true ->
-            Progress_run_provers.make ~dyn:true r_expanded
-          | _ -> Progress_run_provers.nil
-        in
-        let uuid = Misc.mk_uuid () in
-        let res =
-          Exec_run_provers.run ?interrupted ~on_solve
-            ~timestamp:(Unix.gettimeofday()) ~uuid r_expanded
-          |> scope.unwrap
-        in
-        Format.printf "task done: %a@." Test.Compact_result.pp res;
-        ()
-      end)
+        | Action.Act_run_provers r ->
+          let r_expanded =
+            Exec_run_provers.expand ?interrupted
+              ?j:(Definitions.option_j defs) r
+            |> scope.unwrap
+          in
+          let on_solve = match Definitions.option_progress defs with
+            | Some true ->
+              Progress_run_provers.make ~dyn:true r_expanded
+            | _ -> Progress_run_provers.nil
+          in
+          let uuid = Misc.mk_uuid () in
+          let res =
+            Exec_run_provers.run ?interrupted ~on_solve
+              ~timestamp:(Unix.gettimeofday()) ~uuid r_expanded
+            |> scope.unwrap
+          in
+          Format.printf "task done: %a@." Test.Compact_result.pp res;
+          ()
+        | Action.Act_progn l ->
+          List.iter (fun a -> run ?interrupted defs a |> scope.unwrap) l
+        | Action.Act_git_checkout git ->
+          Git_checkout.run git |> scope.unwrap
+        | Action.Act_run_cmd s ->
+          (try
+             let c = Sys.command s in
+             if c=0 then Ok ()
+             else Error (Printf.sprintf "command %S returned with error code %d" s c)
+           with e ->
+             E.of_exn_trace e) |> scope.unwrap
+      end
+    )
 
