@@ -115,6 +115,9 @@ end = struct
     let db = Sqlite3.db_open db_file in
     T.Top_result.db_prepare db >>= fun () ->
     T.Metadata.to_db db {T.timestamp=Some timestamp; uuid; total_wall_time=None} >>= fun () ->
+    Misc.err_with ~map_err:(Printf.sprintf "while inserting provers: %s")
+      (fun scope -> List.iter (fun p -> Prover.to_db db p |> scope.unwrap) self.provers)
+    >>= fun () ->
     on_start self;
     (* build list of tasks *)
     let jobs =
