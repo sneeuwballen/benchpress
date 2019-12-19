@@ -519,8 +519,8 @@ end = struct
              Gp.Series.linespoints_xy ~title:prover l)
       in
       Gp.plot_many
-        ~labels:(Gp.Labels.create ~x:"time (s)" ~y:"problems solved" ())
-        ~title:"provers" gp series ~output);
+        ~labels:(Gp.Labels.create ~x:"time (s)" ~y:"problems solved (accumulated)" ())
+        ~title:"problems solved as function of time" gp series ~output);
     ()
 
   let show (self:t) =
