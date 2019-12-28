@@ -9,7 +9,7 @@ module Html = Tyxml_html
 
 (* start from http://bettermotherfuckingwebsite.com/ and added some *)
 let basic_css = {|
-  body{margin:3rem auto;font-family: monospace;
+  body{margin:3rem auto;font-family: monospace;background-color:#fafafa;
   max-width:1024px;font-size:1.2rem;color:#444;padding:1rem}
   .stick{position: sticky; top: 0.5rem; background-color: lightblue; padding: 1.2rem; opacity: 90%}
   h1,h2,h3{line-height:1.2} table {width: 100%;} .framed {border-width:0.3rem; border-style: solid}
