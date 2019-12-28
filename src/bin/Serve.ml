@@ -78,12 +78,13 @@ let handle_show (self:t) : unit =
                 CCList.flat_map
                   (fun (n,p) ->
                      [h3 [txt ("bad for " ^ n)];
-                      details (summary [txt "list"]) [div [pb_html p]]])
+                      details ~a:[a_open()] (summary [txt "list of bad results"])
+                        [div [pb_html p]]])
                   bad;
                 CCList.flat_map
                   (fun (n,p) ->
                      [h3 [txt ("errors for " ^ n)];
-                      details (summary [txt "list"]) [div [pb_html p]]])
+                      details (summary [txt "list of errors"]) [div [pb_html p]]])
                   errors;
                 (match cactus_plot with
                  | Error e -> [p ~a:[a_style "color: red"] [txt "could not load cactus plot"; txt e]]

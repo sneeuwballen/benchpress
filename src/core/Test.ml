@@ -355,7 +355,7 @@ module Comparison_short : sig
 
   val of_db : Db.t -> (Prover.name * Prover.name * t) list or_error
 
-  val to_printbox : t -> PrintBox.t
+  val to_printbox : Prover.name -> Prover.name -> t -> PrintBox.t
   val to_printbox_l : (Prover.name * Prover.name * t) list -> (string*string*PrintBox.t) list
 
   (* TODO: a grid like display (pv1\pv2) *)
@@ -404,15 +404,15 @@ end = struct
            )
       )
 
-  let to_printbox (self:t) : PB.t =
+  let to_printbox p1 p2 (self:t) : PB.t =
     let open PB in
     pb_v_record [
-      "better", int self.better;
-      "worse", int self.worse;
+      "better for " ^ p1, int self.better;
+      "better for " ^ p2, int self.worse;
       "same", int self.same;
     ]
 
-  let to_printbox_l l = List.map (fun (p1,p2,r) -> p1, p2, to_printbox r) l
+  let to_printbox_l l = List.map (fun (p1,p2,r) -> p1, p2, to_printbox p1 p2 r) l
 
   (* TODO: grid display (-> to array, then by index + reverse when i<j?)
   let to_printbox_grid l : PB.t =
