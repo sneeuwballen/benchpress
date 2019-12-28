@@ -8,13 +8,7 @@ module U = Tiny_httpd_util
 module Html = Tyxml_html
 
 (* start from http://bettermotherfuckingwebsite.com/ and added some *)
-let basic_css = {|
-  body{margin:3rem auto;font-family: monospace;background-color:#fafafa;
-  max-width:1024px;font-size:1.2rem;color:#444;padding:1rem}
-  .stick{position: sticky; top: 0.5rem; margin-right: 0.2rem; background-color: lightblue; padding: 0.4rem; opacity: 90%}
-  h1,h2,h3{line-height:1.2} table {width: 100%;} .framed {border-width:0.3rem; border-style: solid}
-  |}
-
+let basic_css = Css.css
 let src = Logs.Src.create "benchpress.serve"
 let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 
@@ -30,7 +24,7 @@ let html_redirect (s:string) =
   html
     (head (title @@ txt s)
        [style [txt basic_css];
-        meta ~a:[a_http_equiv "Refresh"; a_content "0; url=/"] ()])
+        meta ~a:[a_http_equiv "Refresh"; a_charset "utf-8"; a_content "0; url=/"] ()])
     (body [txt s])
 
 (* show individual files *)
@@ -61,13 +55,13 @@ let handle_show (self:t) : unit =
           let open Html in
           let pb_html pb = PrintBox_html.to_html pb in
           html
-            (head (title (txt "show")) [style [txt basic_css]])
+            (head (title (txt "show")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
             (body @@ List.flatten [
                 [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-                 h3 [txt file]];
-                [a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
+                 h3 [txt file];
                  a ~a:[a_href ("/show_detailed/"^U.percent_encode file)] [p [txt "show individual results"]];
                  a ~a:[a_href ("/show_csv/"^U.percent_encode file)] [p [txt "download as csv"]];
+                 a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
                 ];
                 [div [pb_html box_meta]];
                 (CCList.flat_map 
@@ -118,7 +112,7 @@ let handle_show_as_table (self:t) : unit =
           let open Html in
           let pb_html pb = PrintBox_html.to_html pb in
           html
-            (head (title (txt "show full table")) [style [txt basic_css]])
+            (head (title (txt "show full table")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
             (body @@ List.flatten [
                 [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"]];
                 [h3 [txt "full results"];
@@ -138,10 +132,11 @@ let handle_show_detailed (self:t) : unit =
            let l = Test.Detailed_res.list_keys db |> scope.unwrap in
            let open Html in
            html
-             (head (title (txt "detailed results")) [style [txt basic_css]])
+             (head (title (txt "detailed results"))
+                [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
              (body [
                  a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-                 h3 [txt "full results"];
+                 h3 [txt "detailed results"];
                  let rows =
                    List.map
                      (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
@@ -152,8 +147,9 @@ let handle_show_detailed (self:t) : unit =
                             (U.percent_encode pb_file)
                         in
                         tr [
-                          td [a ~a:[a_href url] [txt prover]];
-                          td [a ~a:[a_href url] [txt db_file]];
+                          td [txt prover];
+                          td [a ~a:[a_href url; a_title pb_file]
+                                [txt @@ Misc.truncate_left 80 pb_file]];
                           td [txt (Res.to_string res)];
                           td [txt (Res.to_string file_expect)];
                           td [txt (Misc.human_time rtime)]
@@ -165,7 +161,7 @@ let handle_show_detailed (self:t) : unit =
                      ["prover"; "file"; "res"; "expected"; "time"]
                    |> tr |> CCList.return |> thead
                  in
-                 table ~thead rows
+                 table ~a:[a_class ["framed"]] ~thead rows
                ])
         )
       |> E.catch
@@ -191,7 +187,7 @@ let handle_show_single (self:t) : unit =
            let pb, stdout, stderr = Test.Detailed_res.to_printbox r in
            let open Html in
            html
-             (head (title (txt "single result")) [style [txt basic_css]])
+             (head (title (txt "single result")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
              (body [
                  a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  a ~a:[
@@ -273,7 +269,7 @@ let handle_compare server : unit =
         let h =
           let open Html in
           html
-            (head (title (txt "compare")) [style [txt basic_css]])
+            (head (title (txt "compare")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
             (body [
                 a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                 h3 [txt "comparison"];
@@ -325,7 +321,7 @@ let handle_provers (self:t) : unit =
           List.map (fun p -> li [pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p]]) provers
         in
         html
-          (head (title (txt "tasks")) [style [txt basic_css]])
+          (head (title (txt "tasks")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
           (body [
               a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
               h3 [txt "list of provers"];
@@ -356,7 +352,7 @@ let handle_tasks (self:t) : unit =
             tasks
         in
         html
-          (head (title (txt "tasks")) [style [txt basic_css]])
+          (head (title (txt "tasks")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
           (body [
               a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
               h3 [txt "list of tasks"];
@@ -406,7 +402,7 @@ let handle_root (self:t) : unit =
       let h =
         let open Html in
         html
-          (head(title (txt "index")) [style [txt basic_css]])
+          (head(title (txt "index")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
           (body [
               ul @@ List.flatten [
                 [li [a ~a:[a_href "/provers/"] [txt "provers"]];

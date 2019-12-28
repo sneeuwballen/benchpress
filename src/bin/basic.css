@@ -1,0 +1,28 @@
+
+body{
+  margin:3rem auto;font-family: monospace;background-color:#fafafa;
+  font-size:1.2rem;color:#444;padding:1rem;
+  align-items: center; display: flex; flex-direction: column;
+}
+.stick{
+  position: sticky; top: 0.5rem;
+  margin-right: 0.2rem; background-color: lightblue;
+  padding: 0.4rem; opacity: 90%
+}
+h1,h2,h3 {
+  line-height:1.2;
+}
+body table {
+  max-width: 90%;
+  min-width: 80rem;
+}
+body pre {
+  max-width: 80rem; /* 80 col! */
+  overflow-x: auto;
+}
+div {
+  width: max-content;
+}
+.framed {
+  border-width:0.3rem; border-style: solid;
+}

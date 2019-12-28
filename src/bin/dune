@@ -4,3 +4,13 @@
  (libraries benchpress containers cmdliner result toml uuidm logs logs.cli
             tiny_httpd tyxml printbox.html sqlite3_utils base64)
  (flags :standard -warn-error -3-32 -safe-string -open Benchpress))
+
+(rule
+  (targets css.ml)
+  (deps basic.css)
+  (action
+    (with-stdout-to %{targets}
+     (progn
+       (echo "let css = {css|")
+       (cat %{deps})
+       (echo "|css}")))))
