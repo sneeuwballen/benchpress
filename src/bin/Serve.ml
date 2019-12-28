@@ -11,7 +11,7 @@ module Html = Tyxml_html
 let basic_css = {|
   body{margin:3rem auto;font-family: monospace;background-color:#fafafa;
   max-width:1024px;font-size:1.2rem;color:#444;padding:1rem}
-  .stick{position: sticky; top: 0.5rem; background-color: lightblue; padding: 1.2rem; opacity: 90%}
+  .stick{position: sticky; top: 0.5rem; margin-right: 0.2rem; background-color: lightblue; padding: 0.4rem; opacity: 90%}
   h1,h2,h3{line-height:1.2} table {width: 100%;} .framed {border-width:0.3rem; border-style: solid}
   |}
 
