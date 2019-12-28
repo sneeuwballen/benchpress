@@ -134,7 +134,9 @@ module Analyze : sig
     ok        : int;
     disappoint: int;
     bad       : int; (* mismatch *)
-    bad_full  : (Problem.t * Res.t) list; (* always materialized *)
+    bad_full  : (Problem.t * Res.t * float) list; (* always materialized *)
+    errors    : int;
+    errors_full : (Problem.t * Res.t * float) list;
     total     : int;
   }
 
@@ -145,6 +147,8 @@ module Analyze : sig
   val to_printbox_l : (Prover.name * t) list -> (string*PrintBox.t) list
   val to_printbox_bad : t -> PrintBox.t
   val to_printbox_bad_l : (Prover.name * t) list -> (string*PrintBox.t) list
+  val to_printbox_errors : t -> PrintBox.t
+  val to_printbox_errors_l : (Prover.name * t) list -> (string*PrintBox.t) list
 
   val is_ok : t -> bool
 
@@ -158,7 +162,9 @@ end = struct
     ok        : int;
     disappoint: int;
     bad       : int; (* mismatch *)
-    bad_full  : (Problem.t * Res.t) list; (* always materialized *)
+    bad_full  : (Problem.t * Res.t * float) list; (* always materialized *)
+    errors    : int;
+    errors_full : (Problem.t * Res.t * float) list;
     total     : int;
   }
 
@@ -208,17 +214,27 @@ end = struct
             prover
         and bad_full =
           Db.exec db
-            {| select file, res, file_expect from prover_res
+            {| select file, res, file_expect, rtime from prover_res
               where prover=? and res != file_expect and res in ('sat','unsat')
               and file_expect in ('sat','unsat'); |}
             prover
-            ~ty:Db.Ty.(p1 text, p3 text text text,
-                       (fun file res expected ->
-                          Problem.make file (Res.of_string expected), Res.of_string res))
+            ~ty:Db.Ty.(p1 text, p4 text text text float,
+                       (fun file res expected t ->
+                          Problem.make file (Res.of_string expected), Res.of_string res, t))
             ~f:Db.Cursor.to_list_rev
           |> scope.unwrap_with Db.Rc.to_string
+        and errors_full =
+          Db.exec db
+            ~ty:Db.Ty.(p1 text, p4 text text text float,
+                       (fun file res expected t ->
+                          Problem.make file (Res.of_string expected), Res.of_string res, t))
+            {| select file, res, file_expect, rtime from prover_res where prover=?
+                and res in ('error') ; |}
+            prover ~f:Db.Cursor.to_list_rev
+          |> scope.unwrap_with Db.Rc.to_string
         in
-        { ok; disappoint; improved; bad; bad_full; total; })
+        let errors = List.length errors_full in
+        { ok; disappoint; improved; bad; bad_full; errors; errors_full; total; })
 
   (* TODO: create a function for "better"
         Sqlite3.create_fun2
@@ -238,12 +254,13 @@ end = struct
 
   let to_printbox (r:t) : PrintBox.t =
     let open PB in
-    let {improved; disappoint; ok; bad; total; bad_full=_} = r in
+    let {improved; disappoint; ok; bad; total; errors; errors_full=_; bad_full=_} = r in
     let fields = [
       "improved", pb_int_color Style.(fg_color Green) improved;
       "ok", pb_int_color Style.(fg_color Green) ok;
       "disappoint", pb_int_color Style.(fg_color Blue) disappoint;
       "bad", pb_int_color Style.(fg_color Red) bad;
+      "errors", pb_int_color Style.(fg_color Cyan) errors;
       "total", int total;
     ] in
     pb_v_record ~bars:true fields
@@ -256,16 +273,17 @@ end = struct
     if r.bad <> 0 then (
       let l =
         List.map
-          (fun (pb, res) -> 
+          (fun (pb, res, t) -> 
              [ text pb.Problem.name;
                text (Res.to_string res);
                text (Res.to_string pb.Problem.expected);
+               text (Misc.human_time t);
              ])
           r.bad_full
       in
       let header =
         let tb = text_with_style Style.bold in
-        [tb "problem"; tb "res"; tb "expected"] in
+        [tb "problem"; tb "res"; tb "expected"; tb "time"] in
       grid_l (header :: l)
     ) else empty
 
@@ -274,6 +292,31 @@ end = struct
       (fun ((p:string), a) ->
          if a.bad = 0 then None
          else Some (p, to_printbox_bad a))
+
+  let to_printbox_errors r : PrintBox.t =
+    let open PB in
+    if r.errors <> 0 then (
+      let l =
+        List.map
+          (fun (pb, res, t) -> 
+             [ text pb.Problem.name;
+               text (Res.to_string res);
+               text (Res.to_string pb.Problem.expected);
+               text (Misc.human_time t);
+             ])
+          r.errors_full
+      in
+      let header =
+        let tb = text_with_style Style.bold in
+        [tb "problem"; tb "res"; tb "expected"; tb "time"] in
+      grid_l (header :: l)
+    ) else empty
+
+  let to_printbox_errors_l =
+    CCList.filter_map
+      (fun ((p:string), a) ->
+         if a.errors = 0 then None
+         else Some (p, to_printbox_errors a))
 
   let pp_raw_res_ ?(color="reset") out (self:_) =
     fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
@@ -623,6 +666,7 @@ module Top_result : sig
   val to_printbox_stat : t -> (string * PrintBox.t) list
   val to_printbox_table : t -> PrintBox.t
   val to_printbox_bad : t -> (string * PrintBox.t) list
+  val to_printbox_errors : t -> (string * PrintBox.t) list
 
   val to_csv : t -> Csv.t
 
@@ -791,6 +835,12 @@ end = struct
       (fun (p, a) ->
          if a.Analyze.bad = 0 then None
          else Some (p, Analyze.to_printbox_bad a))
+      a
+
+  let to_printbox_errors self =
+    let a = analyze self in
+    CCList.map
+      (fun (p, a) -> (p, Analyze.to_printbox_errors a))
       a
 
   (* TODO

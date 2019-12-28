@@ -45,6 +45,7 @@ let handle_show (self:t) : unit =
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
         let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
         let bad = Test.Analyze.to_printbox_bad_l cr.T.cr_analyze in
+        let errors = Test.Analyze.to_printbox_errors_l cr.T.cr_analyze in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
         let cactus_plot =
           let open E.Infix in
@@ -75,8 +76,15 @@ let handle_show (self:t) : unit =
                   (fun (n,p) -> [h3 [txt ("summary for " ^ n)]; div [pb_html p]])
                   box_summary);
                 CCList.flat_map
-                  (fun (n,p) -> [h3 [txt ("bad for " ^ n)]; div [pb_html p]])
+                  (fun (n,p) ->
+                     [h3 [txt ("bad for " ^ n)];
+                      details (summary [txt "list"]) [div [pb_html p]]])
                   bad;
+                CCList.flat_map
+                  (fun (n,p) ->
+                     [h3 [txt ("errors for " ^ n)];
+                      details (summary [txt "list"]) [div [pb_html p]]])
+                  errors;
                 (match cactus_plot with
                  | Error e -> [p ~a:[a_style "color: red"] [txt "could not load cactus plot"; txt e]]
                  | Ok p ->
