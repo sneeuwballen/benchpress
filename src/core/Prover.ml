@@ -274,6 +274,37 @@ let to_db db (self:t) : unit or_error =
     (self.memory |> str_or)
   |> Misc.db_err ~ctx:"prover.to-db"
 
+let of_db db name : t or_error =
+  Misc.err_with
+    ~map_err:(Printf.sprintf "while parsing prover %s: %s" name)
+    (fun scope ->
+       let nonnull s = if s="" then None else Some s in
+       Db.exec db
+         {|select
+            version, binary, unsat, sat, unknown, timeout, memory
+           from prover where name=? ; |}
+         name
+         ~f:Db.Cursor.next
+         ~ty:Db.Ty.(p1 text,
+                    p2 any_str any_str
+                    @>> p5 any_str any_str any_str any_str any_str,
+                    fun version binary unsat sat unknown timeout memory ->
+                      let version =
+                        Version.deser_sexp version |> scope.unwrap
+                      in
+                      let cmd = "<unknown>" in
+                      let sat = nonnull sat in
+                      let unsat = nonnull unsat in
+                      let unknown = nonnull unknown in
+                      let timeout = nonnull timeout in
+                      let memory = nonnull memory in
+                      { name; cmd; binary_deps=[];
+                        version; binary;unsat;sat;unknown;timeout;memory})
+       |> scope.unwrap_with Db.Rc.to_string
+       |> CCOpt.to_result "expected a result"
+       |> scope.unwrap
+    )
+
 let db_names db : _ list or_error =
   Db.exec_no_params db
     {| select distinct name from prover order by name; " |}

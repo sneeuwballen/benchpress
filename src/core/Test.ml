@@ -961,6 +961,114 @@ end = struct
         make ~meta events |> scope.unwrap)
 end
 
+module Detailed_res : sig
+  type key = {
+    prover: Prover.name;
+    file: string;
+    res: Res.t;
+    file_expect: Res.t;
+    rtime: float;
+  }
+  (** Summary of a result *)
+
+  val list_keys : Db.t -> key list or_error
+  (** List available results *)
+
+  type t = Prover.t Run_result.t
+  (** Detailed result *)
+
+  val to_printbox : t -> PrintBox.t * string * string
+  (** Display an individual result + stdout + stderr *)
+
+  val get_res : Db.t -> Prover.name -> string -> t or_error
+  (** Get an individual result *)
+end = struct
+  type key = {
+    prover: Prover.name;
+    file: string;
+    res: Res.t;
+    file_expect: Res.t;
+    rtime: float;
+  }
+  type t = Prover.t Run_result.t
+
+  let list_keys db : key list or_error =
+    Misc.err_with
+      ~map_err:(Printf.sprintf "when listing detailed results: %s")
+      (fun scope ->
+         let l =
+           Db.exec_no_params db
+             {|select distinct prover, file, res, file_expect, rtime
+              from prover_res order by file, prover desc; |}
+             ~ty:Db.Ty.(p5 text any_str text text float,
+                        fun prover file res file_expect rtime ->
+                          let res=Res.of_string res in
+                          let file_expect=Res.of_string file_expect in
+                          {prover;file;res;file_expect;rtime})
+             ~f:Db.Cursor.to_list_rev
+           |> scope.unwrap_with Db.Rc.to_string
+         in
+         l
+      )
+
+  let get_res db prover file : _ or_error =
+    Misc.err_with
+      ~map_err:(Printf.sprintf "when get detailed result for %s on %s: %s" prover file)
+      (fun scope ->
+         let res: Prover.name Run_result.t =
+           Db.exec db
+             {|select
+                  res, file_expect, timeout, errcode, stdout, stderr,
+                  rtime, utime, stime
+               from prover_res where prover=? and file=?; |}
+             prover file
+             ~f:Db.Cursor.next
+             ~ty:Db.Ty.(p2 text text,
+                        p2 text text @>> p4 int int any_str any_str
+                        @>> p3 float float float,
+                        fun res file_expect timeout errcode stdout stderr
+                          rtime utime stime ->
+                          Run_result.make prover ~timeout ~res:(Res.of_string res)
+                            {Problem.name=file; expected=Res.of_string file_expect}
+                            { Proc_run_result.errcode;stdout;stderr;rtime;utime;stime}
+                       )
+           |> scope.unwrap_with Db.Rc.to_string
+           |> CCOpt.to_result "expected a result"
+           |> scope.unwrap
+         in
+         let prover = Prover.of_db db prover |> scope.unwrap in
+         Run_result.map ~f:(fun _ -> prover) res
+      )
+
+  let to_printbox (self:t) : PB.t*string*string =
+    let open PB in
+    let pp_res r =
+      match r with
+      | Res.Sat | Res.Unsat -> text_with_style Style.(set_fg_color Green@@bold) @@ Res.to_string r
+      | Res.Error -> text_with_style Style.(set_fg_color Red@@bold) @@ Res.to_string r
+      | _ -> text @@ Res.to_string r
+    in
+    v_record [
+      "prover.name", text self.program.Prover.name;
+      "prover.cmd", text self.program.Prover.cmd;
+      "prover.version",
+      (text @@ Format.asprintf "%a" Prover.Version.pp self.program.Prover.version);
+      "prover.sat", text (CCOpt.get_or ~default:"<none>" self.program.Prover.sat);
+      "prover.unsat", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unsat);
+      "prover.unknown", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unknown);
+      "prover.timeout", text (CCOpt.get_or ~default:"<none>" self.program.Prover.timeout);
+      "prover.memory", text (CCOpt.get_or ~default:"<none>" self.program.Prover.memory);
+      "problem.path", text self.problem.Problem.name;
+      "problem.expected_res", pp_res self.problem.Problem.expected;
+      "res", pp_res self.res;
+      "rtime", text (Misc.human_time self.raw.rtime);
+      "stime", text (Misc.human_time self.raw.stime);
+      "utime", text (Misc.human_time self.raw.utime);
+      "errcode", int self.raw.errcode;
+    ],
+    self.raw.stdout, self.raw.stderr
+end
+
 (** {2 Benchmark, within one Top Result} *)
 
 (* TODO

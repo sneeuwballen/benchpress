@@ -113,4 +113,6 @@ val db_prepare : Db.t -> unit or_error
 
 val to_db : Db.t -> t -> unit or_error
 
+val of_db : Db.t -> name -> t or_error
+
 val db_names : Db.t -> name list or_error

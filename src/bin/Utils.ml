@@ -203,6 +203,18 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
   with e ->
     E.of_exn_trace e
 
+let with_file_as_db filename f : _ E.t =
+  Misc.err_with
+    ~map_err:(Printf.sprintf "while processing DB %s: %s" filename)
+    (fun scope ->
+       let filename = mk_file_full filename |> scope.unwrap in
+       try
+         Db.with_db ~mode:`READONLY filename
+           (fun db -> f scope db)
+       with
+       | Db.RcError rc -> scope.unwrap_with Db.Rc.to_string (Error rc)
+       | e -> scope.unwrap (Error (Printexc.to_string e)))
+
 let load_file f = E.map snd @@ load_file_full f
 
 (* TODO: return T.compact_result instead *)

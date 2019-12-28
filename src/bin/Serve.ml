@@ -65,8 +65,9 @@ let handle_show (self:t) : unit =
             (body @@ List.flatten [
                 [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  h3 [txt file]];
-                [a ~a:[a_href ("/show_full/"^file)] [p [txt "show full results"]];
-                 a ~a:[a_href ("/show_csv/"^file)] [p [txt "download as csv"]];
+                [a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
+                 a ~a:[a_href ("/show_detailed/"^U.percent_encode file)] [p [txt "show individual results"]];
+                 a ~a:[a_href ("/show_csv/"^U.percent_encode file)] [p [txt "download as csv"]];
                 ];
                 [div [pb_html box_meta]];
                 (CCList.flat_map 
@@ -105,8 +106,8 @@ let handle_show (self:t) : unit =
     )
 
 (* show full table for a file *)
-let handle_show_full (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show_full/%s%!" (fun file _req ->
+let handle_show_as_table (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/show_table/%s%!" (fun file _req ->
       match Utils.load_file file with
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
@@ -126,6 +127,89 @@ let handle_show_full (self:t) : unit =
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (string_of_html h))
+    )
+
+(* show list of individual results with URLs to single results for a file *)
+let handle_show_detailed (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/show_detailed/%s%!" (fun db_file _req ->
+      let db_file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode db_file in
+      Utils.with_file_as_db db_file
+        (fun scope db ->
+           let l = Test.Detailed_res.list_keys db |> scope.unwrap in
+           let open Html in
+           html
+             (head (title (txt "detailed results")) [style [txt basic_css]])
+             (body [
+                 a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+                 h3 [txt "full results"];
+                 let rows =
+                   List.map
+                     (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
+                        let url =
+                          Printf.sprintf "/show_single/%s/%s/%s/"
+                            (U.percent_encode db_file)
+                            (U.percent_encode prover)
+                            (U.percent_encode pb_file)
+                        in
+                        tr [
+                          td [a ~a:[a_href url] [txt prover]];
+                          td [a ~a:[a_href url] [txt db_file]];
+                          td [txt (Res.to_string res)];
+                          td [txt (Res.to_string file_expect)];
+                          td [txt (Misc.human_time rtime)]
+                        ])
+                     l
+                 in
+                 let thead =
+                   List.map (fun x->th [txt x])
+                     ["prover"; "file"; "res"; "expected"; "time"]
+                   |> tr |> CCList.return |> thead
+                 in
+                 table ~thead rows
+               ])
+        )
+      |> E.catch
+        ~ok:(fun h ->
+            Logs.debug ~src (fun k->k "successful reply for %S" db_file);
+            H.Response.make_string (Ok (string_of_html h)))
+        ~err:(fun e ->
+            Logs.err ~src (fun k->k "error in show-detailed %S:\n%s" db_file e);
+            H.Response.fail ~code:500 "could not show detailed res for %S:\n%s" db_file e)
+    )
+
+(* show invidual result *)
+let handle_show_single (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/show_single/%s@/%s@/%s@/%!" (fun db_file prover pb_file _req ->
+      Logs.debug (fun k->k "show single called with prover%s, pb_file=%s" prover pb_file);
+      Utils.with_file_as_db (U.percent_decode db_file |> CCOpt.get_or ~default:"")
+        (fun scope db ->
+           let prover =
+             U.percent_decode prover |> CCOpt.to_result "invalid prover" |> scope.unwrap in
+           let pb_file =
+             U.percent_decode pb_file |> CCOpt.to_result "invalid pb_file" |> scope.unwrap in
+           let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
+           let pb, stdout, stderr = Test.Detailed_res.to_printbox r in
+           let open Html in
+           html
+             (head (title (txt "single result")) [style [txt basic_css]])
+             (body [
+                 a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+                 a ~a:[
+                   a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file)); a_class ["stick"]]
+                   [txt "back to detailed results"];
+                 h3 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
+                 div [ PrintBox_html.to_html pb];
+                 details (summary [txt "full stdout"]) [pre [txt stdout]];
+                 details (summary [txt "full stderr"]) [pre [txt stderr]];
+               ])
+        )
+      |> E.catch
+        ~ok:(fun h ->
+            Logs.debug ~src (fun k->k "successful reply for %S" db_file);
+            H.Response.make_string (Ok (string_of_html h)))
+        ~err:(fun e ->
+            Logs.err ~src (fun k->k "error in show-single %S:\n%s" db_file e);
+            H.Response.fail ~code:500 "could not show single res for %S:\n%s" db_file e)
     )
 
 (* export as CSV *)
@@ -386,7 +470,9 @@ let main ?port (defs:Definitions.t) () =
     Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
     handle_root self;
     handle_show self;
-    handle_show_full self;
+    handle_show_as_table self;
+    handle_show_detailed self;
+    handle_show_single self;
     handle_show_csv self;
     handle_tasks self;
     handle_provers self;
