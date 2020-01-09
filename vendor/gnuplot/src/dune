@@ -1,4 +1,0 @@
-(library
- (name gnuplot)
- (public_name gnuplot)
- (libraries unix ISO8601))

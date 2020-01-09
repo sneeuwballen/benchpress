@@ -19,7 +19,7 @@ depends: [
     "logs"
     "uuidm"
     "base64"
-    "gnuplot"
+    "gnuplot" { >= "0.6" & < "0.7" }
     "sqlite3"
     "sqlite3_utils" { >= "0.3" & < "0.4" }
     "tiny_httpd" { >= "0.2" & < "0.4" }
@@ -28,10 +28,6 @@ depends: [
     "decoders" { >= "0.3.0" & < "0.4" }
     "decoders-yojson" { >= "0.3.0" & < "0.4" }
     "ocaml" {>= "4.02" }
-]
-pin-depends: [
-  ["sqlite3_utils.0.3" "git+https://github.com/c-cube/sqlite3_utils.git"]
-  ["gnuplot.dev" "./vendor/gnuplot/"]
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
