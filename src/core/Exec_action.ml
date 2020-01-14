@@ -127,6 +127,7 @@ end = struct
     in
     (* run provers *)
     begin
+      let db = CCLock.create db in
       Misc.Par_map.map_p ~j:self.j
         (fun (prover,pb) ->
           if interrupted() then E.fail "interrupted"
@@ -136,7 +137,9 @@ end = struct
                 ~timeout:self.timeout ~memory:self.memory
                 prover pb >>= fun result ->
               (* insert into DB here *)
-              Run_event.to_db db (Run_event.mk_prover result) >|= fun () ->
+              CCLock.with_lock db (fun db ->
+                  Run_event.to_db db (Run_event.mk_prover result))
+              >|= fun () ->
               on_solve result; (* callback *)
               result
             end
