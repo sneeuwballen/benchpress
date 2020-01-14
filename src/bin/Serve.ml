@@ -87,7 +87,7 @@ let handle_show (self:t) : unit =
                    Logs.debug ~src (fun k->k "encode png file of %d bytes" (String.length p));
                    [img
                       ~src:("data:image/png;base64, " ^ Base64.encode_string p)
-                      ~a:[a_style "display:block; width: 100%"]
+                      ~a:[a_style "display:block; width: 80%"]
                       ~alt:"cactus plot of provers" ()]
                 );
                 (CCList.flat_map 

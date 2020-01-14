@@ -556,13 +556,13 @@ end = struct
                List.mapi
                  (fun i rtime ->
                     sum := !sum +. rtime;
-                    (!sum, float i))
+                    (float i, !sum))
                  l
              in
              Gp.Series.linespoints_xy ~title:prover l)
       in
       Gp.plot_many
-        ~labels:(Gp.Labels.create ~x:"time (s)" ~y:"problems solved (accumulated)" ())
+        ~labels:(Gp.Labels.create ~y:"time (s)" ~x:"problems solved (accumulated)" ())
         ~title:"problems solved as function of time" gp series ~output);
     ()
 
@@ -570,7 +570,7 @@ end = struct
     to_gp self ~output:(Gp.Output.create `X11)
 
   let save_to_file (self:t) file =
-    to_gp self ~output:(Gp.Output.create ~size:(1024,760) @@ `Png file)
+    to_gp self ~output:(Gp.Output.create ~size:(1800,1024) @@ `Png file)
 
   let to_png (self:t) : string =
     CCIO.File.with_temp ~prefix:"benchpress_plot" ~suffix:".png"
