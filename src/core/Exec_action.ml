@@ -112,7 +112,8 @@ end = struct
     let start = Unix.gettimeofday() in
     (* prepare DB *)
     let db_file = db_file_for_uuid ~timestamp uuid in
-    let db = Sqlite3.db_open db_file in
+    let db = Sqlite3.db_open ~mutex:`FULL db_file in
+    Db.setup_timeout db ~ms:500;
     T.Top_result.db_prepare db >>= fun () ->
     T.Metadata.to_db db {T.timestamp=Some timestamp; uuid; total_wall_time=None} >>= fun () ->
     Misc.err_with ~map_err:(Printf.sprintf "while inserting provers: %s")
