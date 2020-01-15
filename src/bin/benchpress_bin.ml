@@ -118,7 +118,7 @@ module Plot = struct
     Logs.debug (fun k->k "plot file %s" file);
     try
       Utils.mk_file_full file >>= fun file ->
-      Db.with_db ~mode:`READONLY file
+      Db.with_db ~timeout:500 ~mode:`READONLY file
         (fun db ->
            T.Cactus_plot.of_db db >>= fun p ->
            T.Cactus_plot.show p;

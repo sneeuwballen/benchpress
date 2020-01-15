@@ -543,7 +543,7 @@ end = struct
 
   let of_file file : t or_error =
     try
-      Db.with_db ~mode:`READONLY file of_db
+      Db.with_db ~timeout:500 ~mode:`READONLY file of_db
     with e -> E.of_exn_trace e
 
   let to_gp ~output self = 

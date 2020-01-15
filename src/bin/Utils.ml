@@ -181,7 +181,7 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
     | Ok file ->
       if Filename.check_suffix f ".sqlite" then (
         try
-          Db.with_db ~mode:`NO_CREATE file
+          Db.with_db ~timeout:500 ~mode:`NO_CREATE file
             (fun db -> T.Top_result.of_db db |> E.map (fun r->file,r))
         with e -> E.of_exn e
       ) else if Filename.check_suffix f ".gz" then (
@@ -209,7 +209,7 @@ let with_file_as_db filename f : _ E.t =
     (fun scope ->
        let filename = mk_file_full filename |> scope.unwrap in
        try
-         Db.with_db ~mode:`READONLY filename
+         Db.with_db ~timeout:500 ~mode:`READONLY filename
            (fun db -> f scope db)
        with
        | Db.RcError rc -> scope.unwrap_with Db.Rc.to_string (Error rc)
@@ -224,7 +224,7 @@ let load_file_summary (f:string) : (string * T.compact_result,_) E.t =
     match mk_file_full f with
     | Error _ as e -> e
     | Ok file ->
-      Db.with_db ~mode:`READONLY file
+      Db.with_db ~timeout:500 ~mode:`READONLY file
         (fun db ->
            T.Compact_result.of_db db >>= fun cr ->
            E.return (file, cr))

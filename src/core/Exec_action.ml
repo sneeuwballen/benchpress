@@ -236,7 +236,7 @@ let dump_results_sqlite (results:T.top_result) : unit =
   in
   Logs.app (fun k->k "write results into sqlite DB `%s`" dump_file);
   (try
-     match Db.with_db dump_file
+     match Db.with_db ~timeout:500 dump_file
        (fun db -> Test.Top_result.to_db db results)
      with
      | Ok () -> ()
