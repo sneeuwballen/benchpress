@@ -14,3 +14,18 @@
        (echo "let css = {css|")
        (cat %{deps})
        (echo "|css}")))))
+
+(rule
+ (with-stdout-to benchpress.1 (run ./benchpress_bin.exe --help=groff)))
+
+(rule
+ (with-stdout-to benchpress-run.1 (run ./benchpress_bin.exe run --help=groff)))
+
+(rule
+ (with-stdout-to benchpress-serve.1 (run ./benchpress_bin.exe serve --help=groff)))
+
+(install
+ (section man)
+ (package benchpress)
+ (files benchpress.1 benchpress-run.1 benchpress-serve.1))
+

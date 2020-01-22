@@ -374,8 +374,8 @@ let parse_opt () =
 let () =
   CCFormat.set_color_default true;
   match parse_opt () with
-  | `Version | `Help | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
-  | `Ok (Ok ()) -> ()
+  | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
+  | `Ok (Ok ()) | `Version | `Help -> ()
   | `Ok (Error e) ->
       print_endline ("error: " ^ e);
       exit 1
