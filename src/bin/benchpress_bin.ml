@@ -172,8 +172,8 @@ module Sample = struct
     >>= fun () ->
     (* sample the list *)
     let sample_idx =
-      CCRandom.sample_without_replacement
-        ~compare:CCInt.compare n (CCRandom.int len)
+      CCRandom.sample_without_duplicates
+        ~cmp:CCInt.compare n (CCRandom.int len)
       |> CCRandom.run ?st:None
     in
     let sample = List.map (Array.get files) sample_idx in

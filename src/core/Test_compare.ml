@@ -8,18 +8,8 @@ module PB = PrintBox
 type 'a or_error = ('a, string) CCResult.t
 type filename = string
 
-type t = {
-  appeared: (Problem.t * Res.t) list;  (* new problems *)
-  disappeared: (Problem.t * Res.t) list; (* problems that disappeared *)
-  improved: (Problem.t * Res.t * Res.t) list;
-  regressed: (Problem.t * Res.t * Res.t) list;
-  mismatch: (Problem.t * Res.t * Res.t) list;
-  same: (Problem.t * Res.t * float * float) list; (* same result *)
-}
-
 let pb_v_record = Test.pb_v_record
 let pb_int_color = Test.pb_int_color
-let list_provers = Test.list_provers
 
 module Short = struct
   type t = {

@@ -27,8 +27,6 @@ and view =
   | Atom of string
   | List of t list
 
-let atom s = {loc=noloc; view=Atom s}
-
 (** {2 Serialization and helpers} *)
 
 include (CCSexp.Make(struct

@@ -62,7 +62,6 @@ and error_msg =
 module Fmt = CCFormat
 
 let pp_path = Fmt.(hbox @@ list ~sep:(return ".") string)
-let string_of_path = Fmt.to_string pp_path
 
 let rec pp_error out (e,l) =
   Fmt.fprintf out "@[<hv>%a%a@]" pp_error_msg e Fmt.(list string) l

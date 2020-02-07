@@ -22,14 +22,8 @@ let pp out = function
   | Prover_run r -> Run_result.pp Fmt.string out r
   | Checker_run r -> Run_result.pp Fmt.unit out r
 
-let to_string = CCFormat.to_string pp
-
 let mk_prover r = Prover_run r
 let mk_checker r = Checker_run r
-
-let assoc_or def x l =
-  try List.assoc x l
-  with Not_found -> def
 
 let decode =
   let open J.Decode in

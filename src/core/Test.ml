@@ -318,13 +318,6 @@ end = struct
          if a.errors = 0 then None
          else Some (p, to_printbox_errors a))
 
-  let pp_raw_res_ ?(color="reset") out (self:_) =
-    fpf out "(@[<h>:problem %a@ :expected %a@ :result %a@ :time %.2f@])"
-      Fmt.(with_color color string) self.Run_result.problem.Problem.name
-      (Fmt.with_color color Res.pp) self.Run_result.problem.Problem.expected
-      (Fmt.with_color color Res.pp) self.res
-      self.Run_result.raw.rtime
-
   let pp_bad out self =
     if self.bad <> 0 then (
       Format.fprintf out "@[<hv1>bad@ %a@]"
