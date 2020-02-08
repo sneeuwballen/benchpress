@@ -22,7 +22,7 @@ depends: [
     "gnuplot" { >= "0.6" & < "0.7" }
     "sqlite3"
     "sqlite3_utils" { >= "0.3" & < "0.4" }
-    "tiny_httpd" { >= "0.2" & < "0.4" }
+    "tiny_httpd" { >= "0.2" & < "0.5" }
     "printbox" { >= "0.3" & < "0.5" }
     "tyxml"  # for printbox.tyxml
     "decoders" { >= "0.3.0" & < "0.4" }
