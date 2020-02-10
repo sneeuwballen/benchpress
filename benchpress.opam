@@ -8,26 +8,26 @@ build: [
   ["dune" "build" "@doc" "-p" name] {with-doc}
 ]
 depends: [
-    "dune" { >= "1.1" }
-    "base-unix"
-    "containers" { >= "2.7" }
-    "re" { >= "1.8" & < "2.0" }
-    "toml"
-    "csv"
-    "cmdliner"
-    "iter" { >= "1.0" } # TODO: remove
-    "logs"
-    "uuidm"
-    "base64"
-    "gnuplot" { >= "0.6" & < "0.7" }
-    "sqlite3"
-    "sqlite3_utils" { >= "0.3" & < "0.4" }
-    "tiny_httpd" { >= "0.2" & < "0.5" }
-    "printbox" { >= "0.3" & < "0.5" }
-    "tyxml"  # for printbox.tyxml
-    "decoders" { >= "0.3.0" & < "0.4" }
-    "decoders-yojson" { >= "0.3.0" & < "0.4" }
-    "ocaml" {>= "4.02" }
+  "dune" { >= "1.1" }
+  "base-unix"
+  "containers" { >= "2.7" }
+  "re" { >= "1.8" & < "2.0" }
+  "toml"
+  "csv"
+  "cmdliner"
+  "iter" { >= "1.0" } # TODO: remove
+  "logs"
+  "uuidm"
+  "base64"
+  "gnuplot" { >= "0.6" & < "0.7" }
+  "sqlite3"
+  "sqlite3_utils" { >= "0.3" & < "0.4" }
+  "tiny_httpd" { >= "0.2" & < "0.5" }
+  "printbox" { >= "0.3" & < "0.5" }
+  "tyxml"  # for printbox.tyxml
+  "decoders" { >= "0.3.0" & < "0.4" }
+  "decoders-yojson" { >= "0.3.0" & < "0.4" }
+  "ocaml" {>= "4.02" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
