@@ -98,7 +98,7 @@ end = struct
              Misc.synchronized (fun () ->
                  output_string stdout Misc.reset_line;
                  Printf.printf "[%6d/%6d] find expect for %S…%!"
-                   !n_done n_files path;
+                   !n_done n_files (Misc.truncate_left 15 path);
                )
            );
            let res =Problem.make_find_expect path ~expect:s.Subdir.inside.expect in
