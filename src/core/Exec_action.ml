@@ -32,6 +32,7 @@ module Exec_run_provers : sig
   val expand : 
     ?j:int ->
     ?timeout:int ->
+    ?dyn:bool ->
     ?memory:int ->
     ?interrupted:(unit -> bool) ->
     t -> expanded or_error
@@ -72,32 +73,47 @@ end = struct
       (fun path -> Re.execp re path)
 
   (* turn a subdir into a list of problems *)
-  let expand_subdir ?pattern ?(interrupted=fun _->false) (s:Subdir.t) : Problem.t list or_error =
+  let expand_subdir ?pattern ?(interrupted=fun _->false)
+      ~dyn (s:Subdir.t) : Problem.t list or_error =
     try
       let filter1 = filter_regex_ s.Subdir.inside.pattern in
       let filter2 = filter_regex_ pattern in
       let filter s = filter1 s && filter2 s in
-      CCIO.File.walk_l s.Subdir.path
-      |> CCList.filter_map
-        (fun (kind,f) ->
-           if interrupted() then failwith "interrupted";
-           match kind with
-           | `File when filter f -> Some f
-           | _ -> None)
+      let files =
+        CCIO.File.walk_l s.Subdir.path
+        |> CCList.filter_map
+          (fun (kind,f) ->
+             if interrupted() then failwith "interrupted";
+             match kind with
+             | `File when filter f -> Some f
+             | _ -> None)
+      in 
+      let n_files = List.length files in
+      let n_done = ref 0 in
+      files
       |> Misc.Par_map.map_p ~j:3
         (fun path ->
            if interrupted() then failwith "interrupted";
-           Problem.make_find_expect path ~expect:s.Subdir.inside.expect)
+           if dyn then (
+             Misc.synchronized (fun () ->
+                 output_string stdout Misc.reset_line;
+                 Printf.printf "[%6d/%6d] find expect for %S…%!"
+                   !n_done n_files path;
+               )
+           );
+           let res =Problem.make_find_expect path ~expect:s.Subdir.inside.expect in
+           incr n_done;
+           res)
       |> E.flatten_l
     with e ->
       E.of_exn_trace e |> E.add_ctxf "expand_subdir of_dir %a" Subdir.pp s
 
   (* Expand options into concrete choices *)
-  let expand ?j ?timeout ?memory ?interrupted (self:t) : expanded or_error =
+  let expand ?j ?timeout ?(dyn=false) ?memory ?interrupted (self:t) : expanded or_error =
     let j = j >?? self.j >? Misc.guess_cpu_count () in
     let timeout = timeout >?? self.timeout >? 60 in
     let memory = memory >?? self.memory >? 1_000 in
-    E.map_l (expand_subdir ?interrupted) self.dirs >>= fun problems ->
+    E.map_l (expand_subdir ~dyn ?interrupted) self.dirs >>= fun problems ->
     let problems = CCList.flatten problems in
     Ok { j; memory; timeout; problems; provers=self.provers; }
 
@@ -293,15 +309,15 @@ let rec run ?interrupted (defs:Definitions.t) (a:Action.t) : unit or_error =
     (fun scope ->
       begin match a with
         | Action.Act_run_provers r ->
+          let is_dyn = CCOpt.get_or ~default:false @@ Definitions.option_progress defs in
           let r_expanded =
-            Exec_run_provers.expand ?interrupted
+            Exec_run_provers.expand ?interrupted ~dyn:is_dyn
               ?j:(Definitions.option_j defs) r
             |> scope.unwrap
           in
-          let on_solve = match Definitions.option_progress defs with
-            | Some true ->
-              Progress_run_provers.make ~dyn:true r_expanded
-            | _ -> Progress_run_provers.nil
+          let on_solve =
+            if is_dyn then Progress_run_provers.make ~dyn:true r_expanded
+            else Progress_run_provers.nil
           in
           let uuid = Misc.mk_uuid () in
           let res =
