@@ -29,6 +29,7 @@ depends: [
   "decoders-yojson" { >= "0.3.0" & < "0.4" }
   "yojson" { >= "1.6" }
   "atdgen"
+  "curly"
   "ocaml" {>= "4.03" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"

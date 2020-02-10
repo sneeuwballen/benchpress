@@ -1,0 +1,24 @@
+
+type dyn <ocaml module="Yojson.Safe" t="t"> = abstract
+
+type task_progress = {
+  start_timestamp: float;
+  ~completion: float option;
+}
+
+type task_status = [
+  | In_queue
+  | Started of task_progress
+  | Done
+]
+
+type task_update = {
+  name: string; (* name of this task *)
+  synopsis: string option;
+  status: task_status;
+}
+
+type push_notification = [
+  | Task_update of task_update
+]
+

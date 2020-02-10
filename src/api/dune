@@ -1,0 +1,18 @@
+
+(library
+ (name benchpress_api)
+ (public_name benchpress.api)
+ (synopsis "definitions and serialization for Benchpress' API")
+ (wrapped true)
+ (libraries containers yojson logs atdgen curly)
+ (flags :standard -warn-error -3-32-34-50 -safe-string))
+
+(rule
+ (targets Protocol_j.ml Protocol_j.mli)
+ (deps    Protocol.atd)
+ (action  (run atdgen -j -j-std %{deps})))
+
+(rule
+ (targets Protocol_t.ml Protocol_t.mli)
+ (deps    Protocol.atd)
+ (action  (run atdgen -t -j-std %{deps})))
