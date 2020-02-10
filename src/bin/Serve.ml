@@ -64,10 +64,10 @@ let handle_show (self:t) : unit =
                  a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
                 ];
                 [div [pb_html box_meta]];
-                (CCList.flat_map 
+                (CCList.flat_map
                   (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
                   box_stat);
-                (CCList.flat_map 
+                (CCList.flat_map
                   (fun (n,p) -> [h3 [txt ("summary for " ^ n)]; div [pb_html p]])
                   box_summary);
                 CCList.flat_map
@@ -90,7 +90,7 @@ let handle_show (self:t) : unit =
                       ~a:[a_style "display:block; width: 80%"]
                       ~alt:"cactus plot of provers" ()]
                 );
-                (CCList.flat_map 
+                (CCList.flat_map
                   (fun (n1,n2,p) -> [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)]; div [pb_html p]])
                   box_compare_l);
             ])
@@ -425,7 +425,7 @@ let handle_root (self:t) : unit =
                 )
               ];
               h3 [txt "list of results"];
-              let l = 
+              let l =
                 List.map
                   (fun (s,size) ->
                      let s = Filename.basename s in
