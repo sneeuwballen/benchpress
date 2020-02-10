@@ -27,7 +27,9 @@ depends: [
   "tyxml"  # for printbox.tyxml
   "decoders" { >= "0.3.0" & < "0.4" }
   "decoders-yojson" { >= "0.3.0" & < "0.4" }
-  "ocaml" {>= "4.02" }
+  "yojson" { >= "1.6" }
+  "atdgen"
+  "ocaml" {>= "4.03" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
