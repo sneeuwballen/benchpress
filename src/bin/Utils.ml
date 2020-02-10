@@ -152,7 +152,7 @@ let list_entries data_dir =
         let size = (Unix.stat s).Unix.st_size in
         Some (s,size)
       | _ -> None)
-  |> List.sort (fun x y->CCOrd.compare y x)
+  |> List.sort (fun x y->CCOrd.(pair CCString.compare_natural int) y x)
 
 (* find absolute path of [f] in the data dir *)
 let mk_file_full (f:string) : string or_error =
