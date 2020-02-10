@@ -9,7 +9,7 @@ let execute_run_prover_action
   : (_ * T.Compact_result.t) or_error =
   let open E.Infix in
   begin
-    Exec_action.Exec_run_provers.expand ?j ?timeout ?memory r >>= fun r ->
+    Exec_action.Exec_run_provers.expand ?dyn ?j ?timeout ?memory r >>= fun r ->
     let len = List.length r.problems in
     Notify.sendf notify "testing with %d provers, %d problems…"
       (List.length r.provers) len;
