@@ -116,7 +116,10 @@ let human_time (f:float) : string =
     (print_aux "h" n_hour) ^
     (print_aux "m" n_min) ^
     (string_of_int n) ^
-    (if f -. floor f >= 0.1 then Printf.sprintf "%.1f" (f -. floor f) else "")
+    (if f -. floor f >= 0.1 then (
+        let s = Printf.sprintf "%.1f" (f -. floor f) in
+        "." ^  (snd @@CCString.Split.left_exn ~by:"." s) (* remove the leading "0." *)
+      ) else "")
     ^ "s"
   ) else (
     Printf.sprintf "%.3fs" f
