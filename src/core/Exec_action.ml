@@ -216,7 +216,7 @@ end = struct
         Misc.synchronized (fun() -> Format.printf "@.")
       )
 
-  let progress ~w_prover ~w_pb ?(dyn=false) n : Run_prover_problem.job_res -> unit =
+  let progress ~w_prover ~w_pb ?(dyn=false) n : t =
     let pp_bar = progress_dynamic n in
     (function res ->
        if dyn then output_string stdout Misc.reset_line;
