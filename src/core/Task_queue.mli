@@ -23,6 +23,7 @@ val defs : t -> Definitions.t CCLock.t
 (** List of definitions available for tasks *)
 
 val size : t -> int
+(** Number of jobs waiting *)
 
 val cur_job : t -> Job.t option
 (** Current job, if any *)

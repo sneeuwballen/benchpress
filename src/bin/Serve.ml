@@ -27,6 +27,37 @@ let html_redirect (s:string) =
         meta ~a:[a_http_equiv "Refresh"; a_charset "utf-8"; a_content "0; url=/"] ()])
     (body [txt s])
 
+let handle_api (self:t) : unit =
+  let module A = Benchpress_api in
+  let open A.P in
+  let ctx =
+    A.Ctx.create
+      ~list_tasks:(fun () -> 
+          let module T = Task_queue in
+          let cj = T.cur_job self.task_q in
+          let task_descr = match cj with
+            | None -> None
+            | Some cj ->
+              let task = T.Job.task cj in
+              (* TODO: gather more info *)
+              Some {
+                name= task.Task.name; synopsis=task.Task.synopsis;
+                status=`Started {start_timestamp=0.; completion=None};
+                }
+          in
+          task_descr, Task_queue.size self.task_q)
+      ()
+  in
+  H.add_path_handler self.server "/api/%!" (fun req ->
+      let body = H.Request.body req in
+      match A.As_json.call ctx ~query:body with
+      | Ok r ->
+        H.Response.make_string ~headers:["Content-Type", "text/json"] (Ok r)
+      | Error e ->
+        (* TODO: answer with a 4xx code if the query is bad *)
+        H.Response.fail_raise ~code:503 "error %s" e
+    )
+
 (* show individual files *)
 let handle_show (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show/%s%!" (fun file _req ->
@@ -98,6 +129,7 @@ let handle_show (self:t) : unit =
         Logs.debug ~src (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (string_of_html h))
     )
+
 
 (* show full table for a file *)
 let handle_show_as_table (self:t) : unit =
@@ -465,6 +497,7 @@ let main ?port (defs:Definitions.t) () =
       );
     Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
     handle_root self;
+    handle_api self;
     handle_show self;
     handle_show_as_table self;
     handle_show_detailed self;

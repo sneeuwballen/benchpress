@@ -1,5 +1,5 @@
 
-type dyn <ocaml module="Yojson.Safe" t="t"> = abstract
+type json <ocaml module="Yojson.Safe" t="t"> = abstract
 
 type task_progress = {
   start_timestamp: float;
@@ -12,13 +12,21 @@ type task_status = [
   | Done
 ]
 
-type task_update = {
+type task_descr = {
   name: string; (* name of this task *)
   synopsis: string option;
   status: task_status;
 }
 
 type push_notification = [
-  | Task_update of task_update
+  | Task_update of task_descr
+]
+
+type query = [
+  | Q_task_list
+]
+
+type response = [
+  | R_task_list of (task_descr option * int)
 ]
 

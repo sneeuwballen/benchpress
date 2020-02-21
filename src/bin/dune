@@ -2,7 +2,8 @@
  (name benchpress_bin)
  (public_name benchpress)
  (libraries benchpress containers cmdliner result toml uuidm logs logs.cli
-            tiny_httpd tyxml printbox.html sqlite3_utils base64)
+            tiny_httpd tyxml printbox.html sqlite3_utils base64
+            benchpress.api)
  (flags :standard -warn-error -3-32 -safe-string -open Benchpress))
 
 (rule
