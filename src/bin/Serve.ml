@@ -100,7 +100,7 @@ end
 module Html = struct
   include Tyxml_html
 
-  let b_style = style [txt Css.css]
+  let b_style = link ~rel:[`Stylesheet] ~href:"/css/" ()
 
   let mk_page ?meta:(my_meta=[]) ~title:s my_body =
     html
@@ -526,11 +526,18 @@ let handle_root (self:t) : unit =
                    let href =
                      Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
                    in
-                   li ~a:[a_class ["list-group-item"]] [div ~a:[a_class ["row"]] [
-                       mk_a ~a:[a_class ["col-md-auto"]; a_href href] [txt s];
-                       div ~a:[a_class ["col"]] [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
-                       input ~a:[a_input_type `Checkbox; a_name s] ()
-                     ]])
+                   li ~a:[a_class ["list-group-item"]]
+                     [div ~a:[a_class ["row"]]
+                        [
+                          div ~a:[a_class ["col-md-9"]]
+                            [mk_a ~a:[a_href href] [txt s]];
+                          h4 ~a:[a_class ["col-md-2"]] [
+                            span ~a:[a_class ["badge"; "text-secondary"]]
+                              [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
+                          ];
+                          div ~a:[a_class ["col-1"]]
+                            [input ~a:[a_input_type `Checkbox; a_name s] ()];
+                        ]])
                 entries
             in
             form ~a:[a_id (uri_of_string "compare");
@@ -544,6 +551,13 @@ let handle_root (self:t) : unit =
           ]
       in
       H.Response.make_string (Ok (Html.to_string h))
+    )
+
+let handle_css self : unit =
+  H.add_path_handler self ~meth:`GET "/css" (fun _req ->
+      H.Response.make_string
+        ~headers:["content-type", "text/css"; "Etag", Digest.to_hex (Digest.string Css.css)]
+        (Ok Css.css)
     )
 
 let main ?port (defs:Definitions.t) () =
@@ -571,6 +585,7 @@ let main ?port (defs:Definitions.t) () =
     handle_job_interrupt self;
     handle_compare server;
     handle_delete server;
+    handle_css server;
     H.run server |> E.map_err Printexc.to_string
   with e ->
     E.of_exn_trace e
