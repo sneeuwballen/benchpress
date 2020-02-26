@@ -6,16 +6,6 @@
  (flags :standard -warn-error -3-32 -safe-string -open Benchpress))
 
 (rule
-  (targets css.ml)
-  (deps basic.css)
-  (action
-    (with-stdout-to %{targets}
-     (progn
-       (echo "let css = {css|")
-       (cat %{deps})
-       (echo "|css}")))))
-
-(rule
  (with-stdout-to benchpress.1 (run ./benchpress_bin.exe --help=groff)))
 
 (rule

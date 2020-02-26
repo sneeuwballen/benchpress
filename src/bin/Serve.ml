@@ -5,12 +5,7 @@ module E = CCResult
 module H = Tiny_httpd
 module U = Tiny_httpd_util
 
-module Html = Tyxml_html
-
-(* start from http://bettermotherfuckingwebsite.com/ and added some *)
-let basic_css = Css.css
 let src = Logs.Src.create "benchpress.serve"
-let string_of_html h = Format.asprintf "@[%a@]@." (Html.pp ()) h
 
 type t = {
   mutable defs: Definitions.t;
@@ -19,13 +14,34 @@ type t = {
   data_dir: string;
 }
 
+module Html = struct
+  include Tyxml_html
+  let b_style =
+    link ~rel:[`Stylesheet]
+      ~href:"https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
+      ~a:[Unsafe.string_attrib "integrity" "sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh"]
+  (*           ~a:[a_crossorigin `Anonymous] *)
+      ()
+
+  let mk_page ?meta:(my_meta=[]) ~title:s my_body =
+    html
+      (head (title @@ txt s)
+         [b_style; PrintBox_html.prelude;
+          meta ~a:(a_charset "utf-8" :: my_meta) ()])
+      (body [div ~a:[a_class ["container"]] my_body])
+
+  let pb_html pb =
+    div ~a:[a_class ["table"]] [PrintBox_html.to_html pb]
+
+  let to_string h = Format.asprintf "@[%a@]@." (pp ()) h
+end
+
 let html_redirect (s:string) =
   let open Html in
-  html
-    (head (title @@ txt s)
-       [style [txt basic_css];
-        meta ~a:[a_http_equiv "Refresh"; a_charset "utf-8"; a_content "0; url=/"] ()])
-    (body [txt s])
+  mk_page
+    ~meta:[a_http_equiv "Refresh"; a_content "0; url=/"]
+    ~title:s
+    [txt s]
 
 (* show individual files *)
 let handle_show (self:t) : unit =
@@ -53,10 +69,8 @@ let handle_show (self:t) : unit =
         in
         let h =
           let open Html in
-          let pb_html pb = PrintBox_html.to_html pb in
-          html
-            (head (title (txt "show")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
-            (body @@ List.flatten [
+          mk_page ~title:"show" @@
+            List.flatten [
                 [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  h3 [txt file];
                  a ~a:[a_href ("/show_detailed/"^U.percent_encode file)] [p [txt "show individual results"]];
@@ -93,10 +107,10 @@ let handle_show (self:t) : unit =
                 (CCList.flat_map
                   (fun (n1,n2,p) -> [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)]; div [pb_html p]])
                   box_compare_l);
-            ])
+            ]
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
-        H.Response.make_string (Ok (string_of_html h))
+        H.Response.make_string (Ok (Html.to_string h))
     )
 
 (* show full table for a file *)
@@ -110,17 +124,15 @@ let handle_show_as_table (self:t) : unit =
         let full_table = Test.Top_result.to_printbox_table res in
         let h =
           let open Html in
-          let pb_html pb = PrintBox_html.to_html pb in
-          html
-            (head (title (txt "show full table")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
-            (body @@ List.flatten [
+          mk_page ~title:"show full table" @@
+            List.flatten [
                 [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"]];
                 [h3 [txt "full results"];
                  div [pb_html full_table]];
-            ])
+            ]
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
-        H.Response.make_string (Ok (string_of_html h))
+        H.Response.make_string (Ok (Html.to_string h))
     )
 
 (* show list of individual results with URLs to single results for a file *)
@@ -131,10 +143,8 @@ let handle_show_detailed (self:t) : unit =
         (fun scope db ->
            let l = Test.Detailed_res.list_keys db |> scope.unwrap in
            let open Html in
-           html
-             (head (title (txt "detailed results"))
-                [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
-             (body [
+           mk_page ~title:"detailed results"
+             [
                  a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  h3 [txt "detailed results"];
                  let rows =
@@ -162,12 +172,12 @@ let handle_show_detailed (self:t) : unit =
                    |> tr |> CCList.return |> thead
                  in
                  table ~a:[a_class ["framed"]] ~thead rows
-               ])
+               ]
         )
       |> E.catch
         ~ok:(fun h ->
             Logs.debug ~src (fun k->k "successful reply for %S" db_file);
-            H.Response.make_string (Ok (string_of_html h)))
+            H.Response.make_string (Ok (Html.to_string h)))
         ~err:(fun e ->
             Logs.err ~src (fun k->k "error in show-detailed %S:\n%s" db_file e);
             H.Response.fail ~code:500 "could not show detailed res for %S:\n%s" db_file e)
@@ -186,9 +196,7 @@ let handle_show_single (self:t) : unit =
            let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
            let pb, stdout, stderr = Test.Detailed_res.to_printbox r in
            let open Html in
-           html
-             (head (title (txt "single result")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
-             (body [
+           mk_page ~title:"single result" [
                  a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  a ~a:[
                    a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file)); a_class ["stick"]]
@@ -197,12 +205,12 @@ let handle_show_single (self:t) : unit =
                  div [ PrintBox_html.to_html pb];
                  details (summary [txt "full stdout"]) [pre [txt stdout]];
                  details (summary [txt "full stderr"]) [pre [txt stderr]];
-               ])
+               ]
         )
       |> E.catch
         ~ok:(fun h ->
             Logs.debug ~src (fun k->k "successful reply for %S" db_file);
-            H.Response.make_string (Ok (string_of_html h)))
+            H.Response.make_string (Ok (Html.to_string h)))
         ~err:(fun e ->
             Logs.err ~src (fun k->k "error in show-single %S:\n%s" db_file e);
             H.Response.fail ~code:500 "could not show single res for %S:\n%s" db_file e)
@@ -268,15 +276,14 @@ let handle_compare server : unit =
         in
         let h =
           let open Html in
-          html
-            (head (title (txt "compare")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
-            (body [
+            mk_page ~title:"compare"
+              [
                 a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                 h3 [txt "comparison"];
                 div [PrintBox_html.to_html box_compare_l];
-              ])
+                ]
         in
-        H.Response.make_string (Ok (string_of_html h))
+        H.Response.make_string (Ok (Html.to_string h))
       ) else (
         H.Response.fail ~code:412 "precondition failed: select at least 2 files"
       )
@@ -309,7 +316,7 @@ let handle_delete server : unit =
           Sys.remove file)
         files;
       let h = html_redirect @@ Format.asprintf "deleted %d files" (List.length files) in
-      H.Response.make_string (Ok (string_of_html h))
+      H.Response.make_string (Ok (Html.to_string h))
     )
 
 let handle_provers (self:t) : unit =
@@ -320,15 +327,14 @@ let handle_provers (self:t) : unit =
         let l =
           List.map (fun p -> li [pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p]]) provers
         in
-        html
-          (head (title (txt "tasks")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
-          (body [
+        mk_page ~title:"tasks"
+          [
               a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
               h3 [txt "list of provers"];
               ul l
-            ])
+            ]
       in
-      H.Response.make_string (Ok (string_of_html h))
+      H.Response.make_string (Ok (Html.to_string h))
     )
 
 let handle_tasks (self:t) : unit =
@@ -345,21 +351,20 @@ let handle_tasks (self:t) : unit =
                  form ~a:[a_id (uri_of_string @@ "launch_task"^s);
                           a_action (uri_of_string @@ "/run/" ^ U.percent_encode s);
                           a_method `Post;]
-                   [button ~a:[a_button_type `Submit; a_class ["stick"]]
+                   [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-primary"]]
                       [txt "run"];
                    ];
                ])
             tasks
         in
-        html
-          (head (title (txt "tasks")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
-          (body [
+        mk_page ~title:"tasks"
+          [
               a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
               h3 [txt "list of tasks"];
               ul l;
-            ])
+            ]
       in
-      H.Response.make_string (Ok (string_of_html h))
+      H.Response.make_string (Ok (Html.to_string h))
     )
 
 let handle_run (self:t) : unit =
@@ -379,7 +384,7 @@ let handle_run (self:t) : unit =
       let msg =
         Format.asprintf "task queued (%d in queue)!" (Task_queue.size self.task_q)
       in
-      H.Response.make_string @@ Ok (string_of_html @@ html_redirect msg)
+      H.Response.make_string @@ Ok (Html.to_string @@ html_redirect msg)
     )
 
 let handle_job_interrupt (self:t) : unit =
@@ -387,10 +392,10 @@ let handle_job_interrupt (self:t) : unit =
       Logs.debug (fun k->k "interrupt current task");
       let r =
         match Task_queue.cur_job self.task_q with
-        | None -> Ok (string_of_html @@ html_redirect "no job to interrupt.")
+        | None -> Ok (Html.to_string @@ html_redirect "no job to interrupt.")
         | Some j ->
           Task_queue.Job.interrupt j;
-          Ok (string_of_html @@ html_redirect "job interrupted")
+          Ok (Html.to_string @@ html_redirect "job interrupted")
       in
       H.Response.make_string r
     )
@@ -401,9 +406,8 @@ let handle_root (self:t) : unit =
       let entries = Utils.list_entries self.data_dir in
       let h =
         let open Html in
-        html
-          (head(title (txt "index")) [meta ~a:[a_charset "utf-8"] (); style [txt basic_css]])
-          (body [
+        mk_page ~title:"benchpress"
+          [
               ul @@ List.flatten [
                 [li [a ~a:[a_href "/provers/"] [txt "provers"]];
                  li [a ~a:[a_href "/tasks/"] [txt "tasks"]]];
@@ -419,7 +423,7 @@ let handle_root (self:t) : unit =
                         form ~a:[a_id (uri_of_string "cancel");
                             a_action (uri_of_string "/interrupt/");
                                 a_method `Post;]
-                          [button ~a:[a_button_type `Submit; a_class ["stick"]]
+                          [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-warning"]]
                              [txt "interrupt"]]];
                    ];
                 )
@@ -441,14 +445,14 @@ let handle_root (self:t) : unit =
               in
               form ~a:[a_id (uri_of_string "compare");
                        a_method `Post;]
-                [button ~a:[a_button_type `Submit; a_class ["stick"]; a_formaction "/compare/"]
+                [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-primary"]; a_formaction "/compare/"]
                    [txt "compare selected"];
-                 button ~a:[a_button_type `Submit; a_class ["stick"]; a_formaction "/delete/"]
+                 button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-danger"]; a_formaction "/delete/"]
                    [txt "delete selected"];
                  ul l];
-            ])
+            ]
       in
-      H.Response.make_string (Ok (string_of_html h))
+      H.Response.make_string (Ok (Html.to_string h))
     )
 
 let main ?port (defs:Definitions.t) () =
