@@ -21,7 +21,7 @@ val data_dir : unit -> string
 
 val cache_dir : unit -> string
 (** Where to store disposable data that is only useful for improving perf
-but can be erased at any point *)
+    but can be erased at any point *)
 
 val runtime_dir : unit -> string
 (** Where to store runtime files such as unix sockets *)

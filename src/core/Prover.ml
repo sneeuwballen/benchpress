@@ -89,8 +89,8 @@ module Version = struct
     | "tag" -> (list1 string >|= fun s -> Tag s)
     | "git" ->
       (list string >>= function
-      | [branch;commit] -> succeed (Git {branch;commit})
-      | _ -> fail "need 2 arguments")
+        | [branch;commit] -> succeed (Git {branch;commit})
+        | _ -> fail "need 2 arguments")
     | _ -> fail "unknown constructor, expect tag/git"
 
   let ser_sexp v = Sexp_loc.to_string @@ to_sexp v
@@ -151,7 +151,7 @@ let make_command ?env prover ~timeout ~memory ~file =
   try interpolate_cmd ?env ~binary ~timeout ~memory ~file prover.cmd
   with Subst_not_found s ->
     failwith (Printf.sprintf
-        "cannot make command for prover %s: cannot find field %s" prover.name s)
+                "cannot make command for prover %s: cannot find field %s" prover.name s)
 
 module Map_name = CCMap.Make(struct
     type t = t_
@@ -309,4 +309,4 @@ let db_names db : _ list or_error =
   Db.exec_no_params db
     {| select distinct name from prover order by name; " |}
     ~ty:Db.Ty.(p1 text,id) ~f:Db.Cursor.to_list_rev
-    |> Misc.db_err ~ctx:"listing provers"
+  |> Misc.db_err ~ctx:"listing provers"

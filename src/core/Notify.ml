@@ -28,10 +28,10 @@ let combine_l l : t =
     (fun() -> List.iter (fun n->n.sync()) l)
 
 (* TODO: run subprocess if IRC flag activated (assumings deps are there
-   and the irc notifier program is installed), send it messages on stdin 
+   and the irc notifier program is installed), send it messages on stdin
 
    OR: sub-library, that we can try to dynlink optionally
-  *)
+*)
 
 (* TODO: stanza for IRC *)
 let make (_defs) : t =

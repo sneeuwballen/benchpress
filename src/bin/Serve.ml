@@ -152,44 +152,44 @@ let handle_show (self:t) : unit =
         let h =
           let open Html in
           mk_page ~title:"show" @@
-            List.flatten [
-                [mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-                 h3 [txt file];
-                 mk_a ~a:[a_href ("/show_detailed/"^U.percent_encode file)] [p [txt "show individual results"]];
-                 mk_a ~a:[a_href ("/show_csv/"^U.percent_encode file)] [p [txt "download as csv"]];
-                 mk_a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
-                ];
-                [div [pb_html box_meta]];
-                (CCList.flat_map
-                  (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
-                  box_stat);
-                (CCList.flat_map
-                  (fun (n,p) -> [h3 [txt ("summary for " ^ n)]; div [pb_html p]])
-                  box_summary);
-                CCList.flat_map
-                  (fun (n,p) ->
-                     [h3 [txt ("bad for " ^ n)];
-                      details ~a:[a_open()] (summary [txt "list of bad results"])
-                        [div [pb_html p]]])
-                  bad;
-                CCList.flat_map
-                  (fun (n,p) ->
-                     [h3 [txt ("errors for " ^ n)];
-                      details (summary [txt "list of errors"]) [div [pb_html p]]])
-                  errors;
-                (match cactus_plot with
-                 | Error e -> [p ~a:[a_style "color: red"] [txt "could not load cactus plot"; txt e]]
-                 | Ok p ->
-                   Logs.debug ~src (fun k->k "encode png file of %d bytes" (String.length p));
-                   [img
-                      ~src:("data:image/png;base64, " ^ Base64.encode_string p)
-                      ~a:[a_class ["img-fluid"]]
-                      ~alt:"cactus plot of provers" ()]
-                );
-                (CCList.flat_map
-                  (fun (n1,n2,p) -> [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)]; div [pb_html p]])
-                  box_compare_l);
-            ]
+          List.flatten [
+            [mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+             h3 [txt file];
+             mk_a ~a:[a_href ("/show_detailed/"^U.percent_encode file)] [p [txt "show individual results"]];
+             mk_a ~a:[a_href ("/show_csv/"^U.percent_encode file)] [p [txt "download as csv"]];
+             mk_a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
+            ];
+            [div [pb_html box_meta]];
+            (CCList.flat_map
+               (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
+               box_stat);
+            (CCList.flat_map
+               (fun (n,p) -> [h3 [txt ("summary for " ^ n)]; div [pb_html p]])
+               box_summary);
+            CCList.flat_map
+              (fun (n,p) ->
+                 [h3 [txt ("bad for " ^ n)];
+                  details ~a:[a_open()] (summary [txt "list of bad results"])
+                    [div [pb_html p]]])
+              bad;
+            CCList.flat_map
+              (fun (n,p) ->
+                 [h3 [txt ("errors for " ^ n)];
+                  details (summary [txt "list of errors"]) [div [pb_html p]]])
+              errors;
+            (match cactus_plot with
+             | Error e -> [p ~a:[a_style "color: red"] [txt "could not load cactus plot"; txt e]]
+             | Ok p ->
+               Logs.debug ~src (fun k->k "encode png file of %d bytes" (String.length p));
+               [img
+                  ~src:("data:image/png;base64, " ^ Base64.encode_string p)
+                  ~a:[a_class ["img-fluid"]]
+                  ~alt:"cactus plot of provers" ()]
+            );
+            (CCList.flat_map
+               (fun (n1,n2,p) -> [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)]; div [pb_html p]])
+               box_compare_l);
+          ]
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string h))
@@ -207,11 +207,11 @@ let handle_show_as_table (self:t) : unit =
         let h =
           let open Html in
           mk_page ~title:"show full table" @@
-            List.flatten [
-                [mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"]];
-                [h3 [txt "full results"];
-                 div [pb_html full_table]];
-            ]
+          List.flatten [
+            [mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"]];
+            [h3 [txt "full results"];
+             div [pb_html full_table]];
+          ]
         in
         Logs.debug ~src (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string h))
@@ -227,34 +227,34 @@ let handle_show_detailed (self:t) : unit =
            let open Html in
            mk_page ~title:"detailed results"
              [
-                 mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-                 h3 [txt "detailed results"];
-                 let rows =
-                   List.map
-                     (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
-                        let url =
-                          Printf.sprintf "/show_single/%s/%s/%s/"
-                            (U.percent_encode db_file)
-                            (U.percent_encode prover)
-                            (U.percent_encode pb_file)
-                        in
-                        tr [
-                          td [txt prover];
-                          td [mk_a ~a:[a_href url; a_title pb_file]
-                                [txt @@ Misc.truncate_left 80 pb_file]];
-                          td [txt (Res.to_string res)];
-                          td [txt (Res.to_string file_expect)];
-                          td [txt (Misc.human_time rtime)]
-                        ])
-                     l
-                 in
-                 let thead =
-                   List.map (fun x->th [txt x])
-                     ["prover"; "file"; "res"; "expected"; "time"]
-                   |> tr |> CCList.return |> thead
-                 in
-                 table ~a:[a_class ["framed"]] ~thead rows
-               ]
+               mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+               h3 [txt "detailed results"];
+               let rows =
+                 List.map
+                   (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
+                      let url =
+                        Printf.sprintf "/show_single/%s/%s/%s/"
+                          (U.percent_encode db_file)
+                          (U.percent_encode prover)
+                          (U.percent_encode pb_file)
+                      in
+                      tr [
+                        td [txt prover];
+                        td [mk_a ~a:[a_href url; a_title pb_file]
+                              [txt @@ Misc.truncate_left 80 pb_file]];
+                        td [txt (Res.to_string res)];
+                        td [txt (Res.to_string file_expect)];
+                        td [txt (Misc.human_time rtime)]
+                      ])
+                   l
+               in
+               let thead =
+                 List.map (fun x->th [txt x])
+                   ["prover"; "file"; "res"; "expected"; "time"]
+                 |> tr |> CCList.return |> thead
+               in
+               table ~a:[a_class ["framed"]] ~thead rows
+             ]
         )
       |> E.catch
         ~ok:(fun h ->
@@ -279,15 +279,15 @@ let handle_show_single (self:t) : unit =
            let pb, stdout, stderr = Test.Detailed_res.to_printbox r in
            let open Html in
            mk_page ~title:"single result" [
-                 mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-                 mk_a ~a:[
-                   a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file)); a_class ["stick"]]
-                   [txt "back to detailed results"];
-                 h3 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
-                 div [pb_html pb];
-                 details (summary [txt "full stdout"]) [pre [txt stdout]];
-                 details (summary [txt "full stderr"]) [pre [txt stderr]];
-               ]
+             mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+             mk_a ~a:[
+               a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file)); a_class ["stick"]]
+               [txt "back to detailed results"];
+             h3 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
+             div [pb_html pb];
+             details (summary [txt "full stdout"]) [pre [txt stdout]];
+             details (summary [txt "full stderr"]) [pre [txt stderr]];
+           ]
         )
       |> E.catch
         ~ok:(fun h ->
@@ -358,12 +358,12 @@ let handle_compare server : unit =
         in
         let h =
           let open Html in
-            mk_page ~title:"compare"
-              [
-                mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-                h3 [txt "comparison"];
-                div [pb_html box_compare_l];
-                ]
+          mk_page ~title:"compare"
+            [
+              mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+              h3 [txt "comparison"];
+              div [pb_html box_compare_l];
+            ]
         in
         H.Response.make_string (Ok (Html.to_string h))
       ) else (
@@ -411,10 +411,10 @@ let handle_provers (self:t) : unit =
         in
         mk_page ~title:"tasks"
           [
-              mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-              h3 [txt "list of provers"];
-              ul l
-            ]
+            mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+            h3 [txt "list of provers"];
+            ul l
+          ]
       in
       H.Response.make_string (Ok (Html.to_string h))
     )
@@ -441,10 +441,10 @@ let handle_tasks (self:t) : unit =
         in
         mk_page ~title:"tasks"
           [
-              mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-              h3 [txt "list of tasks"];
-              ul l;
-            ]
+            mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+            h3 [txt "list of tasks"];
+            ul l;
+          ]
       in
       H.Response.make_string (Ok (Html.to_string h))
     )
@@ -490,58 +490,58 @@ let handle_root (self:t) : unit =
         let open Html in
         mk_page ~title:"benchpress"
           [
-              ul ~a:[a_class ["list-group"]] @@ List.flatten [
-                [li ~a:[a_class ["list-group-item"]]
-                   [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
-                 li ~a:[a_class ["list-group-item"]]
-                   [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
-                (match Task_queue.cur_job self.task_q with
-                 | None -> []
-                 | Some j ->
-                   (* display current job *)
-                   [li ~a:[a_class ["list-group-item"]] [txt @@
-                        Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)];
-                    li ~a:[a_class ["list-group-item"]] [
-                      (* FIXME
-                      div ~a:[a_class ["spinner-border"]] [span [txt "running..."]];
-                         *)
-                      pre [txt @@
-                             Format.asprintf "current task: %a" Task_queue.Job.pp j];
-                        form ~a:[a_id (uri_of_string "cancel");
-                            a_action (uri_of_string "/interrupt/");
-                                a_method `Post;]
-                          [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-warning"]]
-                             [txt "interrupt"]]];
-                   ];
-                )
-              ];
-              h3 [txt "list of results"];
-              (* TODO: try to read [s] as a sqlite file and make a title
-                 with (list of provers, number of entries,
-                       (common file prefix/sample of files)?) *)
-              let l =
-                List.map
-                  (fun (s,size) ->
-                     let s = Filename.basename s in
-                     let href =
-                       Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
-                     in
-                     li ~a:[a_class ["list-group-item"]] [div ~a:[a_class ["row"]] [
+            ul ~a:[a_class ["list-group"]] @@ List.flatten [
+              [li ~a:[a_class ["list-group-item"]]
+                 [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
+               li ~a:[a_class ["list-group-item"]]
+                 [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+              (match Task_queue.cur_job self.task_q with
+               | None -> []
+               | Some j ->
+                 (* display current job *)
+                 [li ~a:[a_class ["list-group-item"]] [txt @@
+                                                       Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)];
+                  li ~a:[a_class ["list-group-item"]] [
+                    (* FIXME
+                       div ~a:[a_class ["spinner-border"]] [span [txt "running..."]];
+                    *)
+                    pre [txt @@
+                         Format.asprintf "current task: %a" Task_queue.Job.pp j];
+                    form ~a:[a_id (uri_of_string "cancel");
+                             a_action (uri_of_string "/interrupt/");
+                             a_method `Post;]
+                      [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-warning"]]
+                         [txt "interrupt"]]];
+                 ];
+              )
+            ];
+            h3 [txt "list of results"];
+            (* TODO: try to read [s] as a sqlite file and make a title
+               with (list of provers, number of entries,
+                     (common file prefix/sample of files)?) *)
+            let l =
+              List.map
+                (fun (s,size) ->
+                   let s = Filename.basename s in
+                   let href =
+                     Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
+                   in
+                   li ~a:[a_class ["list-group-item"]] [div ~a:[a_class ["row"]] [
                        mk_a ~a:[a_class ["col-md-auto"]; a_href href] [txt s];
                        div ~a:[a_class ["col"]] [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
                        input ~a:[a_input_type `Checkbox; a_name s] ()
                      ]])
-                  entries
-              in
-              form ~a:[a_id (uri_of_string "compare");
-                       a_method `Post;]
-                [div ~a:[a_class ["container"]]
-                [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-primary"]; a_formaction "/compare/"]
-                   [txt "compare selected"];
-                 button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-danger"]; a_formaction "/delete/"]
-                   [txt "delete selected"];
-                 ul ~a:[a_class ["list-group"]] l]];
-            ]
+                entries
+            in
+            form ~a:[a_id (uri_of_string "compare");
+                     a_method `Post;]
+              [div ~a:[a_class ["container"]]
+                 [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-primary"]; a_formaction "/compare/"]
+                    [txt "compare selected"];
+                  button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-danger"]; a_formaction "/delete/"]
+                    [txt "delete selected"];
+                  ul ~a:[a_class ["list-group"]] l]];
+          ]
       in
       H.Response.make_string (Ok (Html.to_string h))
     )
@@ -555,8 +555,8 @@ let main ?port (defs:Definitions.t) () =
     let _th_r = Thread.create Task_queue.loop self.task_q in
     (* trick: see if debug level is active *)
     Logs.debug (fun k ->
-      H._enable_debug true;
-      k "enable http debug"
+        H._enable_debug true;
+        k "enable http debug"
       );
     Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
     handle_root self;

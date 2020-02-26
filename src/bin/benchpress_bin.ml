@@ -51,7 +51,7 @@ module Run = struct
       Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
     in
     Term.(pure aux $ j $ dyn $ paths $ dir_file $ defs $ task $ timeout $ memory
-      $ meta $ provers $ csv $ summary $ no_color),
+          $ meta $ provers $ csv $ summary $ no_color),
     Term.info ~doc "run"
 end
 
@@ -100,7 +100,7 @@ module Show = struct
     and debug =
       Logs_cli.level ()
     in
-    let aux check bad csv summary no_color debug file : _ E.t = 
+    let aux check bad csv summary no_color debug file : _ E.t =
       Misc.setup_logs debug;
       if no_color then CCFormat.set_color_default false;
       Show.main ~check ~bad ?csv ?summary file
@@ -134,7 +134,7 @@ module Plot = struct
     and debug =
       Logs_cli.level ()
     in
-    let aux debug file : _ E.t = 
+    let aux debug file : _ E.t =
       Misc.setup_logs debug;
       main file
     in
@@ -377,5 +377,5 @@ let () =
   | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
   | `Ok (Ok ()) | `Version | `Help -> ()
   | `Ok (Error e) ->
-      print_endline ("error: " ^ e);
-      exit 1
+    print_endline ("error: " ^ e);
+    exit 1

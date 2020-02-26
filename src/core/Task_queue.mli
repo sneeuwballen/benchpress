@@ -12,7 +12,7 @@ module Job : sig
 
   (* TODO: completion, in [0;1]
      val completion : t -> float
-     *)
+  *)
 end
 
 type t

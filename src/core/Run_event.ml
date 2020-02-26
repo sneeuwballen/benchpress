@@ -45,7 +45,7 @@ let db_prepare (db:Db.t) : unit or_error =
         file text not null,
         res text not null,
         file_expect text not null,
-        timeout int, 
+        timeout int,
         errcode int not null,
         stdout blob,
         stderr blob,
@@ -65,17 +65,17 @@ let to_db_prover_result (db:Db.t) (self:Prover.name Run_result.t) : _ or_error =
     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     |}
     ~ty:Db.Ty.(p4 text text text text @>> p2 int int @>> p2 blob blob @>> p3 float float float)
-        self.program
-        self.problem.Problem.name
-        (self.res |> Res.to_string)
-        (self.problem.Problem.expected |> Res.to_string)
-        self.timeout
-        self.raw.errcode
-        self.raw.stdout
-        self.raw.stderr
-        self.raw.rtime
-        self.raw.utime
-        self.raw.stime
+    self.program
+    self.problem.Problem.name
+    (self.res |> Res.to_string)
+    (self.problem.Problem.expected |> Res.to_string)
+    self.timeout
+    self.raw.errcode
+    self.raw.stdout
+    self.raw.stderr
+    self.raw.rtime
+    self.raw.utime
+    self.raw.stime
   |> Misc.db_err ~ctx:"run-event.to-db-prover-result"
 
 let to_db db self : _ or_error =
@@ -94,12 +94,12 @@ let of_db_map db ~f : _ list or_error =
     ~ty:Db.Ty.(
         p4 text text text text @>> p2 int int @>> p2 blob blob @>> p3 float float float,
         (fun pname pb_name res expected timeout errcode stdout stderr rtime utime stime ->
-           let pb = 
+           let pb =
              {Problem.name=pb_name; expected=Res.of_string expected}
            in
            let p =
              Run_result.make pname pb ~timeout ~res:(Res.of_string res)
-             {errcode;stderr;stdout;rtime;utime;stime}
+               {errcode;stderr;stdout;rtime;utime;stime}
            in
            f p))
     ~f:Db.Cursor.to_list_rev

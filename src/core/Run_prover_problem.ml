@@ -14,15 +14,15 @@ let run_exn_ ~timeout ~memory prover pb =
         prover.Prover.name pb.Problem.name timeout);
   (* spawn process *)
   let raw = Prover.run ~timeout ~memory ~file:pb.Problem.name prover in
-  let result = 
+  let result =
     Run_result.make_from_prover prover ~timeout pb raw
   in
   Logs.debug
     (fun k->
        let open Proc_run_result in
        k "output for %s/%s: `%s`, `%s`, errcode %d"
-        prover.Prover.binary pb.Problem.name
-        raw.stdout raw.stderr raw.errcode);
+         prover.Prover.binary pb.Problem.name
+         raw.stdout raw.stderr raw.errcode);
   result
 
 let run ~timeout ~memory prover pb : _ E.t =
@@ -44,8 +44,8 @@ let pp_result ~w_prover ~w_pb out (res:Test.result): unit =
   let prover_name = Filename.basename prover in
   let pb_name = res.problem.Problem.name in
   Logs.info (fun k->k "result for `%s` with %s: %s (%.1fs)"
-      prover_name pb_name (Res.to_string res.res) res.raw.rtime);
-  Fmt.fprintf out 
+                prover_name pb_name (Res.to_string res.res) res.raw.rtime);
+  Fmt.fprintf out
     "%-*s%-*s : %a (%.1fs)@."
     w_prover (Misc.truncate_right w_prover prover_name)
     w_pb (Misc.truncate_left w_pb pb_name)

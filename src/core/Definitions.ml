@@ -77,10 +77,10 @@ let build_from_config config pname : Prover.t or_error =
     begin
       (prover_tbl |>> string "binary")
       <|>
-        ( let b, _ = CCString.Split.left_exn ~by:" " cmd in
-          if b = "$binary" then
-            fail ("please provide $binary value for prover " ^ pname)
-          else pure b)
+      ( let b, _ = CCString.Split.left_exn ~by:" " cmd in
+        if b = "$binary" then
+          fail ("please provide $binary value for prover " ^ pname)
+        else pure b)
     end >>= fun binary ->
     (prover_tbl |>> string_list "binary_deps" <|> pure [])
     >>= fun binary_deps ->
@@ -246,9 +246,9 @@ let add_stanza (st:Stanza.t) self : t or_error =
   | St_set_options {progress; j} ->
     let open CCOpt.Infix in
     Ok {self with
-     option_j = j <+> self.option_j;
-     option_progress = progress <+> self.option_progress;
-    }
+        option_j = j <+> self.option_j;
+        option_progress = progress <+> self.option_progress;
+       }
 
 let add_stanza_l (l:Stanza.t list) self : t or_error =
   E.fold_l (fun self st -> add_stanza st self) self l

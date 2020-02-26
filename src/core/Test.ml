@@ -83,39 +83,39 @@ module Stat = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading stat(%s) from DB: %s" prover)
       (fun scope ->
-        let f c = Db.Cursor.next c |> CCOpt.to_result "no result" |> scope.unwrap in
-        let get_res r =
-          Logs.debug (fun k->k "get-res %s" r);
-          Db.exec db
-            {| select count(*) from prover_res where prover=? and res=?; |}
-            prover r ~ty:Db.Ty.(p2 text text, p1 (nullable int), CCOpt.get_or ~default:0) ~f
-          |> scope.unwrap_with Db.Rc.to_string
-        in
-        let sat = get_res "sat" in
-        let unsat = get_res "unsat" in
-        let unknown = get_res "unknown" in
-        let timeout = get_res "timeout" in
-        let memory = get_res "memory" in
-        let errors = get_res "error" in
-        let total = sat+unsat+unknown+timeout+memory+errors in
-        let total_time =
-          Db.exec db {|
+         let f c = Db.Cursor.next c |> CCOpt.to_result "no result" |> scope.unwrap in
+         let get_res r =
+           Logs.debug (fun k->k "get-res %s" r);
+           Db.exec db
+             {| select count(*) from prover_res where prover=? and res=?; |}
+             prover r ~ty:Db.Ty.(p2 text text, p1 (nullable int), CCOpt.get_or ~default:0) ~f
+           |> scope.unwrap_with Db.Rc.to_string
+         in
+         let sat = get_res "sat" in
+         let unsat = get_res "unsat" in
+         let unknown = get_res "unknown" in
+         let timeout = get_res "timeout" in
+         let memory = get_res "memory" in
+         let errors = get_res "error" in
+         let total = sat+unsat+unknown+timeout+memory+errors in
+         let total_time =
+           Db.exec db {|
           select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
             |} prover
-            ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.) ~f
-          |> scope.unwrap_with Db.Rc.to_string
-        in
-        { sat; unsat; timeout; memory; unknown; errors; total; total_time; }
+             ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.) ~f
+           |> scope.unwrap_with Db.Rc.to_string
+         in
+         { sat; unsat; timeout; memory; unknown; errors; total; total_time; }
       )
 
   let of_db (db:Db.t) : (Prover.name * t) list or_error =
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading stats from DB: %s")
       (fun scope ->
-        let provers = list_provers db |> scope.unwrap in
-        List.map
-          (fun p -> p, of_db_for db ~prover:p |> scope.unwrap)
-          provers)
+         let provers = list_provers db |> scope.unwrap in
+         List.map
+           (fun p -> p, of_db_for db ~prover:p |> scope.unwrap)
+           provers)
 
   let pp out (s:t) : unit =
     fpf out
@@ -172,69 +172,69 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading analyze(%s) from DB: %s" prover)
       (fun scope ->
-        let get1_int ~ctx q ~ty p =
-          Db.exec db q ~ty p
-            ~f:(fun c ->
-                Db.Cursor.next c
-                |> CCOpt.to_result ("expected a result in "^ctx)
-                |> scope.unwrap)
-          |> scope.unwrap_with Db.Rc.to_string
-        in
-        let ok =
-          get1_int ~ctx:"get ok results"
-            ~ty:Db.Ty.(p1 text, p1 int, id)
-            {| select count(*) from prover_res where prover=?
+         let get1_int ~ctx q ~ty p =
+           Db.exec db q ~ty p
+             ~f:(fun c ->
+                 Db.Cursor.next c
+                 |> CCOpt.to_result ("expected a result in "^ctx)
+                 |> scope.unwrap)
+           |> scope.unwrap_with Db.Rc.to_string
+         in
+         let ok =
+           get1_int ~ctx:"get ok results"
+             ~ty:Db.Ty.(p1 text, p1 int, id)
+             {| select count(*) from prover_res where prover=?
                 and res=file_expect and file_expect in ('sat','unsat'); |}
-            prover
-        and disappoint =
-          get1_int ~ctx:"get disappoint results"
-            ~ty:Db.Ty.(p1 text, p1 int, id)
-            {| select count(*) from prover_res where prover=?
+             prover
+         and disappoint =
+           get1_int ~ctx:"get disappoint results"
+             ~ty:Db.Ty.(p1 text, p1 int, id)
+             {| select count(*) from prover_res where prover=?
                 and not (res in ('sat','unsat'))
                 and file_expect in ('sat','unsat'); |}
-            prover
-        and improved =
-          get1_int ~ctx:"get improved results"
-            ~ty:Db.Ty.(p1 text, p1 int, id)
-            {| select count(*) from prover_res where prover=?
+             prover
+         and improved =
+           get1_int ~ctx:"get improved results"
+             ~ty:Db.Ty.(p1 text, p1 int, id)
+             {| select count(*) from prover_res where prover=?
                 and res in ('sat','unsat')
                 and not (file_expect in ('sat','unsat')); |}
-            prover
-        and total =
-          get1_int ~ctx:"get total results"
-            ~ty:Db.Ty.(p1 text, p1 int, id)
-            {| select count(*) from prover_res where prover=?;|} prover
-        and bad =
-          get1_int ~ctx:"get bad results"
-            ~ty:Db.Ty.(p1 text, p1 int, id)
-            {| select count(*) from prover_res where prover=?
+             prover
+         and total =
+           get1_int ~ctx:"get total results"
+             ~ty:Db.Ty.(p1 text, p1 int, id)
+             {| select count(*) from prover_res where prover=?;|} prover
+         and bad =
+           get1_int ~ctx:"get bad results"
+             ~ty:Db.Ty.(p1 text, p1 int, id)
+             {| select count(*) from prover_res where prover=?
                 and res in ('sat','unsat')
                 and res != file_expect
                 and file_expect in ('sat','unsat'); |}
-            prover
-        and bad_full =
-          Db.exec db
-            {| select file, res, file_expect, rtime from prover_res
+             prover
+         and bad_full =
+           Db.exec db
+             {| select file, res, file_expect, rtime from prover_res
               where prover=? and res != file_expect and res in ('sat','unsat')
               and file_expect in ('sat','unsat'); |}
-            prover
-            ~ty:Db.Ty.(p1 text, p4 text text text float,
-                       (fun file res expected t ->
-                          Problem.make file (Res.of_string expected), Res.of_string res, t))
-            ~f:Db.Cursor.to_list_rev
-          |> scope.unwrap_with Db.Rc.to_string
-        and errors_full =
-          Db.exec db
-            ~ty:Db.Ty.(p1 text, p4 text text text float,
-                       (fun file res expected t ->
-                          Problem.make file (Res.of_string expected), Res.of_string res, t))
-            {| select file, res, file_expect, rtime from prover_res where prover=?
+             prover
+             ~ty:Db.Ty.(p1 text, p4 text text text float,
+                        (fun file res expected t ->
+                           Problem.make file (Res.of_string expected), Res.of_string res, t))
+             ~f:Db.Cursor.to_list_rev
+           |> scope.unwrap_with Db.Rc.to_string
+         and errors_full =
+           Db.exec db
+             ~ty:Db.Ty.(p1 text, p4 text text text float,
+                        (fun file res expected t ->
+                           Problem.make file (Res.of_string expected), Res.of_string res, t))
+             {| select file, res, file_expect, rtime from prover_res where prover=?
                 and res in ('error') ; |}
-            prover ~f:Db.Cursor.to_list_rev
-          |> scope.unwrap_with Db.Rc.to_string
-        in
-        let errors = List.length errors_full in
-        { ok; disappoint; improved; bad; bad_full; errors; errors_full; total; })
+             prover ~f:Db.Cursor.to_list_rev
+           |> scope.unwrap_with Db.Rc.to_string
+         in
+         let errors = List.length errors_full in
+         { ok; disappoint; improved; bad; bad_full; errors; errors_full; total; })
 
   (* TODO: create a function for "better"
         Sqlite3.create_fun2
@@ -244,8 +244,8 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
-        let provers = list_provers db |> scope.unwrap in
-        List.map (fun p -> p, of_db_for db ~prover:p |> scope.unwrap) provers)
+         let provers = list_provers db |> scope.unwrap in
+         List.map (fun p -> p, of_db_for db ~prover:p |> scope.unwrap) provers)
 
   (* build statistics and list of mismatch from raw results *)
 
@@ -273,7 +273,7 @@ end = struct
     if r.bad <> 0 then (
       let l =
         List.map
-          (fun (pb, res, t) -> 
+          (fun (pb, res, t) ->
              [ text pb.Problem.name;
                text (Res.to_string res);
                text (Res.to_string pb.Problem.expected);
@@ -298,7 +298,7 @@ end = struct
     if r.errors <> 0 then (
       let l =
         List.map
-          (fun (pb, res, t) -> 
+          (fun (pb, res, t) ->
              [ text pb.Problem.name;
                text (Res.to_string res);
                text (Res.to_string pb.Problem.expected);
@@ -408,8 +408,8 @@ end = struct
   let to_printbox_l l = List.map (fun (p1,p2,r) -> p1, p2, to_printbox p1 p2 r) l
 
   (* TODO: grid display (-> to array, then by index + reverse when i<j?)
-  let to_printbox_grid l : PB.t =
-     *)
+     let to_printbox_grid l : PB.t =
+  *)
 end
 
 type metadata = {
@@ -463,15 +463,15 @@ module Metadata = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading metadata: %s")
       (fun scope ->
-        let timestamp = get_meta db "timestamp" |> scope.unwrap in
-        let total_wall_time = get_meta db "total-wall-time" |> scope.unwrap in
-        let timestamp = CCOpt.map float_of_string timestamp in
-        let uuid = get_meta db "uuid" |> scope.unwrap
-                   |> CCOpt.flat_map Uuidm.of_string
-                   |> CCOpt.to_result "no uuid found in DB"
-                   |> scope.unwrap in
-        let total_wall_time = CCOpt.map float_of_string total_wall_time in
-        { timestamp; total_wall_time; uuid; })
+         let timestamp = get_meta db "timestamp" |> scope.unwrap in
+         let total_wall_time = get_meta db "total-wall-time" |> scope.unwrap in
+         let timestamp = CCOpt.map float_of_string timestamp in
+         let uuid = get_meta db "uuid" |> scope.unwrap
+                    |> CCOpt.flat_map Uuidm.of_string
+                    |> CCOpt.to_result "no uuid found in DB"
+                    |> scope.unwrap in
+         let total_wall_time = CCOpt.map float_of_string total_wall_time in
+         { timestamp; total_wall_time; uuid; })
 end
 
 (** {2 Lightweight Results} *)
@@ -520,18 +520,18 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while plotting DB: %s")
       (fun scope ->
-        let provers = list_provers db |> scope.unwrap in
-        Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
-        let get_prover prover =
-          Db.exec db
-            {| select rtime from prover_res
+         let provers = list_provers db |> scope.unwrap in
+         Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
+         let get_prover prover =
+           Db.exec db
+             {| select rtime from prover_res
               where prover=? and res in ('sat','unsat')
               order by rtime|} prover
-            ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
-          |> scope.unwrap_with Db.Rc.to_string
-        in
-        let lines = List.map (fun p -> p, get_prover p) provers in
-        { lines }
+             ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
+           |> scope.unwrap_with Db.Rc.to_string
+         in
+         let lines = List.map (fun p -> p, get_prover p) provers in
+         { lines }
       )
 
   let of_file file : t or_error =
@@ -539,24 +539,24 @@ end = struct
       Db.with_db ~timeout:500 ~mode:`READONLY file of_db
     with e -> E.of_exn_trace e
 
-  let to_gp ~output self = 
+  let to_gp ~output self =
     Gp.with_ (fun gp ->
-      let series = self.lines
-        |> List.map
-          (fun (prover,l) ->
-             let l =
-               let sum = ref 0. in
-               List.mapi
-                 (fun i rtime ->
-                    sum := !sum +. rtime;
-                    (float i, !sum))
-                 l
-             in
-             Gp.Series.linespoints_xy ~title:prover l)
-      in
-      Gp.plot_many
-        ~labels:(Gp.Labels.create ~y:"time (s)" ~x:"problems solved (accumulated)" ())
-        ~title:"problems solved as function of time" gp series ~output);
+        let series = self.lines
+                     |> List.map
+                       (fun (prover,l) ->
+                          let l =
+                            let sum = ref 0. in
+                            List.mapi
+                              (fun i rtime ->
+                                 sum := !sum +. rtime;
+                                 (float i, !sum))
+                              l
+                          in
+                          Gp.Series.linespoints_xy ~title:prover l)
+        in
+        Gp.plot_many
+          ~labels:(Gp.Labels.create ~y:"time (s)" ~x:"problems solved (accumulated)" ())
+          ~title:"problems solved as function of time" gp series ~output);
     ()
 
   let show (self:t) =
@@ -588,7 +588,7 @@ type top_result = {
   db: Db.t; (* in-memory database *)
 }
 
-module Top_result : sig 
+module Top_result : sig
   type t = top_result
 
   val pp : t Fmt.printer
@@ -625,18 +625,18 @@ module Top_result : sig
 
   val to_compact_result : t -> compact_result or_error
 
-  (* TODO: move to another file 
-  type comparison_result = {
-    both: ResultsComparison.t MStr.t;
-    left: Analyze.t MStr.t;
-    right: Analyze.t MStr.t;
-  }
+  (* TODO: move to another file
+     type comparison_result = {
+     both: ResultsComparison.t MStr.t;
+     left: Analyze.t MStr.t;
+     right: Analyze.t MStr.t;
+     }
 
-  val compare : t -> t -> comparison_result
+     val compare : t -> t -> comparison_result
 
-  val pp_comparison : comparison_result Fmt.printer
-  val comparison_to_printbox : ?short:bool -> comparison_result -> PrintBox.t
-     *)
+     val pp_comparison : comparison_result Fmt.printer
+     val comparison_to_printbox : ?short:bool -> comparison_result -> PrintBox.t
+  *)
 
   type table_row = {
     tr_problem: string;
@@ -738,30 +738,30 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while converting to CSV table: %s")
       (fun scope ->
-        let provers = list_provers self.db |> scope.unwrap in
-        let files = Db.exec_no_params self.db
-            {| select distinct file from prover_res; |}
-            ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
-          |> scope.unwrap_with Db.Rc.to_string
-        in
-        let t_rows =
-          List.rev_map
-            (fun file ->
-               let tr_res =
-                 Db.exec self.db
-                   {| select prover, res, rtime from
+         let provers = list_provers self.db |> scope.unwrap in
+         let files = Db.exec_no_params self.db
+             {| select distinct file from prover_res; |}
+             ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
+                     |> scope.unwrap_with Db.Rc.to_string
+         in
+         let t_rows =
+           List.rev_map
+             (fun file ->
+                let tr_res =
+                  Db.exec self.db
+                    {| select prover, res, rtime from
                    prover_res where file=? order by prover ; |}
-                   file
-                   ~ty:Db.Ty.(p1 text, p3 text text float,
-                              fun prover res t ->
-                                prover, Res.of_string res, t)
-                   ~f:Db.Cursor.to_list_rev
-                 |> scope.unwrap_with Db.Rc.to_string
-               in
-               {tr_problem=file; tr_res})
-            files
-        in
-        {t_meta=line0; t_provers=provers; t_rows}
+                    file
+                    ~ty:Db.Ty.(p1 text, p3 text text float,
+                               fun prover res t ->
+                                 prover, Res.of_string res, t)
+                    ~f:Db.Cursor.to_list_rev
+                  |> scope.unwrap_with Db.Rc.to_string
+                in
+                {tr_problem=file; tr_res})
+             files
+         in
+         {t_meta=line0; t_provers=provers; t_rows}
       )
     |> (function
         | Ok x -> x
@@ -780,8 +780,8 @@ end = struct
   let table_to_csv (t:table): Csv.t =
     let header_line =
       "problem" ::
-        t.t_provers @
-        (List.map (fun p -> p ^ ".time") t.t_provers)
+      t.t_provers @
+      (List.map (fun p -> p ^ ".time") t.t_provers)
     in
     let lines =
       List.map
@@ -800,8 +800,8 @@ end = struct
     let header_line =
       List.map PB.(text_with_style Style.bold) @@
       "problem" ::
-        self.t_provers @
-        (List.map (fun p -> p ^ ".time") self.t_provers)
+      self.t_provers @
+      (List.map (fun p -> p ^ ".time") self.t_provers)
     in
     let lines =
       List.map
@@ -837,16 +837,16 @@ end = struct
       a
 
   (* TODO
-  let comparison_to_printbox ?(short=true) (self:comparison_result) : PB.t =
-    let open PB in
-    let pm side m =
+     let comparison_to_printbox ?(short=true) (self:comparison_result) : PB.t =
+     let open PB in
+     let pm side m =
       MStr.to_list m
       |> List.map
         (fun (p,c) ->
            [text_with_style Style.bold (p ^ " ("^side^")");
             Analyze.to_printbox c])
-    in
-    grid_l @@ List.flatten [
+     in
+     grid_l @@ List.flatten [
       [
         MStr.to_list self.both
         |> List.map
@@ -859,8 +859,8 @@ end = struct
       ];
       pm "left" self.left;
       pm "right" self.right;
-    ]
-     *)
+     ]
+  *)
 
   let to_csv_chan oc t =
     let chan = Csv.to_channel oc in
@@ -892,12 +892,12 @@ end = struct
     Logs.info (fun k->k "dump top-result into DB");
     Misc.err_with ~map_err:(Printf.sprintf "while dumping top-res to DB: %s")
       (fun scope ->
-        scope.unwrap @@ db_prepare db;
-        (* insert within one transaction, much faster *)
-        scope.unwrap @@ Metadata.to_db db self.meta;
-        Db.transact db (fun _ ->
-            List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
-        ())
+         scope.unwrap @@ db_prepare db;
+         (* insert within one transaction, much faster *)
+         scope.unwrap @@ Metadata.to_db db self.meta;
+         Db.transact db (fun _ ->
+             List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
+         ())
 
   let to_db_events_ (db:Db.t) (events:Run_event.t list) : unit or_error =
     Misc.err_with (fun scope ->
@@ -913,17 +913,17 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "making top result: %s")
       (fun scope ->
-        let l = List.rev_map Run_event.mk_prover l in
-        (* create a temporary in-memory DB *)
-        let db = Sqlite3.db_open ":memory:" in
-        db_prepare db |> scope.unwrap;
-        to_db_events_ db l |> scope.unwrap;
-        Logs.debug (fun k->k "computing stats");
-        let stats = Stat.of_db db |> scope.unwrap in
-        Logs.debug (fun k->k "computing analyze");
-        let analyze = Analyze.of_db db |> scope.unwrap in
-        Logs.debug (fun k->k "done");
-        { db; events=l; meta; stats; analyze; })
+         let l = List.rev_map Run_event.mk_prover l in
+         (* create a temporary in-memory DB *)
+         let db = Sqlite3.db_open ":memory:" in
+         db_prepare db |> scope.unwrap;
+         to_db_events_ db l |> scope.unwrap;
+         Logs.debug (fun k->k "computing stats");
+         let stats = Stat.of_db db |> scope.unwrap in
+         Logs.debug (fun k->k "computing analyze");
+         let analyze = Analyze.of_db db |> scope.unwrap in
+         Logs.debug (fun k->k "done");
+         { db; events=l; meta; stats; analyze; })
 
   let decode ?uuid:uuid_g () : t J.Decode.t =
     let open J.Decode in
@@ -945,13 +945,13 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
-        Logs.debug (fun k->k "loading metadata from DB");
-        let meta = Metadata.of_db db |> scope.unwrap in
-        Logs.debug (fun k->k "loading events from DB");
-        let events =
-          Run_event.of_db_l db |> scope.unwrap
-        in
-        make ~meta events |> scope.unwrap)
+         Logs.debug (fun k->k "loading metadata from DB");
+         let meta = Metadata.of_db db |> scope.unwrap in
+         Logs.debug (fun k->k "loading events from DB");
+         let events =
+           Run_event.of_db_l db |> scope.unwrap
+         in
+         make ~meta events |> scope.unwrap)
 end
 
 module Detailed_res : sig
@@ -1065,35 +1065,35 @@ end
 (** {2 Benchmark, within one Top Result} *)
 
 (* TODO
-module Bench : sig
-  type per_prover = {
+   module Bench : sig
+   type per_prover = {
     stat: Stat.t;
     sat: (string * float) list;
     unsat: (string * float) list;
-  }
+   }
 
-  type t = {
+   type t = {
     from: top_result;
     per_prover: (Prover.name * per_prover) list;
-  }
+   }
 
-  val make : top_result -> t
+   val make : top_result -> t
 
-  val pp : t Fmt.printer
-  (** Full printer that compares provers against one another *)
-end = struct
-  type per_prover = {
+   val pp : t Fmt.printer
+   (** Full printer that compares provers against one another *)
+   end = struct
+   type per_prover = {
     stat: Stat.t;
     sat: (string * float) list;
     unsat: (string * float) list;
-  }
+   }
 
-  type t = {
+   type t = {
     from: top_result;
     per_prover: (Prover.name * per_prover) list;
-  }
+   }
 
-  let make (r:top_result): t =
+   let make (r:top_result): t =
     let stats = Top_result.stat r in
     let per_prover =
       MStr.map
@@ -1117,7 +1117,7 @@ end = struct
     in
     {from=r; per_prover}
 
-  let pp out (r:t): unit =
+   let pp out (r:t): unit =
     let pp_stat out (p,per_prover) =
       Format.fprintf out "@[<h2>%s:@ %a@]"
         p Stat.pp per_prover.stat
@@ -1128,5 +1128,5 @@ end = struct
     Format.fprintf out "(@[<v2>bench@ @[%a@]@ @[<v>%a@]@])"
       (pp_hvlist_ pp_stat) l
       (pp_hvlist_ pp_full) l
-end
-   *)
+   end
+*)

@@ -24,11 +24,11 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
         (* combine configs *)
         Logs.debug (fun k->k "combine configs…");
         begin match E.(
-          Definitions.of_config y >>= fun defs ->
-          Definitions.add_stanza_l x defs
-        ) with
-          | Ok x -> `Ok x
-          | Error s -> `Error (false, s)
+            Definitions.of_config y >>= fun defs ->
+            Definitions.add_stanza_l x defs
+          ) with
+        | Ok x -> `Ok x
+        | Error s -> `Error (false, s)
         end
       | Error e, _ | _, Error e -> `Error (false, e)
     end

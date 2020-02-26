@@ -21,19 +21,19 @@ module Short : sig
 end
 
 (* TODO
-module Full : sig
-  type t = {
+   module Full : sig
+   type t = {
     appeared: (Problem.t * Res.t) list;  (* new problems *)
     disappeared: (Problem.t * Res.t) list; (* problems that disappeared *)
     improved: (Problem.t * Res.t * Res.t) list;
     regressed: (Problem.t * Res.t * Res.t) list;
     mismatch: (Problem.t * Res.t * Res.t) list;
     same: (Problem.t * Res.t * float * float) list; (* same result *)
-  }
+   }
 
-  val to_printbox : t -> PrintBox.t
-  val to_printbox_l : (Prover.name * t) list -> PrintBox.t
+   val to_printbox : t -> PrintBox.t
+   val to_printbox_l : (Prover.name * t) list -> PrintBox.t
 
-  val make : filename -> filename -> (Prover.name * t) list or_error
-end
-   *)
+   val make : filename -> filename -> (Prover.name * t) list or_error
+   end
+*)

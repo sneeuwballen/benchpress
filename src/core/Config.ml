@@ -193,10 +193,10 @@ let some g: _ option getter = g >|= fun x -> Some x
 let (|>>) (k:table getter) (g:'a getter) : 'a getter =
   {path=k.path @ g.path;
    call=fun ~path tbl ->
-    begin match k.call ~path tbl with
-      | Error _ as e -> e
-      | Ok tbl -> g.call ~path:(path @ k.path) tbl
-    end
+     begin match k.call ~path tbl with
+       | Error _ as e -> e
+       | Ok tbl -> g.call ~path:(path @ k.path) tbl
+     end
   }
 
 let rec table_l l = match l with

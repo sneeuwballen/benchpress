@@ -29,7 +29,7 @@ module Exec_run_provers : sig
     memory: int;
   }
 
-  val expand : 
+  val expand :
     ?j:int ->
     ?timeout:int ->
     ?dyn:bool ->
@@ -46,11 +46,11 @@ module Exec_run_provers : sig
     uuid:Uuidm.t ->
     expanded ->
     (Test.top_result lazy_t * Test.compact_result) or_error
-  (** Run the given prover(s) on the given problem set, obtaining results
-      after all the problems have been dealt with.
-      @param on_solve called whenever a single problem is solved
-      @param on_done called when the whole process is done
-  *)
+    (** Run the given prover(s) on the given problem set, obtaining results
+        after all the problems have been dealt with.
+        @param on_solve called whenever a single problem is solved
+        @param on_done called when the whole process is done
+    *)
 end = struct
   open E.Infix
 
@@ -87,7 +87,7 @@ end = struct
              match kind with
              | `File when filter f -> Some f
              | _ -> None)
-      in 
+      in
       let n_files = List.length files in
       let n_done = ref 0 in
       files
@@ -147,21 +147,21 @@ end = struct
       let db = CCLock.create db in
       Misc.Par_map.map_p ~j:self.j
         (fun (prover,pb) ->
-          if interrupted() then E.fail "interrupted"
-          else (
-            begin
-              Run_prover_problem.run
-                ~timeout:self.timeout ~memory:self.memory
-                prover pb >>= fun result ->
-              (* insert into DB here *)
-              CCLock.with_lock db (fun db ->
-                  Run_event.to_db db (Run_event.mk_prover result))
-              >|= fun () ->
-              on_solve result; (* callback *)
-              result
-            end
-            |> E.add_ctxf "(@[running :prover %a :on %a@])"
-              Prover.pp_name prover Problem.pp pb)
+           if interrupted() then E.fail "interrupted"
+           else (
+             begin
+               Run_prover_problem.run
+                 ~timeout:self.timeout ~memory:self.memory
+                 prover pb >>= fun result ->
+               (* insert into DB here *)
+               CCLock.with_lock db (fun db ->
+                   Run_event.to_db db (Run_event.mk_prover result))
+               >|= fun () ->
+               on_solve result; (* callback *)
+               result
+             end
+             |> E.add_ctxf "(@[running :prover %a :on %a@])"
+               Prover.pp_name prover Problem.pp pb)
         )
         jobs
       |> E.flatten_l
@@ -253,14 +253,14 @@ let dump_results_sqlite (results:T.top_result) : unit =
   Logs.app (fun k->k "write results into sqlite DB `%s`" dump_file);
   (try
      match Db.with_db ~timeout:500 dump_file
-       (fun db -> Test.Top_result.to_db db results)
+             (fun db -> Test.Top_result.to_db db results)
      with
      | Ok () -> ()
      | Error e ->
        Logs.err (fun k->k"error when saving to %s:@ %s" dump_file e);
    with e ->
      Logs.err (fun k->k"error when saving to %s:@ %s"
-       dump_file (Printexc.to_string e));
+                  dump_file (Printexc.to_string e));
      exit 1
   );
   ()
@@ -291,15 +291,15 @@ module Git_checkout = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while running action git-checkout: %s")
       (fun scope ->
-        let {Action.dir; ref; fetch_first} = self in
-        begin match fetch_first with
-          | Some Git_fetch -> run_cmd "git fetch" |> scope.unwrap
-          | Some Git_pull -> run_cmd "git pull --ff-only" |> scope.unwrap
-          | _ -> ()
-        end;
-        with_chdir dir
-          (fun () -> run_cmd ("git checkout " ^ ref))
-        |> scope.unwrap)
+         let {Action.dir; ref; fetch_first} = self in
+         begin match fetch_first with
+           | Some Git_fetch -> run_cmd "git fetch" |> scope.unwrap
+           | Some Git_pull -> run_cmd "git pull --ff-only" |> scope.unwrap
+           | _ -> ()
+         end;
+         with_chdir dir
+           (fun () -> run_cmd ("git checkout " ^ ref))
+         |> scope.unwrap)
 end
 
 (** Run the given action *)
@@ -307,37 +307,37 @@ let rec run ?interrupted (defs:Definitions.t) (a:Action.t) : unit or_error =
   Misc.err_with
     ~map_err:(fun e -> Printf.sprintf "while running action: %s" e)
     (fun scope ->
-      begin match a with
-        | Action.Act_run_provers r ->
-          let is_dyn = CCOpt.get_or ~default:false @@ Definitions.option_progress defs in
-          let r_expanded =
-            Exec_run_provers.expand ?interrupted ~dyn:is_dyn
-              ?j:(Definitions.option_j defs) r
-            |> scope.unwrap
-          in
-          let on_solve =
-            if is_dyn then Progress_run_provers.make ~dyn:true r_expanded
-            else Progress_run_provers.nil
-          in
-          let uuid = Misc.mk_uuid () in
-          let res =
-            Exec_run_provers.run ?interrupted ~on_solve
-              ~timestamp:(Unix.gettimeofday()) ~uuid r_expanded
-            |> scope.unwrap
-          in
-          Format.printf "task done: %a@." Test.Compact_result.pp res;
-          ()
-        | Action.Act_progn l ->
-          List.iter (fun a -> run ?interrupted defs a |> scope.unwrap) l
-        | Action.Act_git_checkout git ->
-          Git_checkout.run git |> scope.unwrap
-        | Action.Act_run_cmd s ->
-          (try
-             let c = Sys.command s in
-             if c=0 then Ok ()
-             else Error (Printf.sprintf "command %S returned with error code %d" s c)
-           with e ->
-             E.of_exn_trace e) |> scope.unwrap
-      end
+       begin match a with
+         | Action.Act_run_provers r ->
+           let is_dyn = CCOpt.get_or ~default:false @@ Definitions.option_progress defs in
+           let r_expanded =
+             Exec_run_provers.expand ?interrupted ~dyn:is_dyn
+               ?j:(Definitions.option_j defs) r
+             |> scope.unwrap
+           in
+           let on_solve =
+             if is_dyn then Progress_run_provers.make ~dyn:true r_expanded
+             else Progress_run_provers.nil
+           in
+           let uuid = Misc.mk_uuid () in
+           let res =
+             Exec_run_provers.run ?interrupted ~on_solve
+               ~timestamp:(Unix.gettimeofday()) ~uuid r_expanded
+             |> scope.unwrap
+           in
+           Format.printf "task done: %a@." Test.Compact_result.pp res;
+           ()
+         | Action.Act_progn l ->
+           List.iter (fun a -> run ?interrupted defs a |> scope.unwrap) l
+         | Action.Act_git_checkout git ->
+           Git_checkout.run git |> scope.unwrap
+         | Action.Act_run_cmd s ->
+           (try
+              let c = Sys.command s in
+              if c=0 then Ok ()
+              else Error (Printf.sprintf "command %S returned with error code %d" s c)
+            with e ->
+              E.of_exn_trace e) |> scope.unwrap
+       end
     )
 

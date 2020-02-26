@@ -38,10 +38,10 @@ module Short = struct
       ~map_err:(Printf.sprintf "while comparing.short %S and %S: %s" f1 f2)
       (fun scope ->
          let db = Sqlite3.db_open ":memory:" in
-         Db.exec_no_cursor db "attach database ? as db1;" 
+         Db.exec_no_cursor db "attach database ? as db1;"
            ~ty:Db.Ty.(p1 text) f1
          |> scope.unwrap_with Db.Rc.to_string;
-         Db.exec_no_cursor db "attach database ? as db2;" 
+         Db.exec_no_cursor db "attach database ? as db2;"
            ~ty:Db.Ty.(p1 text) f2
          |> scope.unwrap_with Db.Rc.to_string;
          let provers =
@@ -54,28 +54,28 @@ module Short = struct
          Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
          List.map
            (fun prover ->
-             let get_n q = 
+              let get_n q =
                 Db.exec db q prover
                   ~ty:Db.Ty.(p1 text, p1 int, fun x->x)
                   ~f:(fun c -> scope.unwrap @@
                        match Db.Cursor.next c with
                        | None -> E.fail "expected result" | Some x -> Ok x)
                 |> scope.unwrap_with Db.Rc.to_string
-             in
-             let appeared = get_n
-                 {| select count(r2.file) from db2.prover_res r2
+              in
+              let appeared = get_n
+                  {| select count(r2.file) from db2.prover_res r2
                    where r2.prover = ?
                     and not exists (select file from db1.prover_res where
                     db1.prover_res.prover=r2.prover
                     and file = r2.file); |}
-             and disappeared = get_n
-                 {| select count(r1.file) from db1.prover_res r1
+              and disappeared = get_n
+                  {| select count(r1.file) from db1.prover_res r1
                    where r1.prover = ?
                     and not exists (select file from db2.prover_res where
                     db2.prover_res.prover=r1.prover
                     and file = r1.file); |}
-             and same = get_n
-                 {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
+              and same = get_n
+                  {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
                    where
                       r1.prover = ? and r1.prover = r2.prover
                       and r1.file = r2.file
@@ -84,47 +84,47 @@ module Short = struct
                          or
                          (not (r1.res in ('sat','unsat')) and not (r2.res in ('sat','unsat')))
                       ) ; |}
-             and mismatch = get_n
-                 {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
+              and mismatch = get_n
+                  {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
                    where
                       (r1.res in ('sat', 'unsat') or r2.res in ('sat', 'unsat'))
                       and r1.prover = ? and r1.prover = r2.prover
                       and r1.file = r2.file and r1.res != r2.res; |}
-             and improved = get_n
-                 {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
+              and improved = get_n
+                  {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
                    where not (r1.res in ('sat', 'unsat'))
                       and r2.res in ('sat', 'unsat')
                       and r1.prover = ? and r1.prover = r2.prover
                       and r1.file = r2.file ; |}
-             and regressed = get_n
-                 {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
+              and regressed = get_n
+                  {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
                    where r1.res in ('sat', 'unsat')
                       and not (r2.res in ('sat', 'unsat'))
                       and r1.prover = ? and r1.prover = r2.prover
                       and r1.file = r2.file ; |}
-             in
-             let c = { appeared; disappeared; same; mismatch; improved; regressed } in
-             prover, c)
+              in
+              let c = { appeared; disappeared; same; mismatch; improved; regressed } in
+              prover, c)
            provers
       )
 end
 
 (* TODO
-module Full = struct
-  type t = {
+   module Full = struct
+   type t = {
     appeared: (Problem.t * Res.t) list;  (* new problems *)
     disappeared: (Problem.t * Res.t) list; (* problems that disappeared *)
     improved: (Problem.t * Res.t * Res.t) list;
     regressed: (Problem.t * Res.t * Res.t) list;
     mismatch: (Problem.t * Res.t * Res.t) list;
     same: (Problem.t * Res.t * float * float) list; (* same result *)
-  }
+   }
 
-  val to_printbox : t -> PrintBox.t
-  val to_printbox_l : (Prover.name * t) list -> PrintBox.t
+   val to_printbox : t -> PrintBox.t
+   val to_printbox_l : (Prover.name * t) list -> PrintBox.t
 
-  val make : filename -> filename -> (Prover.name * t) list or_error
-end
+   val make : filename -> filename -> (Prover.name * t) list or_error
+   end
 *)
 
 (*

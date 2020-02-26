@@ -54,8 +54,8 @@ module Log_report = struct
         k ()
       in
       msgf (fun ?header ?tags:_ fmt ->
-        let ppf = if level = App then app else dst in
-        Format.kfprintf k ppf ("%a@[" ^^ fmt ^^ "@]@.") pp_header (src, level, header))
+          let ppf = if level = App then app else dst in
+          Format.kfprintf k ppf ("%a@[" ^^ fmt ^^ "@]@.") pp_header (src, level, header))
     in
     { Logs.report = report }
 end
@@ -136,7 +136,7 @@ let truncate_left (n:int) (s:string) : string =
   if String.length s > n then "…" ^ String.sub s (String.length s-n+1) (n-1) else s
 let truncate_right (n:int) (s:string) : string =
   if String.length s > n then String.sub s 0 (n-1) ^ "…" else s
-      
+
 let get_cmd_out cmd =
   Logs.debug (fun k->k "get-cmd-out %S" cmd);
   CCUnix.with_process_in cmd
@@ -169,10 +169,10 @@ let err_with ?(map_err=fun e -> e) f : (_,string) result =
   try
     let res = f scope in
     Ok res
-      with
-      | E.Local e -> Error (map_err e)
-      | Db.Type_error d ->
-        Error (map_err @@ Printf.sprintf "db type error on %s" (Db.Data.to_string_debug d))
+  with
+  | E.Local e -> Error (map_err e)
+  | Db.Type_error d ->
+    Error (map_err @@ Printf.sprintf "db type error on %s" (Db.Data.to_string_debug d))
 
 (** Turn the DB error into a normal string error *)
 let db_err ~ctx (x:(_,Db.Rc.t) result) : _ result =
