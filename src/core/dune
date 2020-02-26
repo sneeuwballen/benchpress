@@ -1,6 +1,7 @@
 (library
  (name benchpress)
  (public_name benchpress)
+ (modes native)
  (synopsis "Benchpress core library, with all the data structures and functions")
  (wrapped true)
  (libraries containers containers.unix containers.thread containers.sexp re
