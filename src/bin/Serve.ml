@@ -491,16 +491,21 @@ let handle_root (self:t) : unit =
         mk_page ~title:"benchpress"
           [
               ul ~a:[a_class ["list-group"]] @@ List.flatten [
-                [li [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
-                 li [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+                [li ~a:[a_class ["list-group-item"]]
+                   [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
+                 li ~a:[a_class ["list-group-item"]]
+                   [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
                 (match Task_queue.cur_job self.task_q with
                  | None -> []
                  | Some j ->
                    (* display current job *)
-                   [li [txt @@
+                   [li ~a:[a_class ["list-group-item"]] [txt @@
                         Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)];
-                    li
-                      [pre [txt @@
+                    li ~a:[a_class ["list-group-item"]] [
+                      (* FIXME
+                      div ~a:[a_class ["spinner-border"]] [span [txt "running..."]];
+                         *)
+                      pre [txt @@
                              Format.asprintf "current task: %a" Task_queue.Job.pp j];
                         form ~a:[a_id (uri_of_string "cancel");
                             a_action (uri_of_string "/interrupt/");
