@@ -19,7 +19,8 @@ module Html = struct
   let b_style =
     link ~rel:[`Stylesheet]
       ~href:"https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
-      ~a:[Unsafe.string_attrib "integrity" "sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh"]
+      (* TODO *)
+(*       ~a:[Unsafe.string_attrib "integrity" "sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh"; *)
   (*           ~a:[a_crossorigin `Anonymous] *)
       ()
 
@@ -408,7 +409,7 @@ let handle_root (self:t) : unit =
         let open Html in
         mk_page ~title:"benchpress"
           [
-              ul @@ List.flatten [
+              ul ~a:[a_class ["list-group"]] @@ List.flatten [
                 [li [a ~a:[a_href "/provers/"] [txt "provers"]];
                  li [a ~a:[a_href "/tasks/"] [txt "tasks"]]];
                 (match Task_queue.cur_job self.task_q with
@@ -436,11 +437,11 @@ let handle_root (self:t) : unit =
                      let href =
                        Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
                      in
-                     li [
-                       a ~a:[a_href href] [txt s];
-                       txt (Printf.sprintf "(%s)" (Misc.human_size size));
+                     li ~a:[a_class ["list-group-item"]] [div ~a:[a_class ["row"]] [
+                       a ~a:[a_class ["col-md-auto"]; a_href href] [txt s];
+                       div ~a:[a_class ["col"]] [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
                        input ~a:[a_input_type `Checkbox; a_name s] ()
-                     ])
+                     ]])
                   entries
               in
               form ~a:[a_id (uri_of_string "compare");
@@ -449,7 +450,7 @@ let handle_root (self:t) : unit =
                    [txt "compare selected"];
                  button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-danger"]; a_formaction "/delete/"]
                    [txt "delete selected"];
-                 ul l];
+                 ul ~a:[a_class ["list-group"]] l];
             ]
       in
       H.Response.make_string (Ok (Html.to_string h))
