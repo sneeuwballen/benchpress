@@ -14,25 +14,105 @@ type t = {
   data_dir: string;
 }
 
+(** {1 printbox -> html} *)
+module PB_html : sig
+  open Tyxml
+  type 'a html = 'a Html.elt
+  val style : [>`Style] html
+  val to_html : PrintBox.t -> [`Div] html
+end = struct
+  open Tyxml
+
+  module B = PrintBox
+  module H = Html
+
+  type 'a html = 'a Html.elt
+
+  let style =
+    let l = [
+      "table.framed { border: 2px solid black; }";
+      "table.framed th, table.framed td { border: 1px solid black; }";
+      "th, td { padding: 3px; }";
+    ] in
+    H.style (List.map H.txt l)
+
+  let attrs_of_style (s:B.Style.t) : _ list * _ =
+    let open B.Style in
+    let {bold;bg_color;fg_color} = s in
+    let encode_color = function
+      | Red -> "red"
+      | Blue -> "blue"
+      | Green -> "green"
+      | Yellow -> "yellow"
+      | Cyan -> "cyan"
+      | Black -> "black"
+      | Magenta -> "magenta"
+      | White -> "white"
+    in
+    let s =
+      (match bg_color with None -> [] | Some c -> ["background-color", encode_color c]) @
+      (match fg_color with None -> [] | Some c -> ["color", encode_color c])
+    in
+    let a = match s with
+      | [] -> []
+      | s -> [H.a_style @@ String.concat ";" @@ List.map (fun (k,v) -> k ^ ": " ^ v) s] in
+    a, bold
+
+  let rec to_html_rec (b: B.t) : [< Html_types.flow5 > `Div `Ul `Table `P] html =
+    match B.view b with
+    | B.Empty -> H.div []
+    | B.Text {l; style} ->
+      let a, bold = attrs_of_style style in
+      let l = List.map H.txt l in
+      let l = if bold then List.map (fun x->H.b [x]) l else l in
+      H.div ~a l
+    | B.Pad (_, b)
+    | B.Frame b -> to_html_rec b
+    | B.Align {h=`Right;inner=b;v=_} ->
+      H.div ~a:[H.a_class ["align-right"]] [ to_html_rec b ]
+    | B.Align {h=`Center;inner=b;v=_} ->
+      H.div ~a:[H.a_class ["center"]] [ to_html_rec b ]
+    | B.Align {inner=b;_} -> to_html_rec b
+    | B.Grid (bars, a) ->
+      let class_ = match bars with
+        | `Bars -> ["table-bordered"; "framed"]
+        | `None -> ["table-borderless"]
+      in
+      let to_row a =
+        Array.to_list a
+        |> List.map (fun b -> H.td ~a:[H.a_class ["thead"]] [to_html_rec b])
+        |> (fun x -> H.tr x)
+      in
+      let rows =
+        Array.to_list a |> List.map to_row
+      in
+      H.table ~a:[H.a_class ("table" :: (*"table-striped" ::*) "table-hover" :: class_)] rows
+    | B.Tree (_, b, l) ->
+      let l = Array.to_list l in
+      H.div
+        [ to_html_rec b
+        ; H.ul (List.map (fun x -> H.li [to_html_rec x]) l)
+        ]
+
+  let to_html b = H.div [to_html_rec b]
+end
+
 module Html = struct
   include Tyxml_html
-  let b_style =
-    link ~rel:[`Stylesheet]
-      ~href:"https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
-      (* TODO *)
-(*       ~a:[Unsafe.string_attrib "integrity" "sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh"; *)
-  (*           ~a:[a_crossorigin `Anonymous] *)
-      ()
+
+  let b_style = style [txt Css.css]
 
   let mk_page ?meta:(my_meta=[]) ~title:s my_body =
     html
       (head (title @@ txt s)
-         [b_style; PrintBox_html.prelude;
+         [b_style; PB_html.style;
           meta ~a:(a_charset "utf-8" :: my_meta) ()])
       (body [div ~a:[a_class ["container"]] my_body])
 
+  let mk_a ?a:(al=[]) x = a ~a:(a_class ["btn"; "btn-link"] :: al) x
+
   let pb_html pb =
-    div ~a:[a_class ["table"]] [PrintBox_html.to_html pb]
+    div ~a:[a_class ["table"]] [PB_html.to_html pb]
 
   let to_string h = Format.asprintf "@[%a@]@." (pp ()) h
 end
@@ -56,6 +136,7 @@ let handle_show (self:t) : unit =
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
         let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
         let bad = Test.Analyze.to_printbox_bad_l cr.T.cr_analyze in
+        (* TODO: link to actual error *)
         let errors = Test.Analyze.to_printbox_errors_l cr.T.cr_analyze in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
         let cactus_plot =
@@ -72,11 +153,11 @@ let handle_show (self:t) : unit =
           let open Html in
           mk_page ~title:"show" @@
             List.flatten [
-                [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+                [mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  h3 [txt file];
-                 a ~a:[a_href ("/show_detailed/"^U.percent_encode file)] [p [txt "show individual results"]];
-                 a ~a:[a_href ("/show_csv/"^U.percent_encode file)] [p [txt "download as csv"]];
-                 a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
+                 mk_a ~a:[a_href ("/show_detailed/"^U.percent_encode file)] [p [txt "show individual results"]];
+                 mk_a ~a:[a_href ("/show_csv/"^U.percent_encode file)] [p [txt "download as csv"]];
+                 mk_a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
                 ];
                 [div [pb_html box_meta]];
                 (CCList.flat_map
@@ -102,7 +183,7 @@ let handle_show (self:t) : unit =
                    Logs.debug ~src (fun k->k "encode png file of %d bytes" (String.length p));
                    [img
                       ~src:("data:image/png;base64, " ^ Base64.encode_string p)
-                      ~a:[a_style "display:block; width: 80%"]
+                      ~a:[a_class ["img-fluid"]]
                       ~alt:"cactus plot of provers" ()]
                 );
                 (CCList.flat_map
@@ -127,7 +208,7 @@ let handle_show_as_table (self:t) : unit =
           let open Html in
           mk_page ~title:"show full table" @@
             List.flatten [
-                [a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"]];
+                [mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"]];
                 [h3 [txt "full results"];
                  div [pb_html full_table]];
             ]
@@ -146,7 +227,7 @@ let handle_show_detailed (self:t) : unit =
            let open Html in
            mk_page ~title:"detailed results"
              [
-                 a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+                 mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                  h3 [txt "detailed results"];
                  let rows =
                    List.map
@@ -159,7 +240,7 @@ let handle_show_detailed (self:t) : unit =
                         in
                         tr [
                           td [txt prover];
-                          td [a ~a:[a_href url; a_title pb_file]
+                          td [mk_a ~a:[a_href url; a_title pb_file]
                                 [txt @@ Misc.truncate_left 80 pb_file]];
                           td [txt (Res.to_string res)];
                           td [txt (Res.to_string file_expect)];
@@ -198,12 +279,12 @@ let handle_show_single (self:t) : unit =
            let pb, stdout, stderr = Test.Detailed_res.to_printbox r in
            let open Html in
            mk_page ~title:"single result" [
-                 a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-                 a ~a:[
+                 mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+                 mk_a ~a:[
                    a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file)); a_class ["stick"]]
                    [txt "back to detailed results"];
                  h3 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
-                 div [ PrintBox_html.to_html pb];
+                 div [pb_html pb];
                  details (summary [txt "full stdout"]) [pre [txt stdout]];
                  details (summary [txt "full stderr"]) [pre [txt stderr]];
                ]
@@ -279,9 +360,9 @@ let handle_compare server : unit =
           let open Html in
             mk_page ~title:"compare"
               [
-                a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+                mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
                 h3 [txt "comparison"];
-                div [PrintBox_html.to_html box_compare_l];
+                div [pb_html box_compare_l];
                 ]
         in
         H.Response.make_string (Ok (Html.to_string h))
@@ -330,7 +411,7 @@ let handle_provers (self:t) : unit =
         in
         mk_page ~title:"tasks"
           [
-              a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+              mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
               h3 [txt "list of provers"];
               ul l
             ]
@@ -360,7 +441,7 @@ let handle_tasks (self:t) : unit =
         in
         mk_page ~title:"tasks"
           [
-              a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+              mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
               h3 [txt "list of tasks"];
               ul l;
             ]
@@ -410,8 +491,8 @@ let handle_root (self:t) : unit =
         mk_page ~title:"benchpress"
           [
               ul ~a:[a_class ["list-group"]] @@ List.flatten [
-                [li [a ~a:[a_href "/provers/"] [txt "provers"]];
-                 li [a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+                [li [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
+                 li [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
                 (match Task_queue.cur_job self.task_q with
                  | None -> []
                  | Some j ->
@@ -430,6 +511,9 @@ let handle_root (self:t) : unit =
                 )
               ];
               h3 [txt "list of results"];
+              (* TODO: try to read [s] as a sqlite file and make a title
+                 with (list of provers, number of entries,
+                       (common file prefix/sample of files)?) *)
               let l =
                 List.map
                   (fun (s,size) ->
@@ -438,7 +522,7 @@ let handle_root (self:t) : unit =
                        Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
                      in
                      li ~a:[a_class ["list-group-item"]] [div ~a:[a_class ["row"]] [
-                       a ~a:[a_class ["col-md-auto"]; a_href href] [txt s];
+                       mk_a ~a:[a_class ["col-md-auto"]; a_href href] [txt s];
                        div ~a:[a_class ["col"]] [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
                        input ~a:[a_input_type `Checkbox; a_name s] ()
                      ]])
@@ -446,11 +530,12 @@ let handle_root (self:t) : unit =
               in
               form ~a:[a_id (uri_of_string "compare");
                        a_method `Post;]
+                [div ~a:[a_class ["container"]]
                 [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-primary"]; a_formaction "/compare/"]
                    [txt "compare selected"];
                  button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-danger"]; a_formaction "/delete/"]
                    [txt "delete selected"];
-                 ul ~a:[a_class ["list-group"]] l];
+                 ul ~a:[a_class ["list-group"]] l]];
             ]
       in
       H.Response.make_string (Ok (Html.to_string h))
