@@ -94,8 +94,12 @@ end = struct
         [ to_html_rec b
         ; H.ul (List.map (fun x -> H.li [to_html_rec x]) l)
         ]
+    | B.Link {uri; inner} ->
+      H.div [H.a ~a:[H.a_class ["btn-link"]; H.a_href uri] [to_html_rec inner]]
     | _ ->
+      (* catch-all to be more resilient to newer versions of printbox *)
       H.div [H.pre [H.txt @@ PrintBox_text.to_string b]] (* remaining cases *)
+      [@@warning "-11"]
 
   let to_html b = H.div [to_html_rec b]
 end
@@ -140,6 +144,15 @@ let html_redirect (s:string) =
     ~title:s
     [txt s]
 
+let link_show db_file prover path =
+  let module PB = PrintBox in
+  PB.link
+    ~uri:(Printf.sprintf "/show_single/%s/%s/%s/"
+            (U.percent_encode db_file)
+            (U.percent_encode prover)
+            (U.percent_encode path))
+    (PB.text path)
+
 (* show individual files *)
 let handle_show (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show/%s%!" (fun file _req ->
@@ -148,12 +161,12 @@ let handle_show (self:t) : unit =
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok (file_full, cr) ->
+        let link = link_show file in
         let box_meta = Test.Metadata.to_printbox cr.T.cr_meta in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
         let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
-        let bad = Test.Analyze.to_printbox_bad_l cr.T.cr_analyze in
-        (* TODO: link to actual error *)
-        let errors = Test.Analyze.to_printbox_errors_l cr.T.cr_analyze in
+        let bad = Test.Analyze.to_printbox_bad_l ~link cr.T.cr_analyze in
+        let errors = Test.Analyze.to_printbox_errors_l ~link cr.T.cr_analyze in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
         let cactus_plot =
           let open E.Infix in
@@ -307,7 +320,14 @@ let handle_show_single (self:t) : unit =
            let pb_file =
              U.percent_decode pb_file |> CCOpt.to_result "invalid pb_file" |> scope.unwrap in
            let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
-           let pb, stdout, stderr = Test.Detailed_res.to_printbox r in
+           let pb, stdout, stderr =
+             let link _ pb =
+               let module PB = PrintBox in
+               PB.link (PB.text pb)
+                 ~uri:(Printf.sprintf "/get-pb/%s" (U.percent_encode pb))
+             in
+             Test.Detailed_res.to_printbox ~link r
+           in
            let open Html in
            mk_page ~title:"single result" [
              mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
@@ -653,6 +673,26 @@ let handle_css self : unit =
   ()
 
 
+let handle_pb self : unit =
+  H.add_path_handler self ~meth:`GET "/get-pb/%s%!" (fun file _req ->
+      let unwrap_ code = function
+        | Ok x -> x
+        | Error e -> H.Response.fail_raise ~code "error in get-pb: %s" e
+      in
+      let file =
+        U.percent_decode file |> CCOpt.to_result "invalid path" |> unwrap_ 404
+      in
+      let ic =
+        try open_in file
+        with e ->
+          H.Response.fail_raise ~code:500 "cannot open file %S:\n%s" file
+            (Printexc.to_string e)
+      in
+      H.Response.make_raw_stream
+        ~headers:["Content-Type", "text/plain"]
+        ~code:200 (H.Byte_stream.of_chan ic)
+    )
+
 let main ?port (defs:Definitions.t) () =
   try
     let server = H.create ?port () in
@@ -680,7 +720,7 @@ let main ?port (defs:Definitions.t) () =
     handle_job_interrupt self;
     handle_compare server;
     handle_delete server;
-    handle_css server;
+    handle_pb server;
     H.run server |> E.map_err Printexc.to_string
   with e ->
     E.of_exn_trace e

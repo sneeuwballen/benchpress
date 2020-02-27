@@ -128,6 +128,12 @@ end
 
 (** {2 Basic analysis of results} *)
 
+type linker = Problem.path -> PrintBox.t
+type full_linker = Prover.name -> Problem.path -> PrintBox.t
+
+let default_linker path = PB.text path
+let default_full_linker _ path = default_linker path
+
 module Analyze : sig
   type t = {
     improved  : int;
@@ -145,10 +151,11 @@ module Analyze : sig
 
   val to_printbox : t -> PrintBox.t
   val to_printbox_l : (Prover.name * t) list -> (string*PrintBox.t) list
-  val to_printbox_bad : t -> PrintBox.t
-  val to_printbox_bad_l : (Prover.name * t) list -> (string*PrintBox.t) list
-  val to_printbox_errors : t -> PrintBox.t
-  val to_printbox_errors_l : (Prover.name * t) list -> (string*PrintBox.t) list
+  val to_printbox_bad : ?link:linker -> t -> PrintBox.t
+  val to_printbox_bad_l : ?link:full_linker -> (Prover.name * t) list -> (string*PrintBox.t) list
+  val to_printbox_errors : ?link:linker -> t -> PrintBox.t
+  val to_printbox_errors_l : ?link:full_linker ->
+    (Prover.name * t) list -> (string*PrintBox.t) list
 
   val is_ok : t -> bool
 
@@ -268,13 +275,13 @@ end = struct
   let to_printbox_l =
     List.map (fun (p, a) -> p, to_printbox a)
 
-  let to_printbox_bad r : PrintBox.t =
+  let to_printbox_bad ?link:(mk_link=default_linker) r : PrintBox.t =
     let open PB in
     if r.bad <> 0 then (
       let l =
         List.map
           (fun (pb, res, t) ->
-             [ text pb.Problem.name;
+             [ mk_link pb.Problem.name;
                text (Res.to_string res);
                text (Res.to_string pb.Problem.expected);
                text (Misc.human_duration t);
@@ -287,19 +294,19 @@ end = struct
       grid_l (header :: l)
     ) else empty
 
-  let to_printbox_bad_l =
+  let to_printbox_bad_l ?(link=default_full_linker) =
     CCList.filter_map
       (fun ((p:string), a) ->
          if a.bad = 0 then None
-         else Some (p, to_printbox_bad a))
+         else Some (p, to_printbox_bad ~link:(link p) a))
 
-  let to_printbox_errors r : PrintBox.t =
+  let to_printbox_errors ?link:(mk_link=default_linker) r : PrintBox.t =
     let open PB in
     if r.errors <> 0 then (
       let l =
         List.map
           (fun (pb, res, t) ->
-             [ text pb.Problem.name;
+             [ mk_link pb.Problem.name;
                text (Res.to_string res);
                text (Res.to_string pb.Problem.expected);
                text (Misc.human_duration t);
@@ -312,11 +319,11 @@ end = struct
       grid_l (header :: l)
     ) else empty
 
-  let to_printbox_errors_l =
+  let to_printbox_errors_l ?(link=default_full_linker) =
     CCList.filter_map
       (fun ((p:string), a) ->
          if a.errors = 0 then None
-         else Some (p, to_printbox_errors a))
+         else Some (p, to_printbox_errors ~link:(link p) a))
 
   let pp_bad out self =
     if self.bad <> 0 then (
@@ -974,7 +981,7 @@ module Detailed_res : sig
   type t = Prover.t Run_result.t
   (** Detailed result *)
 
-  val to_printbox : t -> PrintBox.t * string * string
+  val to_printbox : ?link:full_linker -> t -> PrintBox.t * string * string
   (** Display an individual result + stdout + stderr *)
 
   val get_res : Db.t -> Prover.name -> string -> t or_error
@@ -1037,7 +1044,7 @@ end = struct
          Run_result.map ~f:(fun _ -> prover) res
       )
 
-  let to_printbox (self:t) : PB.t*string*string =
+  let to_printbox ?link:(mk_link=default_full_linker) (self:t) : PB.t*string*string =
     let open PB in
     let pp_res r =
       match r with
@@ -1055,7 +1062,7 @@ end = struct
       "prover.unknown", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unknown);
       "prover.timeout", text (CCOpt.get_or ~default:"<none>" self.program.Prover.timeout);
       "prover.memory", text (CCOpt.get_or ~default:"<none>" self.program.Prover.memory);
-      "problem.path", text self.problem.Problem.name;
+      "problem.path", mk_link self.program.Prover.name self.problem.Problem.name;
       "problem.expected_res", pp_res self.problem.Problem.expected;
       "res", pp_res self.res;
       "rtime", text (Misc.human_duration self.raw.rtime);

@@ -23,11 +23,14 @@ depends: [
   "sqlite3"
   "sqlite3_utils" { >= "0.3" & < "0.4" }
   "tiny_httpd" { >= "0.4" & < "0.5" }
-  "printbox" { >= "0.3" & < "0.6" }
+  "printbox" { >= "0.5" & < "0.6" }
   "tyxml"  # for printbox.tyxml
   "decoders" { >= "0.3.0" & < "0.4" }
   "decoders-yojson" { >= "0.3.0" & < "0.4" }
   "ocaml" {>= "4.02" }
+]
+pin-depends: [
+  ["printbox.0.5" "https://github.com/c-cube/printbox.git#0.5"]
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
