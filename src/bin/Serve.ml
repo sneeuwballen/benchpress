@@ -145,6 +145,9 @@ let html_redirect (s:string) =
     ~title:s
     [txt s]
 
+let link_prover prover =
+  PB.link (PB.text prover) ~uri:("/provers/?name=" ^ U.percent_encode prover)
+
 let uri_show db_file prover path =
   Printf.sprintf "/show_single/%s/%s/%s/"
     (U.percent_encode db_file)
@@ -166,12 +169,12 @@ let handle_show (self:t) : unit =
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok (file_full, cr) ->
-        let link = link_show file in
-        let box_meta = Test.Metadata.to_printbox cr.T.cr_meta in
+        let link_file = link_show file in
+        let box_meta = Test.Metadata.to_printbox ~link:link_prover cr.T.cr_meta in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
         let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
-        let bad = Test.Analyze.to_printbox_bad_l ~link cr.T.cr_analyze in
-        let errors = Test.Analyze.to_printbox_errors_l ~link cr.T.cr_analyze in
+        let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
+        let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
         let cactus_plot =
           let open E.Infix in
@@ -217,7 +220,7 @@ let handle_show (self:t) : unit =
                ]
              ]
             ];
-            [div [pb_html box_meta]];
+            [h3 [txt "Summary"]; div [pb_html box_meta]];
             (CCList.flat_map
                (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
                box_stat);
@@ -484,26 +487,26 @@ let handle_delete server : unit =
     let h = html_redirect @@ Format.asprintf "deleted %d files" (List.length files) in
     H.Response.make_string (Ok (Html.to_string h))
   in
-  H.add_path_handler server ~meth:`POST "/delete@/%!" (fun req ->
-      let body = H.Request.body req |> String.trim in
-      Logs.debug (fun k->k "/delete: body is %s" body);
-      let names =
-        CCString.split_on_char '&' body
-        |> CCList.filter_map
-          (fun s -> match CCString.Split.left ~by:"=" (String.trim s) with
-             | Some (name, "on") -> Some name
-             | _ -> None)
-      in
-      run names);
   H.add_path_handler server ~meth:`POST "/delete1/%s@/%!" (fun file _req ->
-      Logs.debug (fun k->k "/delete: path is %s" file);
+      Logs.debug (fun k->k "/delete1: path is %s" file);
       run [file]
     );
   ()
 
 let handle_provers (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/provers/" (fun _r ->
-      let provers = Definitions.all_provers self.defs in
+  H.add_path_handler self.server ~meth:`GET "/provers/" (fun req ->
+      let name =
+        try Some (List.assoc "name" @@ H.Request.query req)
+        with _ -> None
+      in
+      let provers = match name with
+        | Some name ->
+          begin match Definitions.find_prover self.defs name with
+            | Ok p -> [p]
+            | Error e -> H.Response.fail_raise ~code:404 "no such prover: %s" e
+          end
+        | None -> Definitions.all_provers self.defs
+      in
       let h =
         let open Html in
         let mk_prover p =
@@ -517,7 +520,7 @@ let handle_provers (self:t) : unit =
           ]
         in
         let l = List.map mk_prover provers in
-        mk_page ~title:"tasks"
+        mk_page ~title:"poovers"
           [
             mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
             dyn_status();
@@ -659,9 +662,6 @@ let handle_root (self:t) : unit =
                   mk_col [
                     mk_button ~cls:["btn-primary"] ~a:[a_formaction "/compare/"]
                       [txt "compare selected"]];
-                  mk_col [
-                    mk_button ~cls:["btn-danger"] ~a:[a_formaction "/delete/"]
-                      [txt "delete selected"]]
                 ];
                 mk_ul l
               ]];
@@ -723,7 +723,6 @@ let handle_css self : unit =
   mk_path "/css" "text/css" Web_data.css;
   mk_path "/js" "text/javascript" Web_data.js;
   ()
-
 
 let handle_file self : unit =
   H.add_path_handler self ~meth:`GET "/get-file/%s%!" (fun file _req ->
