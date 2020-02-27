@@ -183,6 +183,16 @@ let handle_show (self:t) : unit =
             Logs.err ~src (fun k->k "failure to build a cactus plot: %s" e);
             Error e
         in
+        (* download a text file containing the lines [l] *)
+        let mk_dl_file l =
+          let open Html in
+          let data =
+            "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
+          in
+          mk_a ~cls:["btn"; "btn-link"]
+            ~a:[a_download (Some "problems.txt"); a_href data]
+          [txt "download list"]
+        in
         let h =
           let open Html in
           mk_page ~title:"show" @@
@@ -190,13 +200,21 @@ let handle_show (self:t) : unit =
             [mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
              dyn_status();
              h3 [txt file];
-             mk_row @@ List.map (fun x -> mk_col [x]) @@ [
-               mk_a ~cls:["btn-secondary"] ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
+             mk_row @@ List.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@ [
+               mk_a ~cls:["btn-info"]
+                 ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
                  [txt "show individual results"];
-               mk_a ~cls:["btn-secondary"] ~a:[a_href ("/show_csv/"^U.percent_encode file)]
+               mk_a ~cls:["btn-info"]
+                 ~a:[a_href ("/show_csv/"^U.percent_encode file)]
                  [txt "download as csv"];
-               mk_a ~cls:["btn-secondary"] ~a:[a_href ("/show_table/"^U.percent_encode file)]
+               mk_a ~cls:["btn-info"]
+                 ~a:[a_href ("/show_table/"^U.percent_encode file)]
                  [txt "show table of results"];
+               form ~a:[a_method `Post] [
+                 mk_button ~cls:["btn-danger"]
+                   ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/"); ]
+                   [txt "delete"];
+               ]
              ]
             ];
             [div [pb_html box_meta]];
@@ -206,26 +224,32 @@ let handle_show (self:t) : unit =
             (CCList.flat_map
                (fun (n,pb) ->
                   [h3 [txt ("summary for " ^ n)];
-                   div [pb_html pb];
-                   mk_a ~cls:["btn-secondary"; "h-50"]
+                   mk_a ~cls:["btn-link"; "h-50"]
                      ~a:[a_href (Printf.sprintf "/show_csv/%s?provers=%s"
                                    (U.percent_encode file) (U.percent_encode n))]
                      [txt "download as csv"];
+                   div [pb_html pb];
                   ])
                box_summary);
             CCList.flat_map
-              (fun (n,p) ->
+              (fun (n,l,p) ->
                  [h3 [txt ("bad for " ^ n)];
-                  details ~a:[a_open()] (summary ~a:[a_class ["alert";"alert-danger"]] [txt "list of bad results"])
-                    [div [pb_html p]]])
+                  details ~a:[a_open()]
+                    (summary ~a:[a_class ["alert";"alert-danger"]]
+                       [txt "list of bad results"])
+                    [div [mk_dl_file l; pb_html p]]])
               bad;
             CCList.flat_map
-              (fun (n,p) ->
+              (fun (n,l,p) ->
                  [h3 [txt ("errors for " ^ n)];
-                  details (summary ~a:[a_class ["alert"; "alert-warning"]] [txt "list of errors"]) [div [pb_html p]]])
+                  details (summary ~a:[a_class ["alert"; "alert-warning"]]
+                             [txt "list of errors"; ])
+                    [div [mk_dl_file l; pb_html p]]])
               errors;
             (match cactus_plot with
-             | Error e -> [p ~a:[a_class ["alert"; "alert-danger"]] [txt "could not load cactus plot"; txt e]]
+             | Error e ->
+               [p ~a:[a_class ["alert"; "alert-danger"]]
+                  [txt "could not load cactus plot"; txt e]]
              | Ok p ->
                Logs.debug ~src (fun k->k "encode png file of %d bytes" (String.length p));
                [img
@@ -442,7 +466,25 @@ let handle_compare server : unit =
 
 (* delete files *)
 let handle_delete server : unit =
-  H.add_path_handler server ~meth:`POST "/delete/" (fun req ->
+  let run names =
+    Logs.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
+    let files =
+      names
+      |> List.map
+        (fun s -> match Utils.mk_file_full s with
+           | Error e ->
+             Logs.err ~src (fun k->k "cannot load file %S" s);
+             H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
+           | Ok x -> x)
+    in
+    List.iter (fun file ->
+        Logs.info ~src (fun k->k  "delete file %s" @@ Filename.quote file);
+        Sys.remove file)
+      files;
+    let h = html_redirect @@ Format.asprintf "deleted %d files" (List.length files) in
+    H.Response.make_string (Ok (Html.to_string h))
+  in
+  H.add_path_handler server ~meth:`POST "/delete@/%!" (fun req ->
       let body = H.Request.body req |> String.trim in
       Logs.debug (fun k->k "/delete: body is %s" body);
       let names =
@@ -452,23 +494,12 @@ let handle_delete server : unit =
              | Some (name, "on") -> Some name
              | _ -> None)
       in
-      Logs.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
-      let files =
-        names
-        |> List.map
-          (fun s -> match Utils.mk_file_full s with
-             | Error e ->
-               Logs.err ~src (fun k->k "cannot load file %S" s);
-               H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
-             | Ok x -> x)
-      in
-      List.iter (fun file ->
-          Logs.info ~src (fun k->k  "delete file %s" @@ Filename.quote file);
-          Sys.remove file)
-        files;
-      let h = html_redirect @@ Format.asprintf "deleted %d files" (List.length files) in
-      H.Response.make_string (Ok (Html.to_string h))
-    )
+      run names);
+  H.add_path_handler server ~meth:`POST "/delete1/%s@/%!" (fun file _req ->
+      Logs.debug (fun k->k "/delete: path is %s" file);
+      run [file]
+    );
+  ()
 
 let handle_provers (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/provers/" (fun _r ->

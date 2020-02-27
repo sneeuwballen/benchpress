@@ -129,8 +129,8 @@ let pp_human_duration out f = Fmt.string out (human_duration f)
 
 let human_datetime (f:float) : string =
   let t = Unix.gmtime f in
-  let wday i = [|"sun";"mon";"tue";"wed";"thu";"fri";"sat"|].(i) in
-  Printf.sprintf "%d/%02d %s the %02d at %dh%02d:%02d GMT"
+  let wday i = [|"Sun";"Mon";"Tue";"Wed";"Thu";"Fri";"Sat"|].(i) in
+  Printf.sprintf "%d/%02d, %s the %02d, at %dh%02d:%02d GMT"
     (1900+t.tm_year)
     t.tm_mon
     (wday t.tm_wday)

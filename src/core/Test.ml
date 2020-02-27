@@ -154,10 +154,13 @@ module Analyze : sig
   val to_printbox : t -> PrintBox.t
   val to_printbox_l : (Prover.name * t) list -> (string*PrintBox.t) list
   val to_printbox_bad : ?link:path_linker -> t -> PrintBox.t
-  val to_printbox_bad_l : ?link:prover_path_linker -> (Prover.name * t) list -> (string*PrintBox.t) list
+  val to_printbox_bad_l :
+    ?link:prover_path_linker ->
+    (Prover.name * t) list -> (string*string list*PrintBox.t) list
   val to_printbox_errors : ?link:path_linker -> t -> PrintBox.t
-  val to_printbox_errors_l : ?link:prover_path_linker ->
-    (Prover.name * t) list -> (string*PrintBox.t) list
+  val to_printbox_errors_l :
+    ?link:prover_path_linker ->
+    (Prover.name * t) list -> (string*string list*PrintBox.t) list
 
   val is_ok : t -> bool
 
@@ -300,7 +303,8 @@ end = struct
     CCList.filter_map
       (fun ((p:string), a) ->
          if a.bad = 0 then None
-         else Some (p, to_printbox_bad ~link:(link p) a))
+         else Some (p, List.map (fun (pb,_,_) -> pb.Problem.name) a.bad_full,
+                    to_printbox_bad ~link:(link p) a))
 
   let to_printbox_errors ?link:(mk_link=default_linker) r : PrintBox.t =
     let open PB in
@@ -325,7 +329,8 @@ end = struct
     CCList.filter_map
       (fun ((p:string), a) ->
          if a.errors = 0 then None
-         else Some (p, to_printbox_errors ~link:(link p) a))
+         else Some (p, List.map (fun (pb,_,_) -> pb.Problem.name) a.errors_full,
+                    to_printbox_errors ~link:(link p) a))
 
   let pp_bad out self =
     if self.bad <> 0 then (
