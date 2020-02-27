@@ -2,7 +2,6 @@
 
 module Fmt = CCFormat
 module E = CCResult
-module J = Misc.Json
 
 type 'a or_error = ('a, string) CCResult.t
 
@@ -112,9 +111,3 @@ let pp out p =
 
 let name p = p.name
 let to_string = CCFormat.to_string pp
-
-let decode =
-  let open J.Decode in
-  field "name" string >>= fun name ->
-  field "expected" Res.decode >>= fun expected ->
-  succeed {name; expected}

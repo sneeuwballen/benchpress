@@ -40,13 +40,3 @@ let pp pp_prog out (self:_ t): unit =
   Format.fprintf out "(@[<hv2>:program %a@ :problem %a@ :raw %a@ :res %s@])"
     pp_prog (program self) Problem.pp (problem self) Proc_run_result.pp (raw self)
     (Res.to_string self.res)
-
-let decode f =
-  let open J.Decode in
-  field "problem" Problem.decode >>= fun problem ->
-  field "timeout" int >>= fun timeout ->
-  field "program" f >>= fun program ->
-  field_opt "res" string >>= fun res ->
-  let res = CCOpt.map_or ~default:Res.Unknown Res.of_string res in
-  field "raw" Proc_run_result.decode >>= fun raw ->
-  succeed {problem;timeout;program;raw;res}

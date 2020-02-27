@@ -53,6 +53,3 @@ val pp : t Fmt.printer
 val name : t -> string
 val to_string : t -> string
 
-module J = Misc.Json
-
-val decode : t J.Decode.t

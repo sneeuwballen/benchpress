@@ -35,5 +35,3 @@ val make:
 
 val pp : 'a Fmt.printer -> 'a t Fmt.printer
 
-val decode : 'a J.Decode.t -> 'a t J.Decode.t
-

@@ -45,7 +45,6 @@ let equal p1 p2 = p1.name = p2.name
 let name p = p.name
 
 let pp_name out p = Fmt.string out p.name
-let decode_name = J.Decode.string
 
 module Version = struct
   type t = version
@@ -82,16 +81,6 @@ module Version = struct
           succeed (Git{branch;commit})
         | _ -> fail "constructor should be 'git'")
     ]
-
-  let decode =
-    let open J.Decode in
-    string >>:: function
-    | "tag" -> (list1 string >|= fun s -> Tag s)
-    | "git" ->
-      (list string >>= function
-        | [branch;commit] -> succeed (Git {branch;commit})
-        | _ -> fail "need 2 arguments")
-    | _ -> fail "unknown constructor, expect tag/git"
 
   let ser_sexp v = Sexp_loc.to_string @@ to_sexp v
   let deser_sexp s =
@@ -168,26 +157,6 @@ end
 
 module Map = CCMap.Make(As_key)
 module Set = CCSet.Make(As_key)
-
-let decode =
-  let open J.Decode in
-  let f_opt_null f_name =
-    field_opt f_name (nullable string) >|= CCOpt.flatten
-  in
-  field "name" string >>= fun name ->
-  field "cmd" string >>= fun cmd ->
-  field "binary" string >>= fun binary ->
-  field "binary_deps" (list string) >>= fun binary_deps ->
-  field "version" Version.decode >>= fun version ->
-  f_opt_null "unsat" >>= fun unsat ->
-  f_opt_null "sat" >>= fun sat ->
-  f_opt_null "unknown" >>= fun unknown ->
-  f_opt_null "timeout" >>= fun timeout ->
-  f_opt_null "memory" >>= fun memory ->
-  succeed {
-    name; cmd; binary; binary_deps; version;
-    sat; unsat; unknown; timeout; memory;
-  }
 
 let run_proc cmd =
   let start = Unix.gettimeofday () in

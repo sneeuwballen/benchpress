@@ -30,13 +30,3 @@ let encode r =
     "utime", float utime;
   ]
 
-let decode =
-  let open J.Decode in
-  field "errcode" int >>= fun errcode ->
-  field "stdout" string >>= fun stdout ->
-  field "stderr" string >>= fun stderr ->
-  field "rtime" float >>= fun rtime ->
-  field "stime" float >>= fun stime ->
-  field "utime" float >>= fun utime ->
-  succeed {stderr;stdout; errcode; stime; rtime; utime}
-

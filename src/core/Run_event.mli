@@ -21,8 +21,6 @@ val mk_checker : checker Run_result.t -> t
 
 val pp : t CCFormat.printer
 
-val decode : t J.Decode.t
-
 val db_prepare : Db.t -> unit or_error
 val to_db_prover_result : Db.t -> Prover.name Run_result.t -> unit or_error
 val to_db: Db.t -> t -> unit or_error

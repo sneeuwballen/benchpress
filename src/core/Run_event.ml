@@ -25,15 +25,6 @@ let pp out = function
 let mk_prover r = Prover_run r
 let mk_checker r = Checker_run r
 
-let decode =
-  let open J.Decode in
-  string >>:: function
-  | "prover" ->
-    (list1 (Run_result.decode Prover.decode) >|= fun r ->
-     Prover_run (Run_result.analyze_self r))
-  | "checker" -> (list1 (Run_result.decode @@ succeed ()) >|= fun r -> Checker_run r)
-  | _ -> fail "expected prover/checker run event"
-
 (* main schema for results! *)
 let db_prepare (db:Db.t) : unit or_error =
   let open E.Infix in
