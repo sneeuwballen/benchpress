@@ -3,7 +3,7 @@
  (public_name benchpress)
  (modes native)
  (libraries benchpress containers cmdliner result toml uuidm logs logs.cli
-            tiny_httpd tyxml printbox.html sqlite3_utils base64)
+            tiny_httpd tyxml sqlite3_utils base64)
  (flags :standard -warn-error -3-32 -safe-string -open Benchpress))
 
 (rule

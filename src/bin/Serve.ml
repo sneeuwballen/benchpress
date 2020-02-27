@@ -109,7 +109,13 @@ module Html = struct
           meta ~a:(a_charset "utf-8" :: my_meta) ()])
       (body [div ~a:[a_class ["container"]] my_body])
 
-  let mk_a ?a:(al=[]) x = a ~a:(a_class ["btn"; "btn-link"] :: al) x
+  let mk_a ?(cls=["btn-link"]) ?a:(al=[]) x = a ~a:(a_class ("btn" :: cls) :: al) x
+  let mk_row ?(cls=[]) x = div ~a:[a_class ("row"::cls)] x
+  let mk_col ?(a=[]) ?(cls=[]) x = div ~a:(a_class ("col"::cls) :: a) x
+  let mk_li x = li ~a:[a_class ["list-group-item"]] x
+  let mk_ul l = ul ~a:[a_class ["list-group"]] l
+  let mk_button ?(a=[]) ?(cls=[]) x =
+    button ~a:(a_button_type `Submit :: a_class ("btn" :: cls) :: a) x
 
   let pb_html pb =
     div ~a:[a_class ["table"]] [PB_html.to_html pb]
@@ -153,11 +159,16 @@ let handle_show (self:t) : unit =
           let open Html in
           mk_page ~title:"show" @@
           List.flatten [
-            [mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+            [mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
              h3 [txt file];
-             mk_a ~a:[a_href ("/show_detailed/"^U.percent_encode file)] [p [txt "show individual results"]];
-             mk_a ~a:[a_href ("/show_csv/"^U.percent_encode file)] [p [txt "download as csv"]];
-             mk_a ~a:[a_href ("/show_table/"^U.percent_encode file)] [p [txt "show table of results"]];
+             mk_row @@ List.map (fun x -> mk_col [x]) @@ [
+               mk_a ~cls:["btn-secondary"; "h-75"] ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
+                 [p [txt "show individual results"]];
+               mk_a ~cls:["btn-secondary"; "h-75"] ~a:[a_href ("/show_csv/"^U.percent_encode file)]
+                 [p [txt "download as csv"]];
+               mk_a ~cls:["btn-secondary"; "h-75"] ~a:[a_href ("/show_table/"^U.percent_encode file)]
+                 [p [txt "show table of results"]];
+             ]
             ];
             [div [pb_html box_meta]];
             (CCList.flat_map
@@ -169,16 +180,16 @@ let handle_show (self:t) : unit =
             CCList.flat_map
               (fun (n,p) ->
                  [h3 [txt ("bad for " ^ n)];
-                  details ~a:[a_open()] (summary [txt "list of bad results"])
+                  details ~a:[a_open()] (summary ~a:[a_class ["alert";"alert-danger"]] [txt "list of bad results"])
                     [div [pb_html p]]])
               bad;
             CCList.flat_map
               (fun (n,p) ->
                  [h3 [txt ("errors for " ^ n)];
-                  details (summary [txt "list of errors"]) [div [pb_html p]]])
+                  details (summary ~a:[a_class ["alert"; "alert-warning"]] [txt "list of errors"]) [div [pb_html p]]])
               errors;
             (match cactus_plot with
-             | Error e -> [p ~a:[a_style "color: red"] [txt "could not load cactus plot"; txt e]]
+             | Error e -> [p ~a:[a_class ["alert"; "alert-danger"]] [txt "could not load cactus plot"; txt e]]
              | Ok p ->
                Logs.debug ~src (fun k->k "encode png file of %d bytes" (String.length p));
                [img
@@ -208,7 +219,7 @@ let handle_show_as_table (self:t) : unit =
           let open Html in
           mk_page ~title:"show full table" @@
           List.flatten [
-            [mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"]];
+            [mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"]];
             [h3 [txt "full results"];
              div [pb_html full_table]];
           ]
@@ -227,7 +238,7 @@ let handle_show_detailed (self:t) : unit =
            let open Html in
            mk_page ~title:"detailed results"
              [
-               mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+               mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
                h3 [txt "detailed results"];
                let rows =
                  List.map
@@ -244,7 +255,7 @@ let handle_show_detailed (self:t) : unit =
                               [txt @@ Misc.truncate_left 80 pb_file]];
                         td [txt (Res.to_string res)];
                         td [txt (Res.to_string file_expect)];
-                        td [txt (Misc.human_time rtime)]
+                        td [txt (Misc.human_duration rtime)]
                       ])
                    l
                in
@@ -279,9 +290,10 @@ let handle_show_single (self:t) : unit =
            let pb, stdout, stderr = Test.Detailed_res.to_printbox r in
            let open Html in
            mk_page ~title:"single result" [
-             mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
-             mk_a ~a:[
-               a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file)); a_class ["stick"]]
+             mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
+             mk_a
+               ~cls:["sticky-top"]
+               ~a:[ a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file))]
                [txt "back to detailed results"];
              h3 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
              div [pb_html pb];
@@ -360,7 +372,7 @@ let handle_compare server : unit =
           let open Html in
           mk_page ~title:"compare"
             [
-              mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+              mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
               h3 [txt "comparison"];
               div [pb_html box_compare_l];
             ]
@@ -407,13 +419,13 @@ let handle_provers (self:t) : unit =
       let h =
         let open Html in
         let l =
-          List.map (fun p -> li [pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p]]) provers
+          List.map (fun p -> mk_li [pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p]]) provers
         in
         mk_page ~title:"tasks"
           [
-            mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+            mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
             h3 [txt "list of provers"];
-            ul l
+            mk_ul l
           ]
       in
       H.Response.make_string (Ok (Html.to_string h))
@@ -428,22 +440,23 @@ let handle_tasks (self:t) : unit =
           List.map
             (fun t ->
                let s = t.Task.name in
-               li [
-                 pre [txt @@Format.asprintf "%a@?" Task.pp t];
-                 form ~a:[a_id (uri_of_string @@ "launch_task"^s);
-                          a_action (uri_of_string @@ "/run/" ^ U.percent_encode s);
-                          a_method `Post;]
-                   [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-primary"]]
-                      [txt "run"];
+               mk_li [
+                 mk_row [
+                   mk_col ~cls:["col-1"] [
+                     form ~a:[a_id (uri_of_string @@ "launch_task"^s);
+                            a_action (uri_of_string @@ "/run/" ^ U.percent_encode s);
+                            a_method `Post;]
+                       [mk_button ~cls:["btn-primary"] [txt "run"]];
                    ];
-               ])
+                   mk_col ~cls:["col-auto"] [pre [txt @@Format.asprintf "%a@?" Task.pp t]];
+                 ]])
             tasks
         in
         mk_page ~title:"tasks"
           [
-            mk_a ~a:[a_href "/"; a_class ["stick"]] [txt "back to root"];
+            mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
             h3 [txt "list of tasks"];
-            ul l;
+            mk_ul l;
           ]
       in
       H.Response.make_string (Ok (Html.to_string h))
@@ -499,19 +512,17 @@ let handle_root (self:t) : unit =
                | None -> []
                | Some j ->
                  (* display current job *)
-                 [li ~a:[a_class ["list-group-item"]] [txt @@
-                                                       Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)];
-                  li ~a:[a_class ["list-group-item"]] [
-                    (* FIXME
-                       div ~a:[a_class ["spinner-border"]] [span [txt "running..."]];
-                    *)
+                 [mk_li [
+                     txt @@
+                     Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)];
+                  mk_li [
+                    div ~a:[a_class ["spinner-border"]] [span []];
                     pre [txt @@
                          Format.asprintf "current task: %a" Task_queue.Job.pp j];
                     form ~a:[a_id (uri_of_string "cancel");
                              a_action (uri_of_string "/interrupt/");
                              a_method `Post;]
-                      [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-warning"]]
-                         [txt "interrupt"]]];
+                      [mk_button ~cls:["btn-warning"] [txt "interrupt"]]];
                  ];
               )
             ];
@@ -521,16 +532,31 @@ let handle_root (self:t) : unit =
                      (common file prefix/sample of files)?) *)
             let l =
               List.map
-                (fun (s,size) ->
-                   let s = Filename.basename s in
+                (fun (s0,size) ->
+                   let s = Filename.basename s0 in
+                   let entry_descr, row_title =
+                     (try
+                       Sqlite3_utils.with_db ~mode:`NO_CREATE s0
+                         (fun db -> Test.Metadata.of_db db)
+                      with s -> Error ("not a valid db:" ^ Printexc.to_string s))
+                     |> E.catch
+                       ~err:(fun e -> s, [a_title @@ "<no metadata>: "  ^ e])
+                       ~ok:(fun m ->
+                           let descr = Printf.sprintf "%d res for {%s} at %s"
+                               m.Test.n_results (String.concat "," m.Test.provers)
+                               (CCOpt.map_or ~default:"<unknown date>" Misc.human_datetime m.Test.timestamp)
+                           in
+                           descr, [a_title (Test.Metadata.to_string m)])
+                   in
+
                    let href =
                      Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
                    in
                    li ~a:[a_class ["list-group-item"]]
-                     [div ~a:[a_class ["row"]]
+                     [div ~a:(a_class ["row"] :: row_title)
                         [
-                          div ~a:[a_class ["col-md-9"]]
-                            [mk_a ~a:[a_href href] [txt s]];
+                          div ~a:[a_class ["col-md-9"; "justify-self-left"]]
+                            [mk_a ~a:[a_href href] [txt entry_descr]];
                           h4 ~a:[a_class ["col-md-2"]] [
                             span ~a:[a_class ["badge"; "text-secondary"]]
                               [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
@@ -540,14 +566,18 @@ let handle_root (self:t) : unit =
                         ]])
                 entries
             in
-            form ~a:[a_id (uri_of_string "compare");
-                     a_method `Post;]
-              [div ~a:[a_class ["container"]]
-                 [button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-primary"]; a_formaction "/compare/"]
-                    [txt "compare selected"];
-                  button ~a:[a_button_type `Submit; a_class ["stick"; "btn"; "btn-danger"]; a_formaction "/delete/"]
-                    [txt "delete selected"];
-                  ul ~a:[a_class ["list-group"]] l]];
+            form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
+              div ~a:[a_class ["container"]] [
+                mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] [
+                  mk_col [
+                    mk_button ~cls:["btn-primary"] ~a:[a_formaction "/compare/"]
+                      [txt "compare selected"]];
+                  mk_col [
+                    mk_button ~cls:["btn-danger"] ~a:[a_formaction "/delete/"]
+                      [txt "delete selected"]]
+                ];
+                mk_ul l
+              ]];
           ]
       in
       H.Response.make_string (Ok (Html.to_string h))

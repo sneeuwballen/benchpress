@@ -69,7 +69,7 @@ module Stat = struct
       "timeout", int s.timeout;
       "memory", int s.memory;
       "total", int s.total;
-      "total_time", line (Misc.human_time s.total_time);
+      "total_time", line (Misc.human_duration s.total_time);
     ]
 
   let to_printbox (s:t) : PrintBox.t =
@@ -277,7 +277,7 @@ end = struct
              [ text pb.Problem.name;
                text (Res.to_string res);
                text (Res.to_string pb.Problem.expected);
-               text (Misc.human_time t);
+               text (Misc.human_duration t);
              ])
           r.bad_full
       in
@@ -302,7 +302,7 @@ end = struct
              [ text pb.Problem.name;
                text (Res.to_string res);
                text (Res.to_string pb.Problem.expected);
-               text (Misc.human_time t);
+               text (Misc.human_duration t);
              ])
           r.errors_full
       in
@@ -416,6 +416,8 @@ type metadata = {
   uuid: Uuidm.t; (* unique ID *)
   timestamp: float option; (* timestamp *)
   total_wall_time: float option;
+  n_results: int;
+  provers: Prover.name list;
 }
 
 module Metadata = struct
@@ -424,12 +426,14 @@ module Metadata = struct
   let to_printbox self : PB.t =
     let open PB in
     pb_v_record [
+      "provers", vlist_map text self.provers;
+      "n_results", int self.n_results;
       "uuid", text @@ Uuidm.to_string self.uuid;
       "timestamp", (match self.timestamp with
           | None -> text "none"
-          | Some f -> text @@ ISO8601.Permissive.string_of_datetime_basic f);
+          | Some f -> text @@ Misc.human_datetime f);
       "total_wall_time", (match self.total_wall_time with
-          | None -> text "none" | Some f -> text @@ Misc.human_time f);
+          | None -> text "none" | Some f -> text @@ Misc.human_duration f);
     ]
 
   let db_prepare (db:Db.t) : _ or_error =
@@ -471,7 +475,25 @@ module Metadata = struct
                     |> CCOpt.to_result "no uuid found in DB"
                     |> scope.unwrap in
          let total_wall_time = CCOpt.map float_of_string total_wall_time in
-         { timestamp; total_wall_time; uuid; })
+         let n_results =
+           Db.exec_no_params_exn db "select count(*) from prover_res;"
+             ~ty:Db.Ty.(p1 int,id) ~f:Db.Cursor.next
+           |> CCOpt.to_result "no prover results" |> scope.unwrap
+         in
+         let provers =
+           Db.exec_no_params_exn db "select distinct name from prover;"
+             ~f:Db.Cursor.to_list_rev ~ty:Db.Ty.(p1 any_str, id)
+         in
+         { timestamp; total_wall_time; uuid; n_results; provers; })
+
+  let pp_l out (self:t) : unit =
+    Fmt.fprintf out "@[<v>n-results: %d@ provers: [%s]@ timestamp: %s@ total-time: %s@ uuid: %a@]"
+      self.n_results (String.concat ";" self.provers)
+      (CCOpt.map_or ~default:"<no time>" Misc.human_datetime self.timestamp)
+      (CCOpt.map_or ~default:"<no wall time>" Misc.human_duration self.total_wall_time)
+      Uuidm.pp self.uuid
+
+  let to_string self = Fmt.asprintf "%a" pp_l self
 end
 
 (** {2 Lightweight Results} *)
@@ -669,8 +691,6 @@ module Top_result : sig
 
   val to_csv_file : string -> t -> unit
   (** Write as CSV into given file *)
-
-  val decode : ?uuid:string -> unit -> t J.Decode.t
 end = struct
   type t = top_result
 
@@ -682,7 +702,7 @@ end = struct
   let pp_header out (self:t) : unit =
     Format.fprintf out "(@[(uuid %s)(date %a)@])"
       (Uuidm.to_string self.meta.uuid)
-      (Misc.Pp.pp_opt "timestamp" ISO8601.Permissive.pp_datetime) self.meta.timestamp
+      (Misc.Pp.pp_opt "timestamp" Misc.pp_human_datetime) self.meta.timestamp
 
   let pp_compact out (self:t) =
     let pp_tup out (p,res) =
@@ -733,7 +753,7 @@ end = struct
     let line0 =
       Printf.sprintf "(snapshot :uuid %s :date %s)"
         (Uuidm.to_string self.meta.uuid)
-        (CCOpt.map_or ~default:"<none>" ISO8601.Permissive.string_of_datetime self.meta.timestamp)
+        (CCOpt.map_or ~default:"<none>" Misc.human_datetime self.meta.timestamp)
     in
     Misc.err_with
       ~map_err:(Printf.sprintf "while converting to CSV table: %s")
@@ -877,11 +897,6 @@ end = struct
     Csv.output_all ch (to_csv t);
     Buffer.contents buf
 
-  let decode_events =
-    let open J.Decode in
-    list Run_event.decode
-    >|= CCList.filter_map (function Run_event.Prover_run r -> Some r | _ -> None)
-
   let db_prepare (db:Db.t) : _ or_error =
     let open E.Infix in
     Metadata.db_prepare db >>= fun () ->
@@ -924,22 +939,6 @@ end = struct
          let analyze = Analyze.of_db db |> scope.unwrap in
          Logs.debug (fun k->k "done");
          { db; events=l; meta; stats; analyze; })
-
-  let decode ?uuid:uuid_g () : t J.Decode.t =
-    let open J.Decode in
-    field_opt "timestamp" float >>= fun timestamp ->
-    field_opt "total_wall_time" float >>= fun total_wall_time ->
-    field_opt "uuid" string >>= fun uuid ->
-    let uuid =
-      CCOpt.Infix.(uuid <+> uuid_g)
-      |> CCOpt.flat_map Uuidm.of_string
-      |> CCOpt.get_lazy (fun () -> failwith "unable to parse UUID")
-    in
-    field "events" decode_events >>= fun events ->
-    let meta = {timestamp; uuid; total_wall_time} in
-    match make ~meta events with
-    | Ok x -> succeed x
-    | Error e -> fail e
 
   let of_db (db:Db.t) : t or_error =
     Misc.err_with
@@ -1054,9 +1053,9 @@ end = struct
       "problem.path", text self.problem.Problem.name;
       "problem.expected_res", pp_res self.problem.Problem.expected;
       "res", pp_res self.res;
-      "rtime", text (Misc.human_time self.raw.rtime);
-      "stime", text (Misc.human_time self.raw.stime);
-      "utime", text (Misc.human_time self.raw.utime);
+      "rtime", text (Misc.human_duration self.raw.rtime);
+      "stime", text (Misc.human_duration self.raw.stime);
+      "utime", text (Misc.human_duration self.raw.utime);
       "errcode", int self.raw.errcode;
     ],
     self.raw.stdout, self.raw.stderr

@@ -184,21 +184,8 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
           Db.with_db ~timeout:500 ~mode:`NO_CREATE file
             (fun db -> T.Top_result.of_db db |> E.map (fun r->file,r))
         with e -> E.of_exn e
-      ) else if Filename.check_suffix f ".gz" then (
-        (* use [zcat] to decompress *)
-        let v =
-          CCUnix.with_process_in (Printf.sprintf "zcat '%s'" file)
-            ~f:Misc.Json.J.from_channel in
-        (* Format.printf "%a@." (Misc.Json.J.pretty_print ?std:None) v; *)
-        let uuid = guess_uuid f in
-        Misc.Json.Decode.decode_value (T.Top_result.decode ?uuid ()) v
-        |> E.map_err Misc.Json.Decode.string_of_error
-        |> E.map (fun r -> file, r)
       ) else (
-        let uuid = guess_uuid f in
-        Misc.Json.Decode.decode_file (T.Top_result.decode ?uuid ()) file
-        |> E.map_err Misc.Json.Decode.string_of_error
-        |> E.map (fun r -> file, r)
+        E.fail_fprintf "invalid name %S, expected a .sqlite file" f
       )
   with e ->
     E.of_exn_trace e

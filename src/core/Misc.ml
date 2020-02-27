@@ -101,7 +101,7 @@ let die_on_sigterm : unit -> unit =
   in fun () -> Lazy.force thunk
 
 (** Human readable duration *)
-let human_time (f:float) : string =
+let human_duration (f:float) : string =
   let nb_sec_minute = 60 in
   let nb_sec_hour = 60 * nb_sec_minute in
   let nb_sec_day = 24 * nb_sec_hour in
@@ -124,6 +124,20 @@ let human_time (f:float) : string =
   ) else (
     Printf.sprintf "%.3fs" f
   )
+
+let pp_human_duration out f = Fmt.string out (human_duration f)
+
+let human_datetime (f:float) : string =
+  let t = Unix.gmtime f in
+  let wday i = [|"sun";"mon";"tue";"wed";"thu";"fri";"sat"|].(i) in
+  Printf.sprintf "%d/%02d %s the %02d at %dh%02d:%02d"
+    (1900+t.tm_year)
+    t.tm_mon
+    (wday t.tm_wday)
+    t.tm_mday
+    t.tm_hour t.tm_min t.tm_sec
+
+let pp_human_datetime out f = Fmt.string out (human_datetime f)
 
 (** Human readable size *)
 let human_size (x:int) : string =

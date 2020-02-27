@@ -131,7 +131,9 @@ end = struct
     let db = Sqlite3.db_open ~mutex:`FULL db_file in
     Db.setup_timeout db ~ms:500;
     T.Top_result.db_prepare db >>= fun () ->
-    T.Metadata.to_db db {T.timestamp=Some timestamp; uuid; total_wall_time=None} >>= fun () ->
+    T.Metadata.to_db db
+      {T.timestamp=Some timestamp; uuid; total_wall_time=None;
+       n_results=0; provers=[]} >>= fun () ->
     Misc.err_with ~map_err:(Printf.sprintf "while inserting provers: %s")
       (fun scope -> List.iter (fun p -> Prover.to_db db p |> scope.unwrap) self.provers)
     >>= fun () ->
@@ -173,7 +175,10 @@ end = struct
       let total_wall_time = Some (Unix.gettimeofday() -. start) in
       let uuid = uuid in
       let timestamp = Some timestamp in
-      let meta = {T.uuid; timestamp; total_wall_time} in
+      let meta = {
+        T.uuid; timestamp; total_wall_time; n_results=0;
+        provers=List.map Prover.name self.provers;
+      } in
       T.Metadata.to_db db meta >>= fun () ->
       let top_res = lazy (
         T.Top_result.make ~meta res_l
@@ -211,7 +216,7 @@ end = struct
       Misc.synchronized
         (fun () ->
            Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?"
-             !count len percent (Misc.human_time time_elapsed) bar (Misc.human_time eta));
+             !count len percent (Misc.human_duration time_elapsed) bar (Misc.human_duration eta));
       if !count = len then (
         Misc.synchronized (fun() -> Format.printf "@.")
       )
@@ -243,7 +248,7 @@ let dump_results_sqlite (results:T.top_result) : unit =
   let dump_file =
     let filename =
       Printf.sprintf "res-%s-%s.sqlite"
-        (CCOpt.map_or ~default:"date" ISO8601.Permissive.string_of_datetime_basic results.T.meta.timestamp)
+        (CCOpt.map_or ~default:"date" Misc.human_datetime results.T.meta.timestamp)
         (Uuidm.to_string uuid)
     in
     let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
