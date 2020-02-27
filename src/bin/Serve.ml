@@ -154,9 +154,9 @@ let uri_show db_file prover path =
 let link_show db_file prover path =
   PB.link (PB.text path) ~uri:(uri_show db_file prover path)
 
-let uri_pb pb = Printf.sprintf "/get-pb/%s" (U.percent_encode pb)
+let uri_get_file pb = Printf.sprintf "/get-file/%s" (U.percent_encode pb)
 
-let link_get_pb pb = PB.link (PB.text pb) ~uri:(uri_pb pb)
+let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
 (* show individual files *)
 let handle_show (self:t) : unit =
@@ -254,7 +254,7 @@ let handle_show_as_table (self:t) : unit =
           let link_res prover pb ~res =
             PB.link ~uri:(uri_show file prover pb) (PB.text res)
           in
-          Test.Top_result.to_printbox_table ~link_pb:link_get_pb ~link_res res
+          Test.Top_result.to_printbox_table ~link_pb:link_get_file ~link_res res
         in
         let h =
           let open Html in
@@ -331,7 +331,7 @@ let handle_show_single (self:t) : unit =
              U.percent_decode pb_file |> CCOpt.to_result "invalid pb_file" |> scope.unwrap in
            let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
            let pb, stdout, stderr =
-             Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_pb) r
+             Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
            in
            let open Html in
            mk_page ~title:"single result" [
@@ -343,8 +343,10 @@ let handle_show_single (self:t) : unit =
                [txt "back to detailed results"];
              h3 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
              div [pb_html pb];
-             details (summary [txt "full stdout"]) [pre [txt stdout]];
-             details (summary [txt "full stderr"]) [pre [txt stderr]];
+             details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stdout"])
+               [pre [txt stdout]];
+             details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stderr"])
+               [pre [txt stderr]];
            ]
         )
       |> E.catch
@@ -473,9 +475,17 @@ let handle_provers (self:t) : unit =
       let provers = Definitions.all_provers self.defs in
       let h =
         let open Html in
-        let l =
-          List.map (fun p -> mk_li [pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p]]) provers
+        let mk_prover p =
+          mk_li [
+            pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p];
+            begin match p.Prover.defined_in with
+              | None -> span[]
+              | Some f ->
+                div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+            end;
+          ]
         in
+        let l = List.map mk_prover provers in
         mk_page ~title:"tasks"
           [
             mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
@@ -505,6 +515,11 @@ let handle_tasks (self:t) : unit =
                        [mk_button ~cls:["btn-primary"] [txt "run"]];
                    ];
                    mk_col ~cls:["col-auto"] [pre [txt @@Format.asprintf "%a@?" Task.pp t]];
+                   begin match t.Task.defined_in with
+                     | None -> span[]
+                     | Some f ->
+                       div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+                   end;
                  ]])
             tasks
         in
@@ -584,7 +599,8 @@ let handle_root (self:t) : unit =
                        ~ok:(fun m ->
                            let descr = Printf.sprintf "%d res for {%s} at %s"
                                m.Test.n_results (String.concat "," m.Test.provers)
-                               (CCOpt.map_or ~default:"<unknown date>" Misc.human_datetime m.Test.timestamp)
+                               (CCOpt.map_or ~default:"<unknown date>"
+                                  Misc.human_datetime m.Test.timestamp)
                            in
                            descr, [a_title (Test.Metadata.to_string m)])
                    in
@@ -678,24 +694,28 @@ let handle_css self : unit =
   ()
 
 
-let handle_pb self : unit =
-  H.add_path_handler self ~meth:`GET "/get-pb/%s%!" (fun file _req ->
+let handle_file self : unit =
+  H.add_path_handler self ~meth:`GET "/get-file/%s%!" (fun file _req ->
       let unwrap_ code = function
         | Ok x -> x
-        | Error e -> H.Response.fail_raise ~code "error in get-pb: %s" e
+        | Error e -> H.Response.fail_raise ~code "error in get-file: %s" e
       in
       let file =
         U.percent_decode file |> CCOpt.to_result "invalid path" |> unwrap_ 404
       in
-      let ic =
-        try open_in file
-        with e ->
-          H.Response.fail_raise ~code:500 "cannot open file %S:\n%s" file
-            (Printexc.to_string e)
+      let bytes =
+        if file = "prelude" then (
+          H.Byte_stream.of_string Builtin_config.config (* magic file! *)
+        ) else (
+          try H.Byte_stream.of_chan @@ open_in file
+          with e ->
+            H.Response.fail_raise ~code:500 "cannot open file %S:\n%s" file
+              (Printexc.to_string e)
+        )
       in
       H.Response.make_raw_stream
         ~headers:["Content-Type", "text/plain"]
-        ~code:200 (H.Byte_stream.of_chan ic)
+        ~code:200 bytes
     )
 
 let main ?port (defs:Definitions.t) () =
@@ -725,7 +745,7 @@ let main ?port (defs:Definitions.t) () =
     handle_job_interrupt self;
     handle_compare server;
     handle_delete server;
-    handle_pb server;
+    handle_file server;
     H.run server |> E.map_err Printexc.to_string
   with e ->
     E.of_exn_trace e

@@ -39,6 +39,7 @@ type t = {
   unknown : string option;  (* regex for "unknown" *)
   timeout : string option;  (* regex for "timeout" *)
   memory  : string option;  (* regex for "out of memory" *)
+  defined_in: string option;
 }
 (** The type of provers configurations *)
 

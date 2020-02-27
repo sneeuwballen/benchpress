@@ -20,13 +20,14 @@ type t = {
   defs: def Str_map.t;
   dirs: Dir.t list; (* list of directories *)
   cur_dir: string; (* for relative paths *)
+  config_file: string option;
   option_j : int option;
   option_progress : bool option;
 }
 
 let empty : t =
   { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd();
-    option_j=None; option_progress=None;
+    option_j=None; option_progress=None; config_file=None;
   }
 
 let add_prover (p:Prover.t) self : t =
@@ -99,7 +100,7 @@ let build_from_config config pname : Prover.t or_error =
     get_stropt "memory" >>= fun memory ->
     pure {
       name=pname; version; cmd; binary; binary_deps; unsat; sat;
-      unknown; timeout; memory; }
+      unknown; timeout; memory; defined_in=None; }
   in
   Config.get config getter
 
@@ -203,7 +204,9 @@ let add_stanza (st:Stanza.t) self : t or_error =
   let open Stanza in
   match st with
   | St_enter_file file ->
-    Ok { self with cur_dir=Misc.mk_abs_path (Filename.dirname file) }
+    Ok { self with
+         cur_dir=Misc.mk_abs_path (Filename.dirname file);
+         config_file=Some file; }
   | St_dir {path;expect;pattern} ->
     let path = norm_path ~cur_dir:self.cur_dir path in
     (if Sys.file_exists path && Sys.is_directory path then Ok ()
@@ -236,12 +239,12 @@ let add_stanza (st:Stanza.t) self : t or_error =
     let p = {
       Prover.
       name; cmd; sat; unsat; timeout; unknown; memory; binary; binary_deps;
-      version=get_version ~binary version;
+      version=get_version ~binary version; defined_in=self.config_file;
     } in
     Ok (add_prover p self)
   | St_task {name; synopsis; action; } ->
     mk_action self action >>= fun action ->
-    let t = {Task.name; synopsis; action; } in
+    let t = {Task.name; synopsis; action; defined_in=self.config_file;} in
     Ok (add_task t self)
   | St_set_options {progress; j} ->
     let open CCOpt.Infix in

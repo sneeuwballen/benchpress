@@ -36,6 +36,7 @@ type t = {
   unknown : string option;  (* regex for "unknown" *)
   timeout : string option;  (* regex for "timeout" *)
   memory  : string option;  (* regex for "out of memory" *)
+  defined_in: string option;
 }
 
 type t_ = t
@@ -91,9 +92,9 @@ end
 let pp out self =
   let open Misc.Pp in
   let {name; version; cmd; unsat; sat; timeout; unknown; memory;
-       binary; binary_deps=_;} = self in
+       binary; binary_deps=_; defined_in} = self in
   Fmt.fprintf out
-    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a@])"
+    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a@])"
     (pp_f "name" pp_str) name
     (pp_f "version" Version.pp) version
     (pp_f "cmd" pp_str) cmd
@@ -103,6 +104,7 @@ let pp out self =
     (pp_opt "memory" pp_regex) memory
     (pp_opt "timeout" pp_regex) timeout
     (pp_opt "unknown" pp_regex) unknown
+    (pp_opt "defined_in" pp_str) defined_in
 
 exception Subst_not_found of string
 
@@ -267,7 +269,7 @@ let of_db db name : t or_error =
                       let unknown = nonnull unknown in
                       let timeout = nonnull timeout in
                       let memory = nonnull memory in
-                      { name; cmd; binary_deps=[];
+                      { name; cmd; binary_deps=[]; defined_in=None;
                         version; binary;unsat;sat;unknown;timeout;memory})
        |> scope.unwrap_with Db.Rc.to_string
        |> CCOpt.to_result "expected a result"
