@@ -128,11 +128,13 @@ end
 
 (** {2 Basic analysis of results} *)
 
-type linker = Problem.path -> PrintBox.t
-type full_linker = Prover.name -> Problem.path -> PrintBox.t
+type path_linker = Problem.path -> PrintBox.t
+type prover_path_linker = Prover.name -> Problem.path -> PrintBox.t
+type prover_path_res_linker = Prover.name -> Problem.path -> res:string -> PrintBox.t
 
 let default_linker path = PB.text path
-let default_full_linker _ path = default_linker path
+let default_pp_linker _ path = default_linker path
+let default_ppr_linker _ _ ~res = default_linker res
 
 module Analyze : sig
   type t = {
@@ -151,10 +153,10 @@ module Analyze : sig
 
   val to_printbox : t -> PrintBox.t
   val to_printbox_l : (Prover.name * t) list -> (string*PrintBox.t) list
-  val to_printbox_bad : ?link:linker -> t -> PrintBox.t
-  val to_printbox_bad_l : ?link:full_linker -> (Prover.name * t) list -> (string*PrintBox.t) list
-  val to_printbox_errors : ?link:linker -> t -> PrintBox.t
-  val to_printbox_errors_l : ?link:full_linker ->
+  val to_printbox_bad : ?link:path_linker -> t -> PrintBox.t
+  val to_printbox_bad_l : ?link:prover_path_linker -> (Prover.name * t) list -> (string*PrintBox.t) list
+  val to_printbox_errors : ?link:path_linker -> t -> PrintBox.t
+  val to_printbox_errors_l : ?link:prover_path_linker ->
     (Prover.name * t) list -> (string*PrintBox.t) list
 
   val is_ok : t -> bool
@@ -294,7 +296,7 @@ end = struct
       grid_l (header :: l)
     ) else empty
 
-  let to_printbox_bad_l ?(link=default_full_linker) =
+  let to_printbox_bad_l ?(link=default_pp_linker) =
     CCList.filter_map
       (fun ((p:string), a) ->
          if a.bad = 0 then None
@@ -319,7 +321,7 @@ end = struct
       grid_l (header :: l)
     ) else empty
 
-  let to_printbox_errors_l ?(link=default_full_linker) =
+  let to_printbox_errors_l ?(link=default_pp_linker) =
     CCList.filter_map
       (fun ((p:string), a) ->
          if a.errors = 0 then None
@@ -682,11 +684,17 @@ module Top_result : sig
 
   val table_to_csv : table -> Csv.t
 
-  val table_to_printbox : table -> PrintBox.t
+  val table_to_printbox :
+    ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
+    table -> PrintBox.t
 
   val to_printbox_summary : t -> (string * PrintBox.t) list
   val to_printbox_stat : t -> (string * PrintBox.t) list
-  val to_printbox_table : t -> PrintBox.t
+
+  val to_printbox_table :
+    ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
+    t -> PrintBox.t
+
   val to_printbox_bad : t -> (string * PrintBox.t) list
   val to_printbox_errors : t -> (string * PrintBox.t) list
 
@@ -828,7 +836,10 @@ end = struct
   let to_csv ?provers t : Csv.t =
     to_table ?provers t |> table_to_csv
 
-  let table_to_printbox (self:table) : PB.t =
+  let table_to_printbox
+      ?(link_pb=default_linker)
+      ?(link_res=default_ppr_linker)
+      (self:table) : PB.t =
     let header_line =
       List.map PB.(text_with_style Style.bold) @@
       "problem" ::
@@ -838,8 +849,9 @@ end = struct
     let lines =
       List.map
         (fun r ->
-           PB.text r.tr_problem
-           :: List.map (fun (_,res,_) -> PB.text @@ res_to_csv res) r.tr_res
+           link_pb r.tr_problem
+           :: List.map (fun (prover,res,_) ->
+               link_res prover r.tr_problem ~res:(res_to_csv res)) r.tr_res
            @ List.map (fun (_,res,t) -> PB.text @@ time_to_csv res t) r.tr_res)
         self.t_rows
     in
@@ -853,7 +865,9 @@ end = struct
     let a = analyze self in
     Analyze.to_printbox_l a
 
-  let to_printbox_table self = table_to_printbox @@ to_table self
+  let to_printbox_table ?link_pb ?link_res self =
+    table_to_printbox ?link_pb ?link_res @@ to_table self
+
   let to_printbox_bad self =
     let a = analyze self in
     CCList.filter_map
@@ -981,7 +995,7 @@ module Detailed_res : sig
   type t = Prover.t Run_result.t
   (** Detailed result *)
 
-  val to_printbox : ?link:full_linker -> t -> PrintBox.t * string * string
+  val to_printbox : ?link:prover_path_linker -> t -> PrintBox.t * string * string
   (** Display an individual result + stdout + stderr *)
 
   val get_res : Db.t -> Prover.name -> string -> t or_error
@@ -1044,7 +1058,7 @@ end = struct
          Run_result.map ~f:(fun _ -> prover) res
       )
 
-  let to_printbox ?link:(mk_link=default_full_linker) (self:t) : PB.t*string*string =
+  let to_printbox ?link:(mk_link=default_pp_linker) (self:t) : PB.t*string*string =
     let open PB in
     let pp_res r =
       match r with

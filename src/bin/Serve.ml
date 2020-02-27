@@ -4,6 +4,7 @@ module E = CCResult
 
 module H = Tiny_httpd
 module U = Tiny_httpd_util
+module PB = PrintBox
 
 let src = Logs.Src.create "benchpress.serve"
 
@@ -144,14 +145,18 @@ let html_redirect (s:string) =
     ~title:s
     [txt s]
 
+let uri_show db_file prover path =
+  Printf.sprintf "/show_single/%s/%s/%s/"
+    (U.percent_encode db_file)
+    (U.percent_encode prover)
+    (U.percent_encode path)
+
 let link_show db_file prover path =
-  let module PB = PrintBox in
-  PB.link
-    ~uri:(Printf.sprintf "/show_single/%s/%s/%s/"
-            (U.percent_encode db_file)
-            (U.percent_encode prover)
-            (U.percent_encode path))
-    (PB.text path)
+  PB.link (PB.text path) ~uri:(uri_show db_file prover path)
+
+let uri_pb pb = Printf.sprintf "/get-pb/%s" (U.percent_encode pb)
+
+let link_get_pb pb = PB.link (PB.text pb) ~uri:(uri_pb pb)
 
 (* show individual files *)
 let handle_show (self:t) : unit =
@@ -245,7 +250,12 @@ let handle_show_as_table (self:t) : unit =
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
-        let full_table = Test.Top_result.to_printbox_table res in
+        let full_table =
+          let link_res prover pb ~res =
+            PB.link ~uri:(uri_show file prover pb) (PB.text res)
+          in
+          Test.Top_result.to_printbox_table ~link_pb:link_get_pb ~link_res res
+        in
         let h =
           let open Html in
           mk_page ~title:"show full table" @@
@@ -321,12 +331,7 @@ let handle_show_single (self:t) : unit =
              U.percent_decode pb_file |> CCOpt.to_result "invalid pb_file" |> scope.unwrap in
            let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
            let pb, stdout, stderr =
-             let link _ pb =
-               let module PB = PrintBox in
-               PB.link (PB.text pb)
-                 ~uri:(Printf.sprintf "/get-pb/%s" (U.percent_encode pb))
-             in
-             Test.Detailed_res.to_printbox ~link r
+             Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_pb) r
            in
            let open Html in
            mk_page ~title:"single result" [
