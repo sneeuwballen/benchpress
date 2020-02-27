@@ -162,12 +162,12 @@ let handle_show (self:t) : unit =
             [mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
              h3 [txt file];
              mk_row @@ List.map (fun x -> mk_col [x]) @@ [
-               mk_a ~cls:["btn-secondary"; "h-75"] ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
-                 [p [txt "show individual results"]];
-               mk_a ~cls:["btn-secondary"; "h-75"] ~a:[a_href ("/show_csv/"^U.percent_encode file)]
-                 [p [txt "download as csv"]];
-               mk_a ~cls:["btn-secondary"; "h-75"] ~a:[a_href ("/show_table/"^U.percent_encode file)]
-                 [p [txt "show table of results"]];
+               mk_a ~cls:["btn-secondary"] ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
+                 [txt "show individual results"];
+               mk_a ~cls:["btn-secondary"] ~a:[a_href ("/show_csv/"^U.percent_encode file)]
+                 [txt "download as csv"];
+               mk_a ~cls:["btn-secondary"] ~a:[a_href ("/show_table/"^U.percent_encode file)]
+                 [txt "show table of results"];
              ]
             ];
             [div [pb_html box_meta]];
@@ -175,7 +175,14 @@ let handle_show (self:t) : unit =
                (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
                box_stat);
             (CCList.flat_map
-               (fun (n,p) -> [h3 [txt ("summary for " ^ n)]; div [pb_html p]])
+               (fun (n,pb) ->
+                  [h3 [txt ("summary for " ^ n)];
+                   div [pb_html pb];
+                   mk_a ~cls:["btn-secondary"; "h-50"]
+                     ~a:[a_href (Printf.sprintf "/show_csv/%s?provers=%s"
+                                   (U.percent_encode file) (U.percent_encode n))]
+                     [txt "download as csv"];
+                  ])
                box_summary);
             CCList.flat_map
               (fun (n,p) ->
@@ -312,13 +319,21 @@ let handle_show_single (self:t) : unit =
 
 (* export as CSV *)
 let handle_show_csv (self:t): unit =
-  H.add_path_handler self.server ~meth:`GET "/show_csv/%s%!" (fun file _req ->
+  H.add_path_handler self.server ~meth:`GET "/show_csv/%s@?%s%!" (fun file _q req ->
       match Utils.load_file file with
       | Error e ->
         Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
-        let csv = Test.Top_result.to_csv_string res in
+        let query = H.Request.query req in
+        Logs.debug ~src:src
+          (fun k->k  "query: [%s]"
+              (String.concat ";" (List.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query)));
+        let provers =
+          try Some (List.assoc "provers" query |> CCString.split_on_char ',')
+          with _ -> None
+        in
+        let csv = Test.Top_result.to_csv_string ?provers res in
         Logs.debug ~src (fun k->k "successful reply for /show_csv/%S" file);
         H.Response.make_string
           ~headers:["Content-Type", "plain/csv";
@@ -527,9 +542,6 @@ let handle_root (self:t) : unit =
               )
             ];
             h3 [txt "list of results"];
-            (* TODO: try to read [s] as a sqlite file and make a title
-               with (list of provers, number of entries,
-                     (common file prefix/sample of files)?) *)
             let l =
               List.map
                 (fun (s0,size) ->

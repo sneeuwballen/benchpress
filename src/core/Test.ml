@@ -671,7 +671,7 @@ module Top_result : sig
     t_provers: string list;
   }
 
-  val to_table : t -> table
+  val to_table : ?provers:string list -> t -> table
 
   val table_to_csv : table -> Csv.t
 
@@ -683,13 +683,13 @@ module Top_result : sig
   val to_printbox_bad : t -> (string * PrintBox.t) list
   val to_printbox_errors : t -> (string * PrintBox.t) list
 
-  val to_csv : t -> Csv.t
+  val to_csv : ?provers:string list -> t -> Csv.t
 
-  val to_csv_chan : out_channel -> t -> unit
+  val to_csv_chan : ?provers:string list -> out_channel -> t -> unit
 
-  val to_csv_string : t -> string
+  val to_csv_string : ?provers:string list -> t -> string
 
-  val to_csv_file : string -> t -> unit
+  val to_csv_file : ?provers:string list -> string -> t -> unit
   (** Write as CSV into given file *)
 end = struct
   type t = top_result
@@ -749,7 +749,7 @@ end = struct
     t_provers: string list;
   }
 
-  let to_table (self:t): table =
+  let to_table ?provers (self:t): table =
     let line0 =
       Printf.sprintf "(snapshot :uuid %s :date %s)"
         (Uuidm.to_string self.meta.uuid)
@@ -758,7 +758,11 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "while converting to CSV table: %s")
       (fun scope ->
-         let provers = list_provers self.db |> scope.unwrap in
+         let provers =
+           match provers with
+           | Some l -> l
+           | None -> list_provers self.db |> scope.unwrap
+         in
          let files = Db.exec_no_params self.db
              {| select distinct file from prover_res; |}
              ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
@@ -777,6 +781,7 @@ end = struct
                                  prover, Res.of_string res, t)
                     ~f:Db.Cursor.to_list_rev
                   |> scope.unwrap_with Db.Rc.to_string
+                  |> List.filter (fun (p,_,_) -> List.mem p provers)
                 in
                 {tr_problem=file; tr_res})
              files
@@ -813,8 +818,8 @@ end = struct
     in
     header_line :: lines
 
-  let to_csv t : Csv.t =
-    to_table t |> table_to_csv
+  let to_csv ?provers t : Csv.t =
+    to_table ?provers t |> table_to_csv
 
   let table_to_printbox (self:table) : PB.t =
     let header_line =
@@ -882,19 +887,19 @@ end = struct
      ]
   *)
 
-  let to_csv_chan oc t =
+  let to_csv_chan ?provers oc t =
     let chan = Csv.to_channel oc in
-    Csv.output_all chan (to_csv t)
+    Csv.output_all chan (to_csv ?provers t)
 
-  let to_csv_file file t =
+  let to_csv_file ?provers file t =
     let oc = open_out file in
-    to_csv_chan oc t;
+    to_csv_chan ?provers oc t;
     close_out oc
 
-  let to_csv_string t =
+  let to_csv_string ?provers t =
     let buf = Buffer.create 256 in
     let ch = Csv.to_buffer buf in
-    Csv.output_all ch (to_csv t);
+    Csv.output_all ch (to_csv ?provers t);
     Buffer.contents buf
 
   let db_prepare (db:Db.t) : _ or_error =
