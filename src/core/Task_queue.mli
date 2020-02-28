@@ -9,6 +9,9 @@ module Job : sig
   val task : t -> Task.t
   val interrupt : t -> unit
   val pp : t Fmt.printer
+  val to_string : t -> string
+
+  val time_elapsed: t -> float
 
   (* TODO: completion, in [0;1]
      val completion : t -> float
@@ -34,4 +37,13 @@ val push : t -> Task.t -> unit
 val loop : t -> unit
 (** Run forever *)
 
+type status = {
+  cur_job: Job.t option;
+  in_queue: int;
+}
 
+val status : t -> status
+
+module J = Misc.Json.Encode
+
+val encode_status : status J.encoder

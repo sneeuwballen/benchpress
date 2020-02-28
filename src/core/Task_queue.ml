@@ -10,6 +10,7 @@ type job = {
   j_action: Action.t;
   j_task: Task.t; (* task this action comes from *)
   j_interrupted: bool M.t;
+  mutable j_started_time: float;
 }
 module Job = struct
   type t = job
@@ -19,8 +20,10 @@ module Job = struct
     Fmt.fprintf out "(@[task%s %a@])"
       (if M.get self.j_interrupted then "[int]" else "")
       Action.pp self.j_action
+  let to_string = Fmt.to_string pp
   let interrupt self = M.set self.j_interrupted true
   let interrupted self = M.get self.j_interrupted
+  let time_elapsed self = Unix.gettimeofday() -. self.j_started_time
 end
 
 (* TODO: replace the blocking queue with a custom thing with priorities *)
@@ -44,13 +47,14 @@ let create ?(defs=Definitions.empty) () : t =
 let push self task : unit =
   let j = {
     j_action=task.Task.action; j_task=task;
-    j_interrupted=M.create false;
+    j_interrupted=M.create false; j_started_time=0. ;
   } in
   CCBlockingQueue.push self.jobs j
 
 let loop self =
   while true do
     let job = CCBlockingQueue.take self.jobs in
+    job.j_started_time <- Unix.gettimeofday();
     M.set self.cur (Some job);
     Logs.info ~src:src_log (fun k->k "run job for task %s" job.j_task.Task.name);
     let defs = M.get self.defs in
@@ -71,3 +75,25 @@ let loop self =
     M.set self.cur None;
   done
 
+type status = {
+  cur_job: Job.t option;
+  in_queue: int;
+}
+
+let status self =
+  {cur_job=M.get self.cur; in_queue=CCBlockingQueue.size self.jobs}
+
+module J = Misc.Json.Encode
+
+let encode_status st =
+  J.obj [
+    "cur_job",
+    (match st.cur_job with
+     | None -> J.null
+     | Some j ->
+       J.obj [
+         "task", J.string (Job.to_string j);
+         "elapsed", J.string (Printf.sprintf "%0.3f" @@ Job.time_elapsed j);
+       ]);
+    "in_queue", J.int st.in_queue;
+  ]

@@ -7,14 +7,18 @@
  (flags :standard -warn-error -3-32 -safe-string -open Benchpress))
 
 (rule
-  (targets css.ml)
-  (deps bootstrap.min.css)
+  (targets web_data.ml)
+  (deps (:css bootstrap.min.css) (:js embed.js))
   (action
     (with-stdout-to %{targets}
      (progn
        (echo "let css = {css|")
-       (cat %{deps})
-       (echo "|css}")))))
+       (cat %{css})
+       (echo "|css}")
+       (echo "let js = {j|")
+       (cat %{js})
+       (echo "|j}")
+       ))))
 
 (rule
  (with-stdout-to benchpress.1 (run ./benchpress_bin.exe --help=groff)))

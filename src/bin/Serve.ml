@@ -107,7 +107,10 @@ module Html = struct
       (head (title @@ txt s)
          [b_style; PB_html.style;
           meta ~a:(a_charset "utf-8" :: my_meta) ()])
-      (body [div ~a:[a_class ["container"]] my_body])
+      (body [
+          script ~a:[a_src "/js"] (txt "");
+          div ~a:[a_class ["container"]] my_body
+        ])
 
   let mk_a ?(cls=["btn-link"]) ?a:(al=[]) x = a ~a:(a_class ("btn" :: cls) :: al) x
   let mk_row ?(cls=[]) x = div ~a:[a_class ("row"::cls)] x
@@ -122,6 +125,10 @@ module Html = struct
 
   let to_string h = Format.asprintf "@[%a@]@." (pp ()) h
 end
+
+let dyn_status () =
+  let open Html in
+  ul ~a:[a_id "dyn-status"; a_class ["list-group"]] []
 
 let html_redirect (s:string) =
   let open Html in
@@ -159,7 +166,8 @@ let handle_show (self:t) : unit =
           let open Html in
           mk_page ~title:"show" @@
           List.flatten [
-            [mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
+            [mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+             dyn_status();
              h3 [txt file];
              mk_row @@ List.map (fun x -> mk_col [x]) @@ [
                mk_a ~cls:["btn-secondary"] ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
@@ -226,7 +234,8 @@ let handle_show_as_table (self:t) : unit =
           let open Html in
           mk_page ~title:"show full table" @@
           List.flatten [
-            [mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"]];
+            [mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+             dyn_status()];
             [h3 [txt "full results"];
              div [pb_html full_table]];
           ]
@@ -245,7 +254,8 @@ let handle_show_detailed (self:t) : unit =
            let open Html in
            mk_page ~title:"detailed results"
              [
-               mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
+               mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+               dyn_status();
                h3 [txt "detailed results"];
                let rows =
                  List.map
@@ -297,7 +307,8 @@ let handle_show_single (self:t) : unit =
            let pb, stdout, stderr = Test.Detailed_res.to_printbox r in
            let open Html in
            mk_page ~title:"single result" [
-             mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
+             mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+             dyn_status();
              mk_a
                ~cls:["sticky-top"]
                ~a:[ a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file))]
@@ -387,7 +398,8 @@ let handle_compare server : unit =
           let open Html in
           mk_page ~title:"compare"
             [
-              mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
+              mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+              dyn_status();
               h3 [txt "comparison"];
               div [pb_html box_compare_l];
             ]
@@ -438,7 +450,8 @@ let handle_provers (self:t) : unit =
         in
         mk_page ~title:"tasks"
           [
-            mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
+            mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+            dyn_status();
             h3 [txt "list of provers"];
             mk_ul l
           ]
@@ -469,7 +482,8 @@ let handle_tasks (self:t) : unit =
         in
         mk_page ~title:"tasks"
           [
-            mk_a ~cls:["sticky-top"; "btn-secondary"] ~a:[a_href "/"] [txt "back to root"];
+            mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+            dyn_status();
             h3 [txt "list of tasks"];
             mk_ul l;
           ]
@@ -518,28 +532,14 @@ let handle_root (self:t) : unit =
         let open Html in
         mk_page ~title:"benchpress"
           [
+            h1 [txt "Benchpress"];
+            dyn_status ();
+            h3 [txt "configuration"];
             ul ~a:[a_class ["list-group"]] @@ List.flatten [
               [li ~a:[a_class ["list-group-item"]]
                  [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
                li ~a:[a_class ["list-group-item"]]
                  [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
-              (match Task_queue.cur_job self.task_q with
-               | None -> []
-               | Some j ->
-                 (* display current job *)
-                 [mk_li [
-                     txt @@
-                     Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)];
-                  mk_li [
-                    div ~a:[a_class ["spinner-border"]] [span []];
-                    pre [txt @@
-                         Format.asprintf "current task: %a" Task_queue.Job.pp j];
-                    form ~a:[a_id (uri_of_string "cancel");
-                             a_action (uri_of_string "/interrupt/");
-                             a_method `Post;]
-                      [mk_button ~cls:["btn-warning"] [txt "interrupt"]]];
-                 ];
-              )
             ];
             h3 [txt "list of results"];
             let l =
@@ -595,12 +595,60 @@ let handle_root (self:t) : unit =
       H.Response.make_string (Ok (Html.to_string h))
     )
 
+let handle_task_status self =
+  H.add_path_handler self.server ~meth:`GET "/tasks_status%!" (fun _req ->
+      let open Html in
+      let bod =
+        mk_ul @@ List.flatten [
+          [mk_li [
+              txt @@
+              Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)]];
+          begin match Task_queue.cur_job self.task_q with
+            | None -> []
+            | Some j ->
+              (* display current job *)
+              [mk_li [
+                  div ~a:[a_class ["spinner-border"]] [span []];
+                  pre [txt @@
+                       Format.asprintf "current task: %a" Task_queue.Job.pp j];
+                  form ~a:[a_id (uri_of_string "cancel");
+                           a_action (uri_of_string "/interrupt/");
+                           a_method `Post;]
+                    [mk_button ~cls:["btn-warning"] [txt "interrupt"]]]
+              ];
+          end
+        ]
+      in
+      let html = mk_page ~title:"tasks_status" [div [bod]] in
+      H.Response.make_string (Ok (Html.to_string html))
+    );
+  H.add_path_handler self.server ~meth:`GET "/api/tasks_status/" (fun _req ->
+      let j =
+        Task_queue.status self.task_q
+        |> Misc.Json.Encode.encode_string Task_queue.encode_status
+      in
+      H.Response.make_string ~headers:["Content-Type", "text/json"] (Ok j)
+    );
+  ()
+
 let handle_css self : unit =
-  H.add_path_handler self ~meth:`GET "/css" (fun _req ->
-      H.Response.make_string
-        ~headers:["content-type", "text/css"; "Etag", Digest.to_hex (Digest.string Css.css)]
-        (Ok Css.css)
-    )
+  let mk_path path ctype value =
+    H.add_path_handler self ~meth:`GET path (fun req ->
+        let h = Digest.to_hex (Digest.string value) in
+        if H.Request.get_header req "If-None-Match" = Some h then (
+           Logs.debug (fun k->k "cached object (etag: %S)" h);
+           H.Response.make_raw ~code:304 ""
+         ) else (
+          H.Response.make_string
+            ~headers:["content-type", ctype; "Etag", h]
+            (Ok value)
+        )
+      )
+  in
+  mk_path "/css" "text/css" Web_data.css;
+  mk_path "/js" "text/javascript" Web_data.js;
+  ()
+
 
 let main ?port (defs:Definitions.t) () =
   try
@@ -616,6 +664,8 @@ let main ?port (defs:Definitions.t) () =
       );
     Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
     handle_root self;
+    handle_task_status self;
+    handle_css server;
     handle_show self;
     handle_show_as_table self;
     handle_show_detailed self;
@@ -631,6 +681,4 @@ let main ?port (defs:Definitions.t) () =
     H.run server |> E.map_err Printexc.to_string
   with e ->
     E.of_exn_trace e
-
-
 
