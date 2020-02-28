@@ -14,7 +14,8 @@ type t = {
   data_dir: string;
 }
 
-(** {1 printbox -> html} *)
+(* TODO: use printbox 0.5 and use custom classes with its tyxml printer *)
+(** {2 printbox -> html} *)
 module PB_html : sig
   open Tyxml
   type 'a html = 'a Html.elt
@@ -93,6 +94,8 @@ end = struct
         [ to_html_rec b
         ; H.ul (List.map (fun x -> H.li [to_html_rec x]) l)
         ]
+    | _ ->
+      H.div [H.pre [H.txt @@ PrintBox_text.to_string b]] (* remaining cases *)
 
   let to_html b = H.div [to_html_rec b]
 end
