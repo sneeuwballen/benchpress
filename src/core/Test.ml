@@ -578,7 +578,7 @@ end = struct
         in
         Gp.plot_many
           ~labels:(Gp.Labels.create ~y:"time (s)" ~x:"problems solved (accumulated)" ())
-          ~title:"problems solved as function of time" gp series ~output);
+          ~title:"cumulative time for n° of problems solved" gp series ~output);
     ()
 
   let show (self:t) =
