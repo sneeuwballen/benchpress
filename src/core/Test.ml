@@ -577,18 +577,19 @@ end = struct
 
   let to_gp ~output self =
     Gp.with_ (fun gp ->
-        let series = self.lines
-                     |> List.map
-                       (fun (prover,l) ->
-                          let l =
-                            let sum = ref 0. in
-                            List.mapi
-                              (fun i rtime ->
-                                 sum := !sum +. rtime;
-                                 (float i, !sum))
-                              l
-                          in
-                          Gp.Series.linespoints_xy ~title:prover l)
+        let series =
+          self.lines
+          |> List.map
+            (fun (prover,l) ->
+               let l =
+                 let sum = ref 0. in
+                 List.mapi
+                   (fun i rtime ->
+                      sum := !sum +. rtime;
+                      (float i, !sum))
+                   l
+               in
+               Gp.Series.linespoints_xy ~title:prover l)
         in
         Gp.plot_many
           ~labels:(Gp.Labels.create ~y:"time (s)" ~x:"problems solved (accumulated)" ())
