@@ -542,9 +542,9 @@ module Cactus_plot : sig
   val of_db : Db.t -> t or_error
   val of_file : string -> t or_error
 
-  val show : t -> unit
-  val save_to_file : t -> string -> unit
-  val to_png : t -> string
+  val show : ?logscale:bool -> t -> unit
+  val save_to_file : ?logscale:bool -> t -> string -> unit
+  val to_png : ?logscale:bool -> t -> string
 end = struct
   module Gp = Gnuplot
 
@@ -575,7 +575,7 @@ end = struct
       Db.with_db ~timeout:500 ~mode:`READONLY file of_db
     with e -> E.of_exn_trace e
 
-  let to_gp ~output self =
+  let to_gp ?(logscale=true) ~output self =
     Gp.with_ (fun gp ->
         let series =
           self.lines
@@ -591,22 +591,24 @@ end = struct
                in
                Gp.Series.linespoints_xy ~title:prover l)
         in
+        let logscale = if logscale then Some ("xy",None) else None in
         Gp.plot_many
+          ?logscale
           ~labels:(Gp.Labels.create ~y:"time (s)" ~x:"problems solved (accumulated)" ())
-          ~title:"cumulative time for n° of problems solved" gp series ~output);
+          ~title:"problems solved (accumulated) over time" gp series ~output);
     ()
 
-  let show (self:t) =
-    to_gp self ~output:(Gp.Output.create `X11)
+  let show ?logscale (self:t) =
+    to_gp ?logscale self ~output:(Gp.Output.create `X11)
 
-  let save_to_file (self:t) file =
-    to_gp self ~output:(Gp.Output.create ~size:(1800,1024) @@ `Png file)
+  let save_to_file ?logscale (self:t) file =
+    to_gp self ?logscale ~output:(Gp.Output.create ~size:(1800,1024) @@ `Png file)
 
-  let to_png (self:t) : string =
+  let to_png ?logscale (self:t) : string =
     CCIO.File.with_temp ~prefix:"benchpress_plot" ~suffix:".png"
       (fun file ->
          Logs.debug (fun k->k "plot into file %s" file);
-         save_to_file self file;
+         save_to_file ?logscale self file;
          let s = CCIO.with_in file CCIO.read_all in
          Logs.debug (fun k->k "read %d bytes from file" (String.length s));
          s)
