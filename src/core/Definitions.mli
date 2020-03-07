@@ -24,10 +24,6 @@ val all_tasks : t -> Task.t list
 val option_j : t -> int option
 val option_progress : t -> bool option
 
-val of_config : Config.t -> t or_error
-[@@ocaml.deprecated "use sexp stanzas"]
-(** Get a list of supported provers from a config file. *)
-
 val add_stanza : Stanza.t -> t -> t or_error
 
 val add_stanza_l : Stanza.t list -> t -> t or_error

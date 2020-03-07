@@ -67,57 +67,6 @@ let get_version ?(binary="") (v:Stanza.version_field) : Prover.version =
     | Stanza.Version_exact v -> v
   end
 
-(* TODO: deprecate and remove once  there are no more toml files *)
-(* recover description of prover from config file *)
-let build_from_config config pname : Prover.t or_error =
-  let open Prover in
-  let getter =
-    let open Config in
-    let prover_tbl = table pname in
-    prover_tbl |>> string "cmd" >|= String.trim >>= fun cmd ->
-    begin
-      (prover_tbl |>> string "binary")
-      <|>
-      ( let b, _ = CCString.Split.left_exn ~by:" " cmd in
-        if b = "$binary" then
-          fail ("please provide $binary value for prover " ^ pname)
-        else pure b)
-    end >>= fun binary ->
-    (prover_tbl |>> string_list "binary_deps" <|> pure [])
-    >>= fun binary_deps ->
-    begin
-      (prover_tbl |>> string "version" >|= fun s ->
-       get_version ~binary (Stanza.Version_exact (Tag s)))
-      <|> pure (Tag "dev")
-    end >>= fun version ->
-    let get_stropt pname =
-      some (prover_tbl |>> string pname) <|> pure None
-    in
-    get_stropt "unsat" >>= fun unsat ->
-    get_stropt "sat" >>= fun sat ->
-    get_stropt "timeout" >>= fun timeout ->
-    get_stropt "unknown" >>= fun unknown ->
-    get_stropt "memory" >>= fun memory ->
-    pure {
-      name=pname; version; cmd; binary; binary_deps; unsat; sat;
-      unknown; timeout; memory; defined_in=None; }
-  in
-  Config.get config getter
-
-(* TODO: deprecate and remove once  there are no more toml files *)
-(* make a list of provers from the given config *)
-let of_config config : t or_error =
-  let open E.Infix in
-  begin
-    Config.(get_or ~default:[] config @@ string_list "provers")
-    |> List.map (build_from_config config)
-    |> E.map_l CCFun.id
-  end
-  >|= fun l ->
-  List.fold_left
-    (fun map prover -> add_prover prover map)
-    empty l
-
 let find_prover self name : Prover.t or_error =
   match Str_map.get name self.defs with
   | Some (D_prover p) -> Ok p

@@ -12,7 +12,6 @@ depends: [
   "base-unix"
   "containers" { >= "2.7" }
   "re" { >= "1.8" & < "2.0" }
-  "toml"
   "csv"
   "cmdliner"
   "iter" { >= "1.0" } # TODO: remove
@@ -28,9 +27,6 @@ depends: [
   "decoders" { >= "0.3.0" & < "0.4" }
   "decoders-yojson" { >= "0.3.0" & < "0.4" }
   "ocaml" {>= "4.02" }
-]
-pin-depends: [
-  ["printbox.0.5" "git+https://github.com/c-cube/printbox.git#0.5"]
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
