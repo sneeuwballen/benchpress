@@ -1,0 +1,17 @@
+(executable
+ (name benchpress_gtk)
+ (public_name benchpress-gtk)
+ (package benchpress-gtk)
+ (modes native)
+ (promote (into ../..) (until-clean))
+ (libraries benchpress containers cmdliner logs.cli sqlite3_utils lablgtk3)
+ (flags :standard -warn-error -3-32-26 -safe-string -open Benchpress))
+
+(rule
+ (with-stdout-to benchpress_gtk.1 (run ./benchpress_gtk.exe --help=groff)))
+
+(install
+ (section man)
+ (package benchpress)
+ (files benchpress_gtk.1))
+
