@@ -364,25 +364,27 @@ module Ui = struct
     let _col0 = cols#add Gobject.Data.string in
     cols#lock ();
     let ls = GTree.list_store cols in
-    let l = GTree.view ~model:ls ~packing:ws#add () in
-  (*
-    let l = GPack.vbox ~homogeneous:true ~packing:ws#add
-    ~border_width:4
-    () in
-    *)
+    let l =
+      GTree.view ~border_width:2 ~enable_search:true ~model:ls ~packing:ws#add
+        () in
     ignore_id @@ l#connect#notify_resize_mode
       ~callback:(fun _rm -> Printf.printf "resize list\n%!");
     l#set_margin_left 2;
     l#set_valign `FILL;
-    (* TODO: use table? *)
+    let col =
+      GTree.view_column ~title:"file"
+        ~renderer:(GTree.cell_renderer_text [], ["text", _col0])
+        ()
+    in
+    ignore @@ l#append_column col;
     List.iter
       (fun (s,size) ->
          let s = Filename.basename s in
          let text =
            Printf.sprintf "%s (%s)\n" s (Misc.human_size size)
          in
-         let iter = ls#append () in
-         iter
+         let iter = ls#append() in
+         ls#set ~row:iter ~column:_col0 text;
          (* TODO: make it a button  to change toplevel view *)
 (*
            let _but = GMisc.label ~text
