@@ -13,6 +13,7 @@ type t = {
   server: H.t;
   task_q: Task_queue.t;
   data_dir: string;
+  meta_cache: (string, Test.metadata) Hashtbl.t;
 }
 
 (* TODO: use printbox 0.5 and use custom classes with its tyxml printer *)
@@ -599,6 +600,21 @@ let handle_job_interrupt (self:t) : unit =
       H.Response.make_string r
     )
 
+let get_meta (self:t) (p:string) : _ result =
+  match Hashtbl.find self.meta_cache p with
+  | m -> Ok m
+  | exception Not_found ->
+    let res =
+      try
+        Sqlite3_utils.with_db ~cache:`PRIVATE ~mode:`READONLY p
+          (fun db -> Test.Metadata.of_db db)
+      with e ->
+        Error (Printf.sprintf "not a valid db: %S: %s"
+                 (Filename.basename p) @@ Printexc.to_string e)
+    in
+    E.iter (fun m -> Hashtbl.add self.meta_cache p m) res;
+    res
+
 (* index *)
 let handle_root (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/%!" (fun _req ->
@@ -623,10 +639,7 @@ let handle_root (self:t) : unit =
                 (fun (s0,size) ->
                    let s = Filename.basename s0 in
                    let entry_descr, row_title =
-                     (try
-                       Sqlite3_utils.with_db ~cache:`PRIVATE ~mode:`READONLY s0
-                         (fun db -> Test.Metadata.of_db db)
-                      with s -> Error ("not a valid db:" ^ Printexc.to_string s))
+                     get_meta self s0
                      |> E.catch
                        ~err:(fun e -> s, [a_title @@ "<no metadata>: "  ^ e])
                        ~ok:(fun m ->
@@ -754,7 +767,10 @@ let main ?(local_only=false) ?port (defs:Definitions.t) () =
     let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
     let server = H.create ~addr ?port () in
     let data_dir = Misc.data_dir () in
-    let self = { defs; server; data_dir; task_q=Task_queue.create ~defs (); } in
+    let self = {
+      defs; server; data_dir; task_q=Task_queue.create ~defs ();
+      meta_cache=Hashtbl.create ~random:true 16;
+    } in
     (* thread to execute tasks *)
     let _th_r = Thread.create Task_queue.loop self.task_q in
     (* trick: see if debug level is active *)
