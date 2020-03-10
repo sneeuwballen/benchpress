@@ -21,8 +21,8 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
     begin match Stanza.parse_files conf_files with
       | Ok x ->
         begin match Definitions.add_stanza_l x Definitions.empty with
-        | Ok x -> `Ok x
-        | Error s -> `Error (false, s)
+          | Ok x -> `Ok x
+          | Error s -> `Error (false, s)
         end
       | Error e -> `Error (false, e)
     end

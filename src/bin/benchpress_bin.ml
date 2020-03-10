@@ -202,13 +202,15 @@ module Serve = struct
     let open Cmdliner in
     let port =
       Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
+    and local_only =
+      Arg.(value & flag & info ["local-only"] ~doc:"only listen on localhost")
     and defs =
       Utils.definitions_term
     in
     let doc = "serve embedded web UI on given port" in
-    let aux defs port () =
-      Serve.main ?port defs () in
-    Term.(pure aux $ defs $ port $ pure () ), Term.info ~doc "serve"
+    let aux defs port local_only () =
+      Serve.main ?port ~local_only defs () in
+    Term.(pure aux $ defs $ port $ local_only $ pure () ), Term.info ~doc "serve"
 end
 
 (** {2 Show directories} *)

@@ -313,16 +313,14 @@ let handle_show_detailed (self:t) : unit =
                let rows =
                  List.map
                    (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
-                      let url =
-                        Printf.sprintf "/show_single/%s/%s/%s/"
-                          (U.percent_encode db_file)
-                          (U.percent_encode prover)
-                          (U.percent_encode pb_file)
-                      in
+                      let url_file_res = uri_show db_file prover pb_file in
+                      let url_file = uri_get_file pb_file in
                       tr [
                         td [txt prover];
-                        td [mk_a ~a:[a_href url; a_title pb_file]
-                              [txt @@ Misc.truncate_left 80 pb_file]];
+                        td [
+                          mk_a ~a:[a_href url_file_res; a_title pb_file] [txt pb_file];
+                          mk_a ~a:[a_href url_file; a_title pb_file] [txt "(content)"];
+                        ];
                         td [txt (Res.to_string res)];
                         td [txt (Res.to_string file_expect)];
                         td [txt (Misc.human_duration rtime)]
@@ -751,9 +749,10 @@ let handle_file self : unit =
         ~code:200 bytes
     )
 
-let main ?port (defs:Definitions.t) () =
+let main ?(local_only=false) ?port (defs:Definitions.t) () =
   try
-    let server = H.create ?port () in
+    let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
+    let server = H.create ~addr ?port () in
     let data_dir = Misc.data_dir () in
     let self = { defs; server; data_dir; task_q=Task_queue.create ~defs (); } in
     (* thread to execute tasks *)
