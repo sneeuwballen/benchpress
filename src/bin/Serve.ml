@@ -520,7 +520,7 @@ let handle_provers (self:t) : unit =
           ]
         in
         let l = List.map mk_prover provers in
-        mk_page ~title:"poovers"
+        mk_page ~title:"provers"
           [
             mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
             dyn_status();
@@ -619,13 +619,14 @@ let handle_root (self:t) : unit =
                  [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
             ];
             h3 [txt "list of results"];
+            let start = Unix.gettimeofday() in
             let l =
               List.map
                 (fun (s0,size) ->
                    let s = Filename.basename s0 in
                    let entry_descr, row_title =
                      (try
-                       Sqlite3_utils.with_db ~mode:`NO_CREATE s0
+                       Sqlite3_utils.with_db ~cache:`PRIVATE ~mode:`READONLY s0
                          (fun db -> Test.Metadata.of_db db)
                       with s -> Error ("not a valid db:" ^ Printexc.to_string s))
                      |> E.catch
@@ -656,6 +657,8 @@ let handle_root (self:t) : unit =
                         ]])
                 entries
             in
+            let elapsed = Unix.gettimeofday() -. start in
+            Logs.info ~src (fun k->k "listed results in %.3fs" elapsed);
             form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
               div ~a:[a_class ["container"]] [
                 mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] [

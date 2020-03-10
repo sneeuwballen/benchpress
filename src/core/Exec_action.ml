@@ -97,7 +97,7 @@ end = struct
            if dyn then (
              Misc.synchronized (fun () ->
                  output_string stdout Misc.reset_line;
-                 Printf.printf "[%6d/%6d] find expect for %S…%!"
+                 Printf.printf "[%6d/%6d] find expect for `%s`…%!"
                    !n_done n_files (Misc.truncate_left 15 path);
                )
            );
