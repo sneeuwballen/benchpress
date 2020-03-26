@@ -43,9 +43,11 @@ type t = {
 }
 (** The type of provers configurations *)
 
-val name : t -> string
+val name : t -> name
 (** Prover name *)
 
+val compare_name : name -> name -> int
+val compare_by_name : t -> t -> int
 val pp_name : t Fmt.printer
 val pp : t Fmt.printer
 

@@ -45,7 +45,9 @@ let equal p1 p2 = p1.name = p2.name
 
 let name p = p.name
 
+let compare_name = String.compare
 let pp_name out p = Fmt.string out p.name
+let compare_by_name p1 p2 = compare_name p1.name p2.name
 
 module Version = struct
   type t = version
@@ -146,7 +148,7 @@ let make_command ?env prover ~timeout ~memory ~file =
 
 module Map_name = CCMap.Make(struct
     type t = t_
-    let compare a b = String.compare a.name b.name
+    let compare = compare_by_name
   end)
 
 module As_key = struct

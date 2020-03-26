@@ -49,7 +49,11 @@ let main ?j ?dyn ?timeout ?memory ?csv ?(provers=[])
           (* convert paths and provers *)
           E.map_l (Definitions.mk_subdir defs) paths >>= fun paths ->
           E.map_l (Definitions.find_prover defs) provers >>= fun provers ->
-          let r = {r with provers=provers @ r.provers; dirs=paths @ r.dirs} in
+          let provers =
+            provers @ r.provers
+            |> CCList.sort_uniq ~cmp:Prover.compare_by_name
+          in
+          let r = {r with provers; dirs=paths @ r.dirs} in
           Ok (TT_run_provers r)
         | t ->
           Ok (TT_other t.action)
@@ -59,6 +63,7 @@ let main ?j ?dyn ?timeout ?memory ?csv ?(provers=[])
        | [] -> E.fail_fprintf "please provide at least one prover"
        | l -> Ok l
       ) >>= fun provers ->
+      let provers = CCList.sort_uniq ~cmp:Prover.compare_name provers in (* deduplicate *)
       Definitions.mk_run_provers ?timeout ?memory ?j ~provers ~paths defs >>= fun r ->
       Ok (TT_run_provers r)
   end >>= fun tt_task ->
