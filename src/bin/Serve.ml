@@ -612,7 +612,12 @@ let get_meta (self:t) (p:string) : _ result =
         Error (Printf.sprintf "not a valid db: %S: %s"
                  (Filename.basename p) @@ Printexc.to_string e)
     in
-    E.iter (fun m -> Hashtbl.add self.meta_cache p m) res;
+    E.iter
+      (fun m ->
+         (* cache if it's complete *)
+         if Test.Metadata.is_complete m then (
+           Hashtbl.add self.meta_cache p m
+         )) res;
     res
 
 (* index *)

@@ -437,6 +437,8 @@ type metadata = {
 module Metadata = struct
   type t = metadata
 
+  let is_complete self = CCOpt.is_some self.timestamp
+
   let to_printbox ?link:(mk_link=default_linker) self : PB.t =
     let open PB in
     pb_v_record [
