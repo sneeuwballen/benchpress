@@ -437,7 +437,7 @@ type metadata = {
 module Metadata = struct
   type t = metadata
 
-  let is_complete self = CCOpt.is_some self.timestamp
+  let is_complete self = CCOpt.is_some self.total_wall_time
 
   let to_printbox ?link:(mk_link=default_linker) self : PB.t =
     let open PB in
