@@ -41,8 +41,8 @@ module Log_report = struct
     let dst, dst_flush = buf_fmt () in
     let pp_header fmt header =
       let now = Unix.gettimeofday() in
-      Format.fprintf fmt "@[<2>[%a] %a@ "
-        ISO8601.Permissive.pp_datetime now pp_h header
+      Format.fprintf fmt "@[<2>[%a|t%d] %a@ "
+        ISO8601.Permissive.pp_datetime now Thread.(id @@ self()) pp_h header
     in
     let report src level ~over k msgf =
       let k _ =
