@@ -7,6 +7,7 @@ module U = Tiny_httpd_util
 module PB = PrintBox
 
 let src = Logs.Src.create "benchpress.serve"
+module Log = (val Logs.src_log src)
 
 type t = {
   mutable defs: Definitions.t;
@@ -159,17 +160,22 @@ let link_show db_file prover path =
   PB.link (PB.text path) ~uri:(uri_show db_file prover path)
 
 let uri_get_file pb = Printf.sprintf "/get-file/%s" (U.percent_encode pb)
+let uri_gnuplot pb = Printf.sprintf "/show-gp/%s" (U.percent_encode pb)
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
 (* show individual files *)
 let handle_show (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show/%s%!" (fun file _req ->
+      Log.info (fun k->k "----- start show %s -----" file);
+      let ts_start = Unix.gettimeofday() in
       match Utils.load_file_summary file with
       | Error e ->
-        Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
+        Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok (file_full, cr) ->
+      | Ok (_file_full, cr) ->
+        let ts_loaded = Unix.gettimeofday() in
+        Log.info (fun k->k "show: loaded summary in %.3fs" (ts_loaded-.ts_start));
         let link_file = link_show file in
         let box_meta = Test.Metadata.to_printbox ~link:link_prover cr.T.cr_meta in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
@@ -177,16 +183,9 @@ let handle_show (self:t) : unit =
         let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
         let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
-        let cactus_plot =
-          let open E.Infix in
-          try
-            Test.Cactus_plot.of_file file_full >|= fun plot ->
-            Test.Cactus_plot.to_png plot
-          with e ->
-            let e = Printexc.to_string e in
-            Logs.err ~src (fun k->k "failure to build a cactus plot: %s" e);
-            Error e
-        in
+        let uri_plot = uri_gnuplot file in
+        let ts_pb = Unix.gettimeofday() in
+        Log.info (fun k->k "rendered to PB in %.3fs" (ts_pb -.ts_loaded));
         (* download a text file containing the lines [l] *)
         let mk_dl_file l =
           let open Html in
@@ -250,24 +249,60 @@ let handle_show (self:t) : unit =
                              [txt "list of errors"; ])
                     [div [mk_dl_file l; pb_html p]]])
               errors;
-            (match cactus_plot with
-             | Error e ->
-               [p ~a:[a_class ["alert"; "alert-danger"]]
-                  [txt "could not load cactus plot"; txt e]]
-             | Ok p ->
-               Logs.debug ~src (fun k->k "encode png file of %d bytes" (String.length p));
-               [img
-                  ~src:("data:image/png;base64, " ^ Base64.encode_string p)
-                  ~a:[a_class ["img-fluid"]]
-                  ~alt:"cactus plot of provers" ()]
-            );
+            [img
+               ~src:uri_plot
+               ~a:[a_class ["img-fluid"];
+                   Unsafe.string_attrib "loading" "lazy";
+                  ]
+               ~alt:"cactus plot of provers" ()];
             (CCList.flat_map
-               (fun (n1,n2,p) -> [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)]; div [pb_html p]])
+               (fun (n1,n2,p) ->
+                  [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)];
+                   div [pb_html p]])
                box_compare_l);
           ]
         in
-        Logs.debug ~src (fun k->k "successful reply for %S" file);
+        let ts_to_html = Unix.gettimeofday() in
+        Log.info (fun k->k "show:turned into html in %.3fs"
+                           (ts_to_html-.ts_to_html));
+        Log.debug (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string h))
+    )
+
+(* gnuplot for a file *)
+let handle_show_gp (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/show-gp/%s%!" (fun file _req ->
+      Log.info (fun k->k "----- start show-gp %s -----" file);
+      match Utils.mk_file_full file with
+      | Error e ->
+        Log.err (fun k->k "cannot load %S:\n%s" file e);
+        H.Response.fail ~code:500 "could not load %S:\n%s" file e
+      | Ok file_full ->
+        let ts_start = Unix.gettimeofday() in
+        let cactus_plot =
+          let open E.Infix in
+          try
+            Test.Cactus_plot.of_file file_full >|= fun plot ->
+            Test.Cactus_plot.to_png plot
+          with e ->
+            let e = Printexc.to_string e in
+            Log.err (fun k->k "failure to build a cactus plot: %s" e);
+            Error e
+        in
+        let ts_gp = Unix.gettimeofday() in
+        Log.info (fun k->k "rendered to gplot in %.3fs" (ts_gp-.ts_start));
+        begin match cactus_plot with
+         | Error e ->
+           Log.err (fun k->k "successful reply for show-gp/%S" file);
+           H.Response.make_string
+             (Error (500, Printf.sprintf "<failed to load cactus plot: %s>" e))
+         | Ok plot ->
+           Log.debug (fun k->k "encode png file of %d bytes" (String.length plot));
+           Log.debug (fun k->k "successful reply for show-gp/%S" file);
+           H.Response.make_string
+             ~headers:H.Headers.([] |> set "content-type" "image/png")
+             (Ok plot)
+        end
     )
 
 (* show full table for a file *)
@@ -275,7 +310,7 @@ let handle_show_as_table (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_table/%s%!" (fun file _req ->
       match Utils.load_file file with
       | Error e ->
-        Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
+        Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
         let full_table =
@@ -294,7 +329,7 @@ let handle_show_as_table (self:t) : unit =
              div [pb_html full_table]];
           ]
         in
-        Logs.debug ~src (fun k->k "successful reply for %S" file);
+        Log.debug (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string h))
     )
 
@@ -338,10 +373,10 @@ let handle_show_detailed (self:t) : unit =
         )
       |> E.catch
         ~ok:(fun h ->
-            Logs.debug ~src (fun k->k "successful reply for %S" db_file);
+            Log.debug (fun k->k "successful reply for %S" db_file);
             H.Response.make_string (Ok (Html.to_string h)))
         ~err:(fun e ->
-            Logs.err ~src (fun k->k "error in show-detailed %S:\n%s" db_file e);
+            Log.err (fun k->k "error in show-detailed %S:\n%s" db_file e);
             H.Response.fail ~code:500 "could not show detailed res for %S:\n%s" db_file e)
     )
 
@@ -377,10 +412,10 @@ let handle_show_single (self:t) : unit =
         )
       |> E.catch
         ~ok:(fun h ->
-            Logs.debug ~src (fun k->k "successful reply for %S" db_file);
+            Log.debug (fun k->k "successful reply for %S" db_file);
             H.Response.make_string (Ok (Html.to_string h)))
         ~err:(fun e ->
-            Logs.err ~src (fun k->k "error in show-single %S:\n%s" db_file e);
+            Log.err (fun k->k "error in show-single %S:\n%s" db_file e);
             H.Response.fail ~code:500 "could not show single res for %S:\n%s" db_file e)
     )
 
@@ -389,11 +424,11 @@ let handle_show_csv (self:t): unit =
   H.add_path_handler self.server ~meth:`GET "/show_csv/%s@?%s%!" (fun file _q req ->
       match Utils.load_file file with
       | Error e ->
-        Logs.err ~src (fun k->k "cannot load %S:\n%s" file e);
+        Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
         let query = H.Request.query req in
-        Logs.debug ~src:src
+        Log.debug
           (fun k->k  "query: [%s]"
               (String.concat ";" (List.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query)));
         let provers =
@@ -401,7 +436,7 @@ let handle_show_csv (self:t): unit =
           with _ -> None
         in
         let csv = Test.Top_result.to_csv_string ?provers res in
-        Logs.debug ~src (fun k->k "successful reply for /show_csv/%S" file);
+        Log.debug (fun k->k "successful reply for /show_csv/%S" file);
         H.Response.make_string
           ~headers:["Content-Type", "plain/csv";
                     "Content-Disposition", "attachment; filename=\"results.csv\""]
@@ -427,7 +462,7 @@ let handle_compare server : unit =
           |> List.map
             (fun s -> match Utils.mk_file_full s with
                | Error e ->
-                 Logs.err ~src (fun k->k "cannot load file %S" s);
+                 Log.err (fun k->k "cannot load file %S" s);
                  H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
                | Ok x -> x)
         in
@@ -439,7 +474,7 @@ let handle_compare server : unit =
                 match Test_compare.Short.make f1 f2 with
                 | Ok x -> x
                 | Error e ->
-                  Logs.err ~src (fun k->k"cannot compare %s and %s: %s" f1 f2 e);
+                  Log.err (fun k->k"cannot compare %s and %s: %s" f1 f2 e);
                   H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1 f2
               in
               vlist ~bars:false [
@@ -475,12 +510,12 @@ let handle_delete server : unit =
       |> List.map
         (fun s -> match Utils.mk_file_full s with
            | Error e ->
-             Logs.err ~src (fun k->k "cannot load file %S" s);
+             Log.err (fun k->k "cannot load file %S" s);
              H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
            | Ok x -> x)
     in
     List.iter (fun file ->
-        Logs.info ~src (fun k->k  "delete file %s" @@ Filename.quote file);
+        Log.info (fun k->k  "delete file %s" @@ Filename.quote file);
         Sys.remove file)
       files;
     let h = html_redirect @@ Format.asprintf "deleted %d files" (List.length files) in
@@ -674,7 +709,7 @@ let handle_root (self:t) : unit =
                 entries
             in
             let elapsed = Unix.gettimeofday() -. start in
-            Logs.info ~src (fun k->k "listed results in %.3fs" elapsed);
+            Log.info (fun k->k "listed results in %.3fs" elapsed);
             form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
               div ~a:[a_class ["container"]] [
                 mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] [
@@ -770,7 +805,7 @@ let handle_file self : unit =
 let main ?(local_only=false) ?port (defs:Definitions.t) () =
   try
     let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
-    let server = H.create ~addr ?port () in
+    let server = H.create ~max_connections:32 ~addr ?port () in
     let data_dir = Misc.data_dir () in
     let self = {
       defs; server; data_dir; task_q=Task_queue.create ~defs ();
@@ -788,6 +823,7 @@ let main ?(local_only=false) ?port (defs:Definitions.t) () =
     handle_task_status self;
     handle_css server;
     handle_show self;
+    handle_show_gp self;
     handle_show_as_table self;
     handle_show_detailed self;
     handle_show_single self;
