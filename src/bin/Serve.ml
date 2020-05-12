@@ -111,15 +111,21 @@ module Html = struct
 
   let b_style = link ~rel:[`Stylesheet] ~href:"/css/" ()
 
+  let turbolinks =
+    "https://cdnjs.cloudflare.com/ajax/libs/turbolinks/5.2.0/turbolinks.js"
   let mk_page ?meta:(my_meta=[]) ~title:s my_body =
     html
       (head (title @@ txt s)
          [b_style; PB_html.style;
-          meta ~a:(a_charset "utf-8" :: my_meta) ()])
-      (body [
-          script ~a:[a_src "/js"] (txt "");
-          div ~a:[a_class ["container"]] my_body
-        ])
+          meta ~a:(a_charset "utf-8" :: my_meta) ();
+          script ~a:[a_src turbolinks; ] (txt "");
+          script ~a:[a_src "/js"; a_defer()] (txt "");
+         ])
+      (body [div ~a:[a_class ["container"]] [
+           div ~a:[a_class ["sticky-top"; "turbolinks-progress-bar"];
+                   a_style "height:5px"] [];
+          div ~a:[a_class ["container"]] my_body;
+        ]])
 
   let mk_a ?(cls=["btn-link"]) ?a:(al=[]) x = a ~a:(a_class ("btn" :: cls) :: al) x
   let mk_row ?(cls=[]) x = div ~a:[a_class ("row"::cls)] x
@@ -620,6 +626,9 @@ let get_meta (self:t) (p:string) : _ result =
          )) res;
     res
 
+(** Custom string attribute *)
+let str_attr = Html.Unsafe.string_attrib
+
 (* index *)
 let handle_root (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/%!" (fun _req ->
@@ -627,6 +636,7 @@ let handle_root (self:t) : unit =
       let h =
         let open Html in
         mk_page ~title:"benchpress"
+          ~meta:[a_name "turbolinks-visit-control"; a_content "reload"]
           [
             h1 [txt "Benchpress"];
             dyn_status ();
@@ -663,7 +673,7 @@ let handle_root (self:t) : unit =
                      [div ~a:(a_class ["row"] :: row_title)
                         [
                           div ~a:[a_class ["col-md-9"; "justify-self-left"]]
-                            [mk_a ~a:[a_href href] [txt entry_descr]];
+                            [mk_a ~a:[a_href href; str_attr "data-turbolinks" "false"] [txt entry_descr]];
                           h4 ~a:[a_class ["col-md-2"]] [
                             span ~a:[a_class ["badge"; "text-secondary"]]
                               [txt (Printf.sprintf "(%s)" (Misc.human_size size))];

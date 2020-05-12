@@ -22,6 +22,16 @@ function updateTasks() {
  });
 }
 
-setInterval(updateTasks, 1500);
-window.onload = updateTasks;
+/*
+document.addEventListener("turbolinks:load", () => {
+  alert('turbolinks!');
+});
+*/
+
+//setInterval(updateTasks, 1500);
+window.onload = () => {
+  Turbolinks.setProgressBarDelay(100);
+  //updateTasks();
+  //
+};
 
