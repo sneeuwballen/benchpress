@@ -64,6 +64,7 @@ module Stat = struct
     let open PB in
     [ "sat", pb_int_color Style.(fg_color Green) s.sat;
       "unsat", pb_int_color Style.(fg_color Green) s.unsat;
+      "sat+unsat", pb_int_color Style.(fg_color Green) (s.sat+s.unsat);
       "errors", pb_int_color Style.(fg_color Cyan) s.errors;
       "unknown", int s.unknown;
       "timeout", int s.timeout;
