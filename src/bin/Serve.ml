@@ -112,6 +112,8 @@ module Html = struct
 
   let b_style = link ~rel:[`Stylesheet] ~href:"/css/" ()
 
+  let turbolinks =
+    "https://cdnjs.cloudflare.com/ajax/libs/turbolinks/5.2.0/turbolinks.js"
   let mk_page ?meta:(my_meta=[]) ~title:s my_body =
     html
       (head (title @@ txt s) [
@@ -119,10 +121,14 @@ module Html = struct
           PB_html.style;
           meta ~a:(a_charset "utf-8" :: my_meta) ();
           script ~a:[a_src "/js"; Unsafe.string_attrib "type" "module"] (txt "");
+          script ~a:[a_src turbolinks; a_defer()] (txt "");
         ])
-      (body [
-          div ~a:[a_class ["container"]] my_body
-        ])
+      (body
+         [div ~a:[a_class ["container"]] @@
+          (div ~a:[a_class ["sticky-top"; "turbolinks-progress-bar"];
+                   a_style "height:5px"] []) ::
+          my_body
+         ])
 
   let mk_a ?(cls=["btn-link"]) ?a:(al=[]) x = a ~a:(a_class ("btn" :: cls) :: al) x
   let mk_row ?(cls=[]) x = div ~a:[a_class ("row"::cls)] x
@@ -175,7 +181,7 @@ let handle_show (self:t) : unit =
       let chrono = Misc.Chrono.start () in
       match Utils.load_file_summary ~full:false file with
       | Error e ->
-        Log.err (fun k->k "cannot load %S:\n%s" file e);
+        Log.err (fun k->k "cannot load /show/%S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok (_file_full, cr) ->
         Log.info (fun k->k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
@@ -198,10 +204,12 @@ let handle_show (self:t) : unit =
                  ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
                  [txt "show individual results"];
                mk_a ~cls:["btn-info"]
-                 ~a:[a_href ("/show_csv/"^U.percent_encode file)]
+                 ~a:[a_href ("/show_csv/"^U.percent_encode file);
+                     Unsafe.string_attrib "data-turbolinks" "false"]
                  [txt "download as csv"];
                mk_a ~cls:["btn-info"]
-                 ~a:[a_href ("/show_table/"^U.percent_encode file)]
+                 ~a:[a_href ("/show_table/"^U.percent_encode file);
+                     Unsafe.string_attrib "data-turbolinks" "false"]
                  [txt "show table of results"];
                form ~a:[a_method `Post] [
                  mk_button ~cls:["btn-danger"]
@@ -220,7 +228,9 @@ let handle_show (self:t) : unit =
                   [h3 [txt ("summary for " ^ n)];
                    mk_a ~cls:["btn-link"; "h-50"]
                      ~a:[a_href (Printf.sprintf "/show_csv/%s?provers=%s"
-                                   (U.percent_encode file) (U.percent_encode n))]
+                                   (U.percent_encode file) (U.percent_encode n));
+                         Unsafe.string_attrib "data-turbolinks" "false";
+                        ]
                      [txt "download as csv"];
                    div [pb_html pb];
                   ])
@@ -253,7 +263,7 @@ let handle_show_gp (self:t) : unit =
       Log.info (fun k->k "----- start show-gp %s -----" file);
       match Utils.mk_file_full file with
       | Error e ->
-        Log.err (fun k->k "cannot load %S:\n%s" file e);
+        Log.err (fun k->k "cannot load /show-gp/%S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok file_full ->
         let chrono = Misc.Chrono.start() in
@@ -303,7 +313,9 @@ let handle_show_errors (self:t) : unit =
             "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
           in
           mk_a ~cls:["btn"; "btn-link"]
-            ~a:[a_download (Some "problems.txt"); a_href data]
+            ~a:[a_download (Some "problems.txt");
+                Unsafe.string_attrib "data-turbolinks" "false";
+                a_href data]
           [txt "download list"]
         in
         let h =
@@ -340,7 +352,7 @@ let handle_show_as_table (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_table/%s%!" (fun file _req ->
       match Utils.load_file file with
       | Error e ->
-        Log.err (fun k->k "cannot load %S:\n%s" file e);
+        Log.err (fun k->k "cannot load show_table/%S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
         let full_table =
@@ -385,7 +397,7 @@ let handle_show_detailed (self:t) : unit =
                         td [txt prover];
                         td [
                           mk_a ~a:[a_href url_file_res; a_title pb_file] [txt pb_file];
-                          mk_a ~a:[a_href url_file; a_title pb_file] [txt "(content)"];
+                          mk_a ~a:[a_href url_file; a_title pb_file; Unsafe.string_attrib "data-turbolinks" "false"] [txt "(content)"];
                         ];
                         td [txt (Res.to_string res)];
                         td [txt (Res.to_string file_expect)];
@@ -452,13 +464,14 @@ let handle_show_single (self:t) : unit =
 (* export as CSV *)
 let handle_show_csv (self:t): unit =
   H.add_path_handler self.server ~meth:`GET "/show_csv/%s@?%s%!" (fun file _q req ->
+      Log.info (fun k->k "show csv %s" file);
       match Utils.load_file file with
       | Error e ->
-        Log.err (fun k->k "cannot load %S:\n%s" file e);
+        Log.err (fun k->k "cannot load /show_csv/%S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
         let query = H.Request.query req in
-        Log.debug
+        Log.info
           (fun k->k  "query: [%s]"
               (String.concat ";" (List.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query)));
         let provers =
@@ -540,7 +553,7 @@ let handle_delete server : unit =
       |> List.map
         (fun s -> match Utils.mk_file_full s with
            | Error e ->
-             Log.err (fun k->k "cannot load file %S" s);
+             Log.err (fun k->k "cannot load /delete/%S" s);
              H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
            | Ok x -> x)
     in
@@ -694,6 +707,7 @@ let handle_root (self:t) : unit =
       let h =
         let open Html in
         mk_page ~title:"benchpress"
+          ~meta:[a_name "turbolinks-visit-control"; a_content "reload"]
           [
             h1 [txt "Benchpress"];
             dyn_status ();

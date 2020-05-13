@@ -60,11 +60,9 @@ async function updateTasks() {
     }
 }
 
-window.onload = updateTasks;
 setInterval(updateTasks, 500);
 
-lazyLoadAll();
-document.addEventListener('change', () => {
+document.addEventListener('turbolinks:load', () => {
     lazyLoadAll();
+    updateTasks();
 });
-

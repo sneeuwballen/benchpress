@@ -100,9 +100,8 @@ function updateTasks() {
         });
     });
 }
-window.onload = updateTasks;
 setInterval(updateTasks, 500);
-lazyLoadAll();
-document.addEventListener('change', function () {
+document.addEventListener('turbolinks:load', function () {
     lazyLoadAll();
+    updateTasks();
 });
