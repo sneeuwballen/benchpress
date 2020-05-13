@@ -652,7 +652,9 @@ module Top_result : sig
     t or_error
   (** Make from a list of results *)
 
-  val of_db : Db.t -> t or_error
+  val of_db :
+    ?events:Run_event.t list ->
+    Db.t -> t or_error
   (** Parse from a DB *)
 
   val db_prepare : Db.t -> unit or_error
@@ -960,34 +962,37 @@ end = struct
             List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) events);
         ())
 
-  let make ~meta
-      (l:Prover.name Run_result.t list) : t or_error =
+  let of_db_ ~events ~meta (db:Db.t) : t or_error =
     Misc.err_with
-      ~map_err:(Printf.sprintf "making top result: %s")
+      ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
-         let l = List.rev_map Run_event.mk_prover l in
-         (* create a temporary in-memory DB *)
-         let db = Sqlite3.db_open ":memory:" in
-         db_prepare db |> scope.unwrap;
-         to_db_events_ db l |> scope.unwrap;
          Logs.debug (fun k->k "computing stats");
          let stats = Stat.of_db db |> scope.unwrap in
          Logs.debug (fun k->k "computing analyze");
-         let analyze = Analyze.of_db db |> scope.unwrap in
+         let analyze = Analyze.of_db ~full:false db |> scope.unwrap in
          Logs.debug (fun k->k "done");
-         { db; events=l; meta; stats; analyze; })
+         { db; events; meta; stats; analyze; })
 
-  let of_db (db:Db.t) : t or_error =
+  let of_db ?(events=[]) (db:Db.t) : t or_error =
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
          Logs.debug (fun k->k "loading metadata from DB");
          let meta = Metadata.of_db db |> scope.unwrap in
+         of_db_ ~events ~meta db |> scope.unwrap)
+
+  let make ~meta
+      (l:Prover.name Run_result.t list) : t or_error =
+    Misc.err_with
+      ~map_err:(Printf.sprintf "making top result: %s")
+      (fun scope ->
          Logs.debug (fun k->k "loading events from DB");
-         let events =
-           Run_event.of_db_l db |> scope.unwrap
-         in
-         make ~meta events |> scope.unwrap)
+         let l = List.rev_map Run_event.mk_prover l in
+         (* create a temporary in-memory DB *)
+         let db = Sqlite3.db_open ":memory:" in
+         db_prepare db |> scope.unwrap;
+         to_db_events_ db l |> scope.unwrap;
+         of_db_ ~meta ~events:l db |> scope.unwrap)
 end
 
 module Detailed_res : sig
