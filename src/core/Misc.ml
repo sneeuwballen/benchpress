@@ -249,3 +249,27 @@ let (//) = Filename.concat
 let data_dir () = Xdg.data_dir () // !(Xdg.name_of_project)
 let config_dir () = Xdg.config_dir () // !(Xdg.name_of_project)
 let default_config () = config_dir() // "conf.sexp"
+
+module Chrono : sig
+  type t
+  val start : unit -> t
+  val since_last : t -> float
+  val elapsed : t -> float
+end = struct
+  type t = {
+    start: float;
+    mutable last: float;
+  }
+  let start () : t =
+    let t = Unix.gettimeofday() in
+    { start=t; last=t }
+  let elapsed (self:t) =
+    let now = Unix.gettimeofday() in
+    self.last <- now;
+    now -. self.start
+  let since_last (self:t) =
+    let now = Unix.gettimeofday() in
+    let r = now -. self.last in
+    self.last <- now;
+    r
+end
