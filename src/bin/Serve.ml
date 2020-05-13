@@ -112,13 +112,19 @@ module Html = struct
 
   let b_style = link ~rel:[`Stylesheet] ~href:"/css/" ()
 
-  let mk_page ?meta:(my_meta=[]) ~title:s my_body =
+  let mk_page ?(js_extra=[]) ?meta:(my_meta=[]) ~title:s my_body =
     html
-      (head (title @@ txt s) [
-          b_style;
-          PB_html.style;
-          meta ~a:(a_charset "utf-8" :: my_meta) ();
-          script ~a:[a_src "/js"; Unsafe.string_attrib "type" "module"] (txt "");
+      (head (title @@ txt s) @@ List.flatten [
+          [ b_style;
+            PB_html.style;
+            meta ~a:(a_charset "utf-8" :: my_meta) ();
+            script ~a:[a_src "/js"; Unsafe.string_attrib "type" "module"] (txt "");
+          ];
+          (List.map
+             (fun src ->
+                script ~a:[a_src src; a_defer();
+                           Unsafe.string_attrib "type" "module"] (txt ""))
+             ("/js" :: js_extra));
         ])
       (body [
           div ~a:[a_class ["container"]] my_body
@@ -188,11 +194,17 @@ let handle_show (self:t) : unit =
         Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
         let h =
           let open Html in
-          mk_page ~title:"show" @@
+          mk_page ~title:"show" ~js_extra:[
+            "https://unpkg.com/elix@v13.0.0/define/AutoCompleteComboBox.js"
+          ] @@
           List.flatten [
             [mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
              dyn_status();
              h3 [txt file];
+             (* TODO: filter based on chosen prover *)
+             (if cr.T.cr_meta.provers = [] then div[] else
+                Unsafe.node "elix-auto-complete-combo-box"
+                  (List.map (fun p-> div [txt p]) cr.T.cr_meta.provers));
              mk_row @@ List.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@ [
                mk_a ~cls:["btn-info"]
                  ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
