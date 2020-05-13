@@ -1,15 +1,18 @@
 
+// Load a link lazily
 async function lazyLoad(e: HTMLElement, target: string) {
     //return h('h2', null, `lazy load target=${target}`);
     console.log(`fetch ${target}`);
     e.innerHTML = `<div class="spinner-border">
         <span class="sr-only">loading</span>
-        </div>`;
+        </div>` + e.innerHTML;
     const res = await fetch(target);
     const body = await res.text();
     console.log(`got body for ${target}`);
     if (res.ok) {
-        e.innerHTML = body;
+        const e2 = document.createElement('div');
+        e2.innerHTML = body;
+        e.replaceWith(e2);
     } else {
         e.innerHTML = `<div class="alert alert-danger">
             error ${res.status}

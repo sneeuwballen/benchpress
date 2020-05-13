@@ -35,15 +35,16 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+// Load a link lazily
 function lazyLoad(e, target) {
     return __awaiter(this, void 0, void 0, function () {
-        var res, body;
+        var res, body, e2;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
                     //return h('h2', null, `lazy load target=${target}`);
                     console.log("fetch " + target);
-                    e.innerHTML = "<div class=\"spinner-border\">\n        <span class=\"sr-only\">loading</span>\n        </div>";
+                    e.innerHTML = "<div class=\"spinner-border\">\n        <span class=\"sr-only\">loading</span>\n        </div>" + e.innerHTML;
                     return [4 /*yield*/, fetch(target)];
                 case 1:
                     res = _a.sent();
@@ -52,7 +53,9 @@ function lazyLoad(e, target) {
                     body = _a.sent();
                     console.log("got body for " + target);
                     if (res.ok) {
-                        e.innerHTML = body;
+                        e2 = document.createElement('div');
+                        e2.innerHTML = body;
+                        e.replaceWith(e2);
                     }
                     else {
                         e.innerHTML = "<div class=\"alert alert-danger\">\n            error " + res.status + "\n            <ul class=\"container-list\">\n                <li class=\"container-list-item\">\n                    <p>context: lazy loading of " + target + " </p>\n                </li>\n                <li class=\"container-list-item\">\n                    <p>error: " + body + " </p>\n                </li>\n            </ul>\n        </div>";

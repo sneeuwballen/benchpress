@@ -172,14 +172,14 @@ let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 let handle_show (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show/%s%!" (fun file _req ->
       Log.info (fun k->k "----- start show %s -----" file);
-      let ts_start = Unix.gettimeofday() in
+      let chrono = Misc.Chrono.start () in
       match Utils.load_file_summary ~full:false file with
       | Error e ->
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok (_file_full, cr) ->
         let ts_loaded = Unix.gettimeofday() in
-        Log.info (fun k->k "show: loaded summary in %.3fs" (ts_loaded-.ts_start));
+        Log.info (fun k->k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
         let box_meta = Test.Metadata.to_printbox ~link:link_prover cr.T.cr_meta in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
         let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
@@ -258,7 +258,7 @@ let handle_show_gp (self:t) : unit =
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok file_full ->
-        let ts_start = Unix.gettimeofday() in
+        let chrono = Misc.Chrono.start() in
         let cactus_plot =
           let open E.Infix in
           try
@@ -269,8 +269,7 @@ let handle_show_gp (self:t) : unit =
             Log.err (fun k->k "failure to build a cactus plot: %s" e);
             Error e
         in
-        let ts_gp = Unix.gettimeofday() in
-        Log.info (fun k->k "rendered to gplot in %.3fs" (ts_gp-.ts_start));
+        Log.info (fun k->k "rendered to gplot in %.3fs" (Misc.Chrono.since_last chrono));
         begin match cactus_plot with
          | Error e ->
            Log.err (fun k->k "successful reply for show-gp/%S" file);
@@ -288,19 +287,18 @@ let handle_show_gp (self:t) : unit =
 let handle_show_errors (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show-err/%s%!" (fun file _req ->
       Log.info (fun k->k "----- start show-err %s -----" file);
-      let ts_start = Unix.gettimeofday() in
+      let chrono = Misc.Chrono.start() in
       match Utils.load_file_summary ~full:true file with
       | Error e ->
         Log.err (fun k->k "cannot find %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok (_file_full, cr) ->
-        let ts_loaded = Unix.gettimeofday() in
-        Log.info (fun k->k "show: loaded summary in %.3fs" (ts_loaded-.ts_start));
+        Log.info (fun k->k "show-err: loaded full summary in %.3fs"
+                     (Misc.Chrono.since_last chrono));
         let link_file = link_show file in
         let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
         let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
-        let ts_pb = Unix.gettimeofday() in
-        Log.info (fun k->k "rendered to PB in %.3fs" (ts_pb -.ts_loaded));
+        Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
         let mk_dl_file l =
           let open Html in
           let data =
@@ -333,9 +331,8 @@ let handle_show_errors (self:t) : unit =
               errors;
           ]
         in
-        let ts_to_html = Unix.gettimeofday() in
         Log.info (fun k->k "show:turned into html in %.3fs"
-                           (ts_to_html-.ts_to_html));
+                           (Misc.Chrono.since_last chrono));
         Log.debug (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string_elt h))
     )
@@ -670,6 +667,7 @@ let handle_job_interrupt (self:t) : unit =
       H.Response.make_string r
     )
 
+(* get metadata for the file *)
 let get_meta (self:t) (p:string) : _ result =
   match Hashtbl.find self.meta_cache p with
   | m -> Ok m
@@ -694,6 +692,7 @@ let get_meta (self:t) (p:string) : _ result =
 let handle_root (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/%!" (fun _req ->
       let entries = Utils.list_entries self.data_dir in
+      let chrono = Misc.Chrono.start() in
       let h =
         let open Html in
         mk_page ~title:"benchpress"
@@ -708,32 +707,24 @@ let handle_root (self:t) : unit =
                  [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
             ];
             h3 [txt "list of results"];
-            let start = Unix.gettimeofday() in
             let l =
               List.map
                 (fun (s0,size) ->
                    let s = Filename.basename s0 in
-                   let entry_descr, row_title =
-                     get_meta self s0
-                     |> E.catch
-                       ~err:(fun e -> s, [a_title @@ "<no metadata>: "  ^ e])
-                       ~ok:(fun m ->
-                           let descr = Printf.sprintf "%d res for {%s} at %s"
-                               m.Test.n_results (String.concat "," m.Test.provers)
-                               (CCOpt.map_or ~default:"<unknown date>"
-                                  Misc.human_datetime m.Test.timestamp)
-                           in
-                           descr, [a_title (Test.Metadata.to_string m)])
-                   in
-
-                   let href =
+                   let url_show =
                      Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
+                   and url_meta =
+                     Printf.sprintf "/file-sum/%s" (U.percent_encode s)
                    in
                    li ~a:[a_class ["list-group-item"]]
-                     [div ~a:(a_class ["row"] :: row_title)
+                     [div ~a:[a_class ["row"]]
                         [
+                          (* lazy loading of status *)
                           div ~a:[a_class ["col-md-9"; "justify-self-left"]]
-                            [mk_a ~a:[a_href href] [txt entry_descr]];
+                            [mk_a ~cls:["disabled"; "lazy-load"]
+                               ~a:[a_href url_show;
+                                   Unsafe.string_attrib "x_src" url_meta]
+                               [txt s0]];
                           h4 ~a:[a_class ["col-md-2"]] [
                             span ~a:[a_class ["badge"; "text-secondary"]]
                               [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
@@ -743,8 +734,7 @@ let handle_root (self:t) : unit =
                         ]])
                 entries
             in
-            let elapsed = Unix.gettimeofday() -. start in
-            Log.info (fun k->k "listed results in %.3fs" elapsed);
+            Log.info (fun k->k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
             form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
               div ~a:[a_class ["container"]] [
                 mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] [
@@ -757,6 +747,38 @@ let handle_root (self:t) : unit =
           ]
       in
       H.Response.make_string (Ok (Html.to_string h))
+    )
+
+let handle_file_summary (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/file-sum/%s%!" (fun file _req ->
+      let chrono = Misc.Chrono.start() in
+      match Utils.mk_file_full file with
+      | Error _e ->
+        H.Response.fail_raise ~code:404 "file %s not found" file
+      | Ok file_full ->
+        let s = Filename.basename file_full in
+        let h =
+          let open Html in
+          let url_show =
+            Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
+          in
+          let entry_descr, title =
+            get_meta self file_full
+            |> E.catch
+              ~err:(fun e -> s, [a_title @@ "<no metadata>: "  ^ e])
+              ~ok:(fun m ->
+                  let descr = Printf.sprintf "%d res for {%s} at %s"
+                      m.Test.n_results (String.concat "," m.Test.provers)
+                      (CCOpt.map_or ~default:"<unknown date>"
+                         Misc.human_datetime m.Test.timestamp)
+                  in
+                  descr, [a_title (Test.Metadata.to_string m)])
+          in
+          mk_a ~a:(a_href url_show :: title) [txt entry_descr]
+        in
+        Log.debug (fun k->k "reply to handle-file-summary %s in %.3fs"
+                     file (Misc.Chrono.since_last chrono));
+        H.Response.make_string (Ok (Html.to_string_elt h))
     )
 
 let handle_task_status self =
@@ -856,6 +878,7 @@ let main ?(local_only=false) ?port (defs:Definitions.t) () =
     Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
     handle_root self;
     handle_task_status self;
+    handle_file_summary self;
     handle_css server;
     handle_show self;
     handle_show_gp self;
