@@ -27,6 +27,11 @@ and view =
   | Atom of string
   | List of t list
 
+let atom_with_loc ~loc s : t= {loc; view=Atom s}
+let list_with_loc ~loc l : t = {loc; view=List l}
+let atom = atom_with_loc ~loc:noloc
+let list = list_with_loc ~loc:noloc
+
 (** {2 Serialization and helpers} *)
 
 include (CCSexp.Make(struct
