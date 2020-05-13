@@ -178,7 +178,6 @@ let handle_show (self:t) : unit =
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok (_file_full, cr) ->
-        let ts_loaded = Unix.gettimeofday() in
         Log.info (fun k->k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
         let box_meta = Test.Metadata.to_printbox ~link:link_prover cr.T.cr_meta in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
@@ -186,8 +185,7 @@ let handle_show (self:t) : unit =
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
         let uri_plot = uri_gnuplot file in
         let uri_err = uri_error_bad file in
-        let ts_pb = Unix.gettimeofday() in
-        Log.info (fun k->k "rendered to PB in %.3fs" (ts_pb -.ts_loaded));
+        Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
         let h =
           let open Html in
           mk_page ~title:"show" @@
@@ -216,6 +214,7 @@ let handle_show (self:t) : unit =
             (CCList.flat_map
                (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
                box_stat);
+            (* TODO: use lazy load for this? *)
             (CCList.flat_map
                (fun (n,pb) ->
                   [h3 [txt ("summary for " ^ n)];
@@ -242,9 +241,8 @@ let handle_show (self:t) : unit =
                box_compare_l);
           ]
         in
-        let ts_to_html = Unix.gettimeofday() in
         Log.info (fun k->k "show:turned into html in %.3fs"
-                           (ts_to_html-.ts_to_html));
+                           (Misc.Chrono.since_last chrono));
         Log.debug (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string h))
     )
@@ -794,7 +792,7 @@ let handle_task_status self =
             | Some j ->
               (* display current job *)
               [mk_li [
-                  div ~a:[a_class ["spinner-border"]] [span []];
+                  div ~a:[a_class ["spinner-border"; "spinner-border-sm"]] [span []];
                   pre [txt @@
                        Format.asprintf "current task: %a" Task_queue.Job.pp j];
                   form ~a:[a_id (uri_of_string "cancel");

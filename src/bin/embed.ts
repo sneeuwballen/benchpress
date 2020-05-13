@@ -3,7 +3,7 @@
 async function lazyLoad(e: HTMLElement, target: string) {
     //return h('h2', null, `lazy load target=${target}`);
     console.log(`fetch ${target}`);
-    e.innerHTML = `<div class="spinner-border">
+    e.innerHTML = `<div class="spinner-border spinner-border-sm">
         <span class="sr-only">loading</span>
         </div>` + e.innerHTML;
     const res = await fetch(target);
@@ -36,7 +36,35 @@ function lazyLoadAll() {
     });
 }
 
+// update the 'dyn-status' object
+async function updateTasks() {
+    const targetNode =document.getElementById('dyn-status');
+    if (targetNode) {
+        const st = await fetch('/api/tasks_status/');
+        const st_json = await st.json();
+        var s = '';
+        let n1 = document.getElementById('dyn-status.n-in-q');
+        s += `<li class="list-group-item">jobs in queue: ${st_json.in_queue} </li>`;
+
+        if (st_json.cur_job) {
+            s += `<li class="list-group-item">
+                <div class="spinner-border"></div>
+                <pre>current task: (${st_json.cur_job.elapsed}s)
+                 ${st_json.cur_job.task}</pre>
+                <form id="cancel" action="/interrupt/" method="POST">
+                 <button class="btn btn-warning"> interrupt </button>
+                </form> </li>`;
+        }
+
+        targetNode.innerHTML = s;
+    }
+}
+
+window.onload = updateTasks;
+setInterval(updateTasks, 500);
+
 lazyLoadAll();
 document.addEventListener('change', () => {
     lazyLoadAll();
 });
+

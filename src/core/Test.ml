@@ -387,6 +387,7 @@ end = struct
       ~map_err:(Printf.sprintf "comparison-short.of_db %s")
       (fun scope ->
          let provers = list_provers db |> scope.unwrap in
+         (* TODO: make a single query and group-by? *)
          CCList.diagonal provers
          |> List.rev_map
            (fun (p1,p2) ->

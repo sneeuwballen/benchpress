@@ -44,7 +44,7 @@ function lazyLoad(e, target) {
                 case 0:
                     //return h('h2', null, `lazy load target=${target}`);
                     console.log("fetch " + target);
-                    e.innerHTML = "<div class=\"spinner-border\">\n        <span class=\"sr-only\">loading</span>\n        </div>" + e.innerHTML;
+                    e.innerHTML = "<div class=\"spinner-border spinner-border-sm\">\n        <span class=\"sr-only\">loading</span>\n        </div>" + e.innerHTML;
                     return [4 /*yield*/, fetch(target)];
                 case 1:
                     res = _a.sent();
@@ -72,6 +72,36 @@ function lazyLoadAll() {
         lazyLoad(e, target);
     });
 }
+// update the 'dyn-status' object
+function updateTasks() {
+    return __awaiter(this, void 0, void 0, function () {
+        var targetNode, st, st_json, s, n1;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    targetNode = document.getElementById('dyn-status');
+                    if (!targetNode) return [3 /*break*/, 3];
+                    return [4 /*yield*/, fetch('/api/tasks_status/')];
+                case 1:
+                    st = _a.sent();
+                    return [4 /*yield*/, st.json()];
+                case 2:
+                    st_json = _a.sent();
+                    s = '';
+                    n1 = document.getElementById('dyn-status.n-in-q');
+                    s += "<li class=\"list-group-item\">jobs in queue: " + st_json.in_queue + " </li>";
+                    if (st_json.cur_job) {
+                        s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <pre>current task: (" + st_json.cur_job.elapsed + "s)\n                 " + st_json.cur_job.task + "</pre>\n                <form id=\"cancel\" action=\"/interrupt/\" method=\"POST\">\n                 <button class=\"btn btn-warning\"> interrupt </button>\n                </form> </li>";
+                    }
+                    targetNode.innerHTML = s;
+                    _a.label = 3;
+                case 3: return [2 /*return*/];
+            }
+        });
+    });
+}
+window.onload = updateTasks;
+setInterval(updateTasks, 500);
 lazyLoadAll();
 document.addEventListener('change', function () {
     lazyLoadAll();
