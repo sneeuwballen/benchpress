@@ -1,6 +1,7 @@
 (executable
  (name benchpress_bin)
  (public_name benchpress)
+ (package benchpress)
  (modes native)
  (promote (into ../..) (until-clean))
  (libraries benchpress containers cmdliner result uuidm logs logs.cli
