@@ -149,8 +149,8 @@ module Analyze : sig
     total     : int;
   }
 
-  val of_db_for : Db.t -> prover:Prover.name -> t or_error
-  val of_db : Db.t -> (Prover.name * t) list or_error
+  val of_db_for : ?full:bool -> Db.t -> prover:Prover.name -> t or_error
+  val of_db : ?full:bool -> Db.t -> (Prover.name * t) list or_error
 
   val to_printbox : t -> PrintBox.t
   val to_printbox_l : (Prover.name * t) list -> (string*PrintBox.t) list
@@ -181,7 +181,7 @@ end = struct
     total     : int;
   }
 
-  let of_db_for (db:Db.t) ~prover : t or_error =
+  let of_db_for ?(full=false) (db:Db.t) ~prover : t or_error =
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading analyze(%s) from DB: %s" prover)
       (fun scope ->
@@ -226,7 +226,8 @@ end = struct
                 and file_expect in ('sat','unsat'); |}
              prover
          and bad_full =
-           Db.exec db
+           if not full then []
+           else Db.exec db
              {| select file, res, file_expect, rtime from prover_res
               where prover=? and res != file_expect and res in ('sat','unsat')
               and file_expect in ('sat','unsat'); |}
@@ -237,7 +238,8 @@ end = struct
              ~f:Db.Cursor.to_list_rev
            |> scope.unwrap_with Db.Rc.to_string
          and errors_full =
-           Db.exec db
+           if not full then []
+           else Db.exec db
              ~ty:Db.Ty.(p1 text, p4 text text text float,
                         (fun file res expected t ->
                            Problem.make file (Res.of_string expected), Res.of_string res, t))
@@ -253,12 +255,12 @@ end = struct
         Sqlite3.create_fun2
   *)
 
-  let of_db db : _ list or_error =
+  let of_db ?(full=false) db : _ list or_error =
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
          let provers = list_provers db |> scope.unwrap in
-         List.map (fun p -> p, of_db_for db ~prover:p |> scope.unwrap) provers)
+         List.map (fun p -> p, of_db_for ~full db ~prover:p |> scope.unwrap) provers)
 
   (* build statistics and list of mismatch from raw results *)
 
@@ -526,11 +528,11 @@ type compact_result = {
 module Compact_result = struct
   type t = compact_result
 
-  let of_db db : t or_error =
+  let of_db ?full db : t or_error =
     let open E.Infix in
     Metadata.of_db db >>= fun cr_meta ->
     Stat.of_db db >>= fun cr_stat ->
-    Analyze.of_db db >>= fun cr_analyze ->
+    Analyze.of_db ?full db >>= fun cr_analyze ->
     Comparison_short.of_db db >>= fun cr_comparison ->
     Ok {cr_stat; cr_analyze; cr_comparison; cr_meta; }
 

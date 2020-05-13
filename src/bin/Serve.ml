@@ -114,11 +114,13 @@ module Html = struct
 
   let mk_page ?meta:(my_meta=[]) ~title:s my_body =
     html
-      (head (title @@ txt s)
-         [b_style; PB_html.style;
-          meta ~a:(a_charset "utf-8" :: my_meta) ()])
+      (head (title @@ txt s) [
+          b_style;
+          PB_html.style;
+          meta ~a:(a_charset "utf-8" :: my_meta) ();
+          script ~a:[a_src "/js"; Unsafe.string_attrib "type" "module"] (txt "");
+        ])
       (body [
-          script ~a:[a_src "/js"] (txt "");
           div ~a:[a_class ["container"]] my_body
         ])
 
@@ -134,6 +136,7 @@ module Html = struct
     div ~a:[a_class ["table"]] [PB_html.to_html pb]
 
   let to_string h = Format.asprintf "@[%a@]@." (pp ()) h
+  let to_string_elt h = Format.asprintf "@[%a@]@." (pp_elt ()) h
 end
 
 let dyn_status () =
@@ -161,6 +164,7 @@ let link_show db_file prover path =
 
 let uri_get_file pb = Printf.sprintf "/get-file/%s" (U.percent_encode pb)
 let uri_gnuplot pb = Printf.sprintf "/show-gp/%s" (U.percent_encode pb)
+let uri_error_bad pb = Printf.sprintf "/show-err/%s" (U.percent_encode pb)
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
@@ -169,33 +173,21 @@ let handle_show (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show/%s%!" (fun file _req ->
       Log.info (fun k->k "----- start show %s -----" file);
       let ts_start = Unix.gettimeofday() in
-      match Utils.load_file_summary file with
+      match Utils.load_file_summary ~full:false file with
       | Error e ->
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok (_file_full, cr) ->
         let ts_loaded = Unix.gettimeofday() in
         Log.info (fun k->k "show: loaded summary in %.3fs" (ts_loaded-.ts_start));
-        let link_file = link_show file in
         let box_meta = Test.Metadata.to_printbox ~link:link_prover cr.T.cr_meta in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
         let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
-        let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
-        let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
         let uri_plot = uri_gnuplot file in
+        let uri_err = uri_error_bad file in
         let ts_pb = Unix.gettimeofday() in
         Log.info (fun k->k "rendered to PB in %.3fs" (ts_pb -.ts_loaded));
-        (* download a text file containing the lines [l] *)
-        let mk_dl_file l =
-          let open Html in
-          let data =
-            "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
-          in
-          mk_a ~cls:["btn"; "btn-link"]
-            ~a:[a_download (Some "problems.txt"); a_href data]
-          [txt "download list"]
-        in
         let h =
           let open Html in
           mk_page ~title:"show" @@
@@ -234,21 +226,9 @@ let handle_show (self:t) : unit =
                    div [pb_html pb];
                   ])
                box_summary);
-            CCList.flat_map
-              (fun (n,l,p) ->
-                 [h3 [txt ("bad for " ^ n)];
-                  details ~a:[a_open()]
-                    (summary ~a:[a_class ["alert";"alert-danger"]]
-                       [txt "list of bad results"])
-                    [div [mk_dl_file l; pb_html p]]])
-              bad;
-            CCList.flat_map
-              (fun (n,l,p) ->
-                 [h3 [txt ("errors for " ^ n)];
-                  details (summary ~a:[a_class ["alert"; "alert-warning"]]
-                             [txt "list of errors"; ])
-                    [div [mk_dl_file l; pb_html p]]])
-              errors;
+            (* lazy loading *)
+            [div ~a:[a_class ["lazy-load"];
+                     Unsafe.string_attrib "x_src" uri_err ] []];
             [img
                ~src:uri_plot
                ~a:[a_class ["img-fluid"];
@@ -303,6 +283,61 @@ let handle_show_gp (self:t) : unit =
              ~headers:H.Headers.([] |> set "content-type" "image/png")
              (Ok plot)
         end
+    )
+
+let handle_show_errors (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/show-err/%s%!" (fun file _req ->
+      Log.info (fun k->k "----- start show-err %s -----" file);
+      let ts_start = Unix.gettimeofday() in
+      match Utils.load_file_summary ~full:true file with
+      | Error e ->
+        Log.err (fun k->k "cannot find %S:\n%s" file e);
+        H.Response.fail ~code:500 "could not load %S:\n%s" file e
+      | Ok (_file_full, cr) ->
+        let ts_loaded = Unix.gettimeofday() in
+        Log.info (fun k->k "show: loaded summary in %.3fs" (ts_loaded-.ts_start));
+        let link_file = link_show file in
+        let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
+        let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
+        let ts_pb = Unix.gettimeofday() in
+        Log.info (fun k->k "rendered to PB in %.3fs" (ts_pb -.ts_loaded));
+        let mk_dl_file l =
+          let open Html in
+          let data =
+            "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
+          in
+          mk_a ~cls:["btn"; "btn-link"]
+            ~a:[a_download (Some "problems.txt"); a_href data]
+          [txt "download list"]
+        in
+        let h =
+          let open Html in
+          (* FIXME: only optional? *)
+          div @@
+          (*           mk_page ~title:"show-err" @@ *)
+          List.flatten [
+            CCList.flat_map
+              (fun (n,l,p) ->
+                 [h3 [txt ("bad for " ^ n)];
+                  details ~a:[a_open()]
+                    (summary ~a:[a_class ["alert";"alert-danger"]]
+                       [txt "list of bad results"])
+                    [div [mk_dl_file l; pb_html p]]])
+              bad;
+            CCList.flat_map
+              (fun (n,l,p) ->
+                 [h3 [txt ("errors for " ^ n)];
+                  details (summary ~a:[a_class ["alert"; "alert-warning"]]
+                             [txt "list of errors"; ])
+                    [div [mk_dl_file l; pb_html p]]])
+              errors;
+          ]
+        in
+        let ts_to_html = Unix.gettimeofday() in
+        Log.info (fun k->k "show:turned into html in %.3fs"
+                           (ts_to_html-.ts_to_html));
+        Log.debug (fun k->k "successful reply for %S" file);
+        H.Response.make_string (Ok (Html.to_string_elt h))
     )
 
 (* show full table for a file *)
@@ -824,6 +859,7 @@ let main ?(local_only=false) ?port (defs:Definitions.t) () =
     handle_css server;
     handle_show self;
     handle_show_gp self;
+    handle_show_errors self;
     handle_show_as_table self;
     handle_show_detailed self;
     handle_show_single self;

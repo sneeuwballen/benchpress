@@ -195,8 +195,7 @@ let with_file_as_db filename f : _ E.t =
 
 let load_file f = E.map snd @@ load_file_full f
 
-(* TODO: return T.compact_result instead *)
-let load_file_summary (f:string) : (string * T.compact_result,_) E.t =
+let load_file_summary ?(full=false) (f:string) : (string * T.compact_result,_) E.t =
   let open E.Infix in
   if Filename.check_suffix f ".sqlite" then (
     match mk_file_full f with
@@ -204,7 +203,7 @@ let load_file_summary (f:string) : (string * T.compact_result,_) E.t =
     | Ok file ->
       Db.with_db ~timeout:500 ~mode:`READONLY file
         (fun db ->
-           T.Compact_result.of_db db >>= fun cr ->
+           T.Compact_result.of_db ~full db >>= fun cr ->
            E.return (file, cr))
   ) else (
     load_file_full f >>= fun (f,res) ->

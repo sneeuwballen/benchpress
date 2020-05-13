@@ -5,7 +5,7 @@
  (promote (into ../..) (until-clean))
  (libraries benchpress containers cmdliner result uuidm logs logs.cli
             tiny_httpd tyxml sqlite3_utils base64)
- (flags :standard -warn-error -3-32 -safe-string -open Benchpress))
+ (flags :standard -warn-error -a+8 -safe-string -open Benchpress))
 
 (rule
   (targets web_data.ml)
@@ -29,6 +29,11 @@
 
 (rule
  (with-stdout-to benchpress-serve.1 (run ./benchpress_bin.exe serve --help=groff)))
+
+(rule
+  (targets embed.js)
+  (mode promote)
+  (action (with-stdout-to %{targets} (run tsc embed.ts))))
 
 (install
  (section man)
