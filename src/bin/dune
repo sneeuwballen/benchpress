@@ -33,8 +33,9 @@
 
 (rule
   (targets embed.js)
+  (deps embed.ts tsconfig.json)
   (mode promote)
-  (action (with-stdout-to %{targets} (run tsc embed.ts))))
+  (action (run tsc --build tsconfig.json)))
 
 (install
  (section man)
