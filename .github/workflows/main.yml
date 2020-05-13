@@ -17,5 +17,5 @@ jobs:
     - run: opam pin -n .
     - run: opam depext -yt benchpress
     - run: opam install -t . --deps-only
-    - run: opam exec -- dune build @all
-    - run: opam exec -- dune runtest
+    - run: opam exec -- dune build @all --ignore-promoted-rules
+    - run: opam exec -- dune runtest --ignore-promoted-rules
