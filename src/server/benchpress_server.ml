@@ -342,6 +342,7 @@ let handle_show_as_table (self:t) : unit =
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok res ->
+        try
         let full_table =
           let link_res prover pb ~res =
             PB.link ~uri:(uri_show file prover pb) (PB.text res)
@@ -360,6 +361,9 @@ let handle_show_as_table (self:t) : unit =
         in
         Log.debug (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string h))
+        with e ->
+          Log.err (fun k->k"exn: %s" (Printexc.to_string e));
+          H.Response.make (Error (500, "boo"))
     )
 
 (* show list of individual results with URLs to single results for a file *)

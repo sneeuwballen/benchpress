@@ -75,6 +75,7 @@ let to_db db self : _ or_error =
     Error "not implemented: conversion of checker res to DB" (* TODO *)
 
 let of_db_map db ~f : _ list or_error =
+  let tags = Prover.tags_of_db db in
   Db.exec_no_params db {|
     select
       prover, file, res, file_expect, timeout, errcode, stdout, stderr,
@@ -85,10 +86,10 @@ let of_db_map db ~f : _ list or_error =
         p4 text text text text @>> p2 int int @>> p2 blob blob @>> p3 float float float,
         (fun pname pb_name res expected timeout errcode stdout stderr rtime utime stime ->
            let pb =
-             {Problem.name=pb_name; expected=Res.of_string expected}
+             {Problem.name=pb_name; expected=Res.of_string ~tags expected}
            in
            let p =
-             Run_result.make pname pb ~timeout ~res:(Res.of_string res)
+             Run_result.make pname pb ~timeout ~res:(Res.of_string ~tags res)
                {errcode;stderr;stdout;rtime;utime;stime}
            in
            f p))

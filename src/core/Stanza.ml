@@ -165,7 +165,7 @@ let fail_sexp_f fmt =
 let dec_res =
   let open Se.D in
   string >>= fun s ->
-  (try succeed (Res.of_string s)
+  (try succeed (Res.of_string ~tags:[] s)
    with _ -> fail_sexp_f "expected a `Res.t`, not %S" s)
 
 let dec_regex : regex Se.D.decoder =

@@ -181,7 +181,8 @@ end = struct
       } in
       T.Metadata.to_db db meta >>= fun () ->
       let top_res = lazy (
-        T.Top_result.make ~meta res_l
+        let provers = List.map fst jobs in
+        T.Top_result.make ~meta ~provers res_l
         |> E.get_or_failwith
       ) in
       T.Compact_result.of_db db >>= fun r ->

@@ -89,15 +89,7 @@ module Stat = struct
       ~map_err:(Printf.sprintf "while reading stat(%s) from DB: %s" prover)
       (fun scope ->
          let f c = Db.Cursor.next c |> CCOpt.to_result "no result" |> scope.unwrap in
-         let custom =
-           try Db.exec_exn db {|select tag from custom_tags where prover=?; |}
-                 ~ty:Db.Ty.(p1 text, p1 text, id) ~f:Db.Cursor.to_list prover
-           with e ->
-             Logs.info
-               (fun k->k"reading custom tags for prover %s: %s"
-                   prover (Printexc.to_string e));
-             []
-         in
+         let custom = Prover.tags_of_db db in
          let get_res r =
            Logs.debug (fun k->k "get-res %s" r);
            Db.exec db
@@ -198,6 +190,7 @@ end = struct
   }
 
   let of_db_for ?(full=false) (db:Db.t) ~prover : t or_error =
+    let tags = Prover.tags_of_db db in
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading analyze(%s) from DB: %s" prover)
       (fun scope ->
@@ -250,7 +243,8 @@ end = struct
              prover
              ~ty:Db.Ty.(p1 text, p4 text text text float,
                         (fun file res expected t ->
-                           Problem.make file (Res.of_string expected), Res.of_string res, t))
+                           Problem.make file (Res.of_string ~tags expected),
+                           Res.of_string ~tags res, t))
              ~f:Db.Cursor.to_list_rev
            |> scope.unwrap_with Db.Rc.to_string
          and errors_full =
@@ -258,7 +252,8 @@ end = struct
            else Db.exec db
              ~ty:Db.Ty.(p1 text, p4 text text text float,
                         (fun file res expected t ->
-                           Problem.make file (Res.of_string expected), Res.of_string res, t))
+                           Problem.make file (Res.of_string ~tags expected),
+                           Res.of_string ~tags res, t))
              {| select file, res, file_expect, rtime from prover_res where prover=?
                 and res in ('error') ; |}
              prover ~f:Db.Cursor.to_list_rev
@@ -641,6 +636,7 @@ end
 
 type top_result = {
   meta: metadata;
+  provers: Prover.t list;
   events: Run_event.t list;
   stats: (Prover.name * Stat.t) list;
   analyze: (Prover.name * Analyze.t) list;
@@ -665,13 +661,12 @@ module Top_result : sig
 
   val make :
     meta:metadata ->
+    provers:Prover.t list ->
     Prover.name Run_result.t list ->
     t or_error
   (** Make from a list of results *)
 
-  val of_db :
-    ?events:Run_event.t list ->
-    Db.t -> t or_error
+  val of_db : Db.t -> t or_error
   (** Parse from a DB *)
 
   val db_prepare : Db.t -> unit or_error
@@ -813,6 +808,8 @@ end = struct
              ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
                      |> scope.unwrap_with Db.Rc.to_string
          in
+         let tags = Prover.tags_of_db self.db in
+         Logs.info (fun k->k"to_table: found tags [%s]" (String.concat "," tags));
          let t_rows =
            List.rev_map
              (fun file ->
@@ -823,7 +820,7 @@ end = struct
                     file
                     ~ty:Db.Ty.(p1 text, p3 text text float,
                                fun prover res t ->
-                                 prover, Res.of_string res, t)
+                                 prover, Res.of_string ~tags res, t)
                     ~f:Db.Cursor.to_list_rev
                   |> scope.unwrap_with Db.Rc.to_string
                   |> List.filter (fun (p,_,_) -> List.mem p provers)
@@ -958,6 +955,7 @@ end = struct
     let open E.Infix in
     Metadata.db_prepare db >>= fun () ->
     Run_event.db_prepare db >>= fun () ->
+    Prover.db_prepare db >>= fun () ->
     Ok ()
 
   let to_db (db:Db.t) (self:t) : unit or_error =
@@ -965,52 +963,52 @@ end = struct
     Misc.err_with ~map_err:(Printf.sprintf "while dumping top-res to DB: %s")
       (fun scope ->
          scope.unwrap @@ db_prepare db;
-         (* insert within one transaction, much faster *)
          scope.unwrap @@ Metadata.to_db db self.meta;
+         scope.unwrap @@ Prover.db_prepare db;
+         (* insert within one transaction, much faster *)
          Db.transact db (fun _ ->
+             List.iter (fun p -> Prover.to_db db p |> scope.unwrap) self.provers;
              List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
          ())
 
-  let to_db_events_ (db:Db.t) (events:Run_event.t list) : unit or_error =
-    Misc.err_with (fun scope ->
-        scope.unwrap @@ db_prepare db;
-        scope.unwrap @@ Run_event.db_prepare db;
-        (* insert within one transaction, much faster *)
-        Db.transact db (fun _ ->
-            List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) events);
-        ())
-
-  let of_db_ ~events ~meta (db:Db.t) : t or_error =
+  let make ~meta ~provers
+      (l:Prover.name Run_result.t list) : t or_error =
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
+         let events = List.rev_map Run_event.mk_prover l in
+         (* create a temporary in-memory DB *)
+         let db = Sqlite3.db_open ":memory:" in
+         db_prepare db |> scope.unwrap;
+         Db.transact db (fun _ ->
+             List.iter
+               (fun p ->
+                  Prover.to_db db p
+                  |> scope.unwrap_with
+                    (Printf.sprintf "while adding prover %s: %s" p.Prover.name))
+               provers;
+             List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) events);
          Logs.debug (fun k->k "computing stats");
          let stats = Stat.of_db db |> scope.unwrap in
          Logs.debug (fun k->k "computing analyze");
          let analyze = Analyze.of_db ~full:false db |> scope.unwrap in
          Logs.debug (fun k->k "done");
-         { db; events; meta; stats; analyze; })
+         { db; events; meta; provers; stats; analyze; })
 
-  let of_db ?(events=[]) (db:Db.t) : t or_error =
+  let of_db (db:Db.t) : t or_error =
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
          Logs.debug (fun k->k "loading metadata from DB");
          let meta = Metadata.of_db db |> scope.unwrap in
-         of_db_ ~events ~meta db |> scope.unwrap)
-
-  let make ~meta
-      (l:Prover.name Run_result.t list) : t or_error =
-    Misc.err_with
-      ~map_err:(Printf.sprintf "making top result: %s")
-      (fun scope ->
+         let prover_names = Prover.db_names db |> scope.unwrap in
+         let provers =
+           List.map (fun p -> Prover.of_db db p |> scope.unwrap) prover_names in
          Logs.debug (fun k->k "loading events from DB");
-         let l = List.rev_map Run_event.mk_prover l in
-         (* create a temporary in-memory DB *)
-         let db = Sqlite3.db_open ":memory:" in
-         db_prepare db |> scope.unwrap;
-         to_db_events_ db l |> scope.unwrap;
-         of_db_ ~meta ~events:l db |> scope.unwrap)
+         let events =
+           Run_event.of_db_l db |> scope.unwrap
+         in
+         make ~meta ~provers events |> scope.unwrap)
 end
 
 module Detailed_res : sig
@@ -1048,14 +1046,15 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "when listing detailed results: %s")
       (fun scope ->
+         let tags = Prover.tags_of_db db in
          let l =
            Db.exec_no_params db
              {|select distinct prover, file, res, file_expect, rtime
               from prover_res order by file, prover desc; |}
              ~ty:Db.Ty.(p5 text any_str text text float,
                         fun prover file res file_expect rtime ->
-                          let res=Res.of_string res in
-                          let file_expect=Res.of_string file_expect in
+                          let res=Res.of_string ~tags res in
+                          let file_expect=Res.of_string ~tags file_expect in
                           {prover;file;res;file_expect;rtime})
              ~f:Db.Cursor.to_list_rev
            |> scope.unwrap_with Db.Rc.to_string
@@ -1067,6 +1066,7 @@ end = struct
     Misc.err_with
       ~map_err:(Printf.sprintf "when get detailed result for %s on %s: %s" prover file)
       (fun scope ->
+         let tags = Prover.tags_of_db db in
          let res: Prover.name Run_result.t =
            Db.exec db
              {|select
@@ -1080,8 +1080,8 @@ end = struct
                         @>> p3 float float float,
                         fun res file_expect timeout errcode stdout stderr
                           rtime utime stime ->
-                          Run_result.make prover ~timeout ~res:(Res.of_string res)
-                            {Problem.name=file; expected=Res.of_string file_expect}
+                          Run_result.make prover ~timeout ~res:(Res.of_string ~tags res)
+                            {Problem.name=file; expected=Res.of_string ~tags file_expect}
                             { Proc_run_result.errcode;stdout;stderr;rtime;utime;stime}
                        )
            |> scope.unwrap_with Db.Rc.to_string

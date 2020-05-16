@@ -18,7 +18,7 @@ let to_string = function
   | Error -> "error"
   | Tag s -> s
 
-let of_string ?(tags=[]) = function
+let of_string ~tags = function
   | "sat" -> Sat
   | "unsat" -> Unsat
   | "error" -> Error
