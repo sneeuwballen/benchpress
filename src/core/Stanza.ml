@@ -76,6 +76,7 @@ type t =
       progress: bool option;
       j: int option;
     }
+  | St_declare_custom_tag of string
 
 (** {2 Printers} *)
 
@@ -147,6 +148,8 @@ let pp out =
     Fmt.fprintf out "(@[<v>set-options%a%a])"
       (pp_opt "progress" Fmt.bool) progress
       (pp_opt "j" Fmt.int) j
+  | St_declare_custom_tag t ->
+    Fmt.fprintf out "(custom-tag %s)" t
 
 let pp_l out l =
   Fmt.fprintf out "@[<v>%a@]" (Misc.pp_list pp) l
@@ -162,10 +165,10 @@ let fail_sexp_f fmt =
        fail @@ Format.asprintf "@[<v>at %a:@,%s@]" Se.pp_loc sexp.Se.loc s)
     fmt
 
-let dec_res =
+let dec_res tags =
   let open Se.D in
   string >>= fun s ->
-  (try succeed (Res.of_string ~tags:[] s)
+  (try succeed (Res.of_string ~tags s)
    with _ -> fail_sexp_f "expected a `Res.t`, not %S" s)
 
 let dec_regex : regex Se.D.decoder =
@@ -177,11 +180,11 @@ let dec_regex : regex Se.D.decoder =
   string >>= fun s ->
   if valid_re s then succeed s else fail "expected a valid Perl regex"
 
-let dec_expect : _ Se.D.decoder =
+let dec_expect tags : _ Se.D.decoder =
   let open Se.D in
   fix (fun self ->
       string >>:: function
-      | "const" -> list1 dec_res >|= fun r -> E_const r
+      | "const" -> list1 (dec_res tags) >|= fun r -> E_const r
       | "run" -> list1 string >|= fun prover -> E_program {prover}
       | "try" -> list self >|= fun e -> E_try e
       | s -> fail_sexp_f "expected `expect` stanzas (constructors: const|run|try, not %S)" s)
@@ -246,19 +249,24 @@ let dec_action : action Se.D.decoder =
       | s ->
         fail_sexp_f "unknown config stanzas %s" s)
 
-let dec : t Se.D.decoder =
+(* TODO: carry definitions around? *)
+let dec tags : (_ list * t) Se.D.decoder =
   let open Se.D in
   string >>:: function
   | "dir" ->
     field "path" string >>= fun path ->
-    field_opt "expect" dec_expect >>= fun expect ->
+    field_opt "expect" (dec_expect tags) >>= fun expect ->
     field_opt "pattern" dec_regex >>= fun pattern ->
-    succeed (St_dir {path;expect;pattern})
+    succeed (tags, St_dir {path;expect;pattern})
   | "prover" ->
     let tag = string >>:: function
       | "tag" ->
         string >>:: fun name ->
-        dec_regex >>:: fun re -> succeed @@ Some (name,re)
+        if List.mem name tags then (
+          dec_regex >>:: fun re -> succeed @@ Some (name,re)
+        ) else (
+          fail_f "tag '%s' was not declared, use a `custom-tag` stanza" name
+        )
       | _ -> succeed None
     in
     field "name" string >>= fun name ->
@@ -271,20 +279,23 @@ let dec : t Se.D.decoder =
     field_opt "memory" dec_regex >>= fun memory ->
     list_filter tag >>= fun custom ->
     succeed @@
-    St_prover {
+    (tags, St_prover {
       name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
       binary=None;
       binary_deps=[]; (* TODO *)
-    }
+    })
   | "task" ->
     field "name" string >>= fun name ->
     field_opt "synopsis" string >>= fun synopsis ->
     field "action" dec_action >>= fun action ->
-    succeed @@ St_task {name;synopsis;action}
+    succeed @@ (tags, St_task {name;synopsis;action})
   | "set-options" ->
     field_opt "progress" bool >>= fun progress ->
     field_opt "j" int >>= fun j ->
-    succeed @@ St_set_options {progress; j}
+    succeed @@ (tags, St_set_options {progress; j})
+  | "custom-tag" ->
+    field "name" string >>= fun s ->
+    succeed @@ (s::tags,St_declare_custom_tag s)
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
 
@@ -305,9 +316,9 @@ let parse_string_list_ s : _ list or_error =
 (** Parse a list of files into a list of stanzas *)
 let parse_files ?(builtin=true) (files:string list) : t list or_error =
   let decode_sexp_l l =
-    CCList.map
-      (fun s ->
-         match Se.D.decode_value dec s with
+    CCList.fold_map
+      (fun tags s ->
+         match Se.D.decode_value (dec tags) s with
          | Ok x -> x
          | Error e ->
            wrapf "at %a, error@ %s" Se.pp_loc s.Se.loc
@@ -315,22 +326,27 @@ let parse_files ?(builtin=true) (files:string list) : t list or_error =
       l
   in
   try
-    let prelude =
+    let tags, prelude =
       if builtin then
         match parse_string_list_ Builtin_config.config with
-        | Ok l -> St_enter_file "prelude" :: decode_sexp_l l
+        | Ok l ->
+          let tags, l = decode_sexp_l [] l in
+          tags, St_enter_file "prelude" :: l
         | Error e ->
           wrapf "failure when reading builtin config: %s" e
-      else []
+      else [], []
     in
-    List.map
-      (fun file ->
+    CCList.fold_map
+      (fun tags file ->
          Se.cur_file_ := file; (* issue in CCSexp's locations *)
          let file = Misc.mk_abs_path file in
          match Se.parse_file_list file with
          | Error e -> wrapf "cannot parse %s:@,%s" file e
-         | Ok l -> St_enter_file file :: decode_sexp_l l)
-      files
+         | Ok l ->
+           let tags, l = decode_sexp_l tags l in
+           tags, St_enter_file file :: l)
+      tags files
+    |> snd
     |> CCList.cons prelude
     |> CCList.flatten
     |> E.return

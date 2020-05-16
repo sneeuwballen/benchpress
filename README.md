@@ -155,11 +155,14 @@ same repository).
     available and will refer to parameters used to run the prover on a file.
   * `sat`, `unsat`, `unknown`, `timeout`, `memory` are (perl) regex used to recognize
     the result (or reason for failure by timeout or memory exhaustion) of the prover.
+  * custom tags can be used with `(tag foo regex)`: a tag named `foo` will be
+    used when `regex` matches the prover's output.
 - `(dir …)` defines a directory:
   * `(path …)` defines the path. The rules below apply to any file within this directory.
   * `(pattern ".*.smt2")` means only files matching the (perl) regex will be considered.
   * `(expect …)` defines how to find the expected result of each file (which will
     be compared to the actual result to detect bugs).
+- `(custom-tag (name t))` makes a custom tag `t` available
 - `(task …)` defines a task that can be run from the command line.
   * `name` should be unique (used to refer to the task)
   * `action` defines what the task should do, see [the action section](#actions)

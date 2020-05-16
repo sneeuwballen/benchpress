@@ -21,12 +21,13 @@ type t = {
   dirs: Dir.t list; (* list of directories *)
   cur_dir: string; (* for relative paths *)
   config_file: string option;
+  tags: string list;
   option_j : int option;
   option_progress : bool option;
 }
 
 let empty : t =
-  { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd();
+  { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd(); tags=[];
     option_j=None; option_progress=None; config_file=None;
   }
 
@@ -41,6 +42,7 @@ let add_dir (d:Dir.t) self : t =
 
 let option_j self = self.option_j
 let option_progress self = self.option_progress
+let custom_tags self = self.tags
 
 let all_provers self : _ list =
   Str_map.values self.defs
@@ -201,6 +203,12 @@ let add_stanza (st:Stanza.t) self : t or_error =
         option_j = j <+> self.option_j;
         option_progress = progress <+> self.option_progress;
        }
+  | St_declare_custom_tag t ->
+    if List.mem t self.tags then (
+      E.fail_fprintf "tag %s already declared" t
+    ) else (
+      Ok { self with tags = t :: self.tags }
+    )
 
 let add_stanza_l (l:Stanza.t list) self : t or_error =
   E.fold_l (fun self st -> add_stanza st self) self l

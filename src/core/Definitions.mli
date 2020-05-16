@@ -20,6 +20,7 @@ val find_prover : t -> string -> Prover.t or_error
 val find_task : t -> string -> Task.t or_error
 val all_provers : t -> Prover.t list
 val all_tasks : t -> Task.t list
+val custom_tags : t -> string list
 
 val option_j : t -> int option
 val option_progress : t -> bool option
