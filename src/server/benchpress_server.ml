@@ -208,7 +208,7 @@ let handle_show (self:t) : unit =
                  ~a:[a_href ("/show_table/"^U.percent_encode file)]
                  [txt "show table of results"];
                form ~a:[a_method `Post] [
-                 mk_button ~cls:["btn-danger"]
+                 mk_button ~cls:["btn-danger";"btn-sm"]
                    ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/"); ]
                    [txt "delete"];
                ]
@@ -222,7 +222,7 @@ let handle_show (self:t) : unit =
             (CCList.flat_map
                (fun (n,pb) ->
                   [h3 [txt ("summary for " ^ n)];
-                   mk_a ~cls:["btn-link"; "h-50"]
+                   mk_a ~cls:["btn-link"; "btn-sm"; "h-50"]
                      ~a:[a_href (Printf.sprintf "/show_csv/%s?provers=%s"
                                    (U.percent_encode file) (U.percent_encode n))]
                      [txt "download as csv"];
@@ -261,7 +261,7 @@ let handle_prover_in (self:t) : unit =
           let open Html in
           mk_page ~title:"prover"
             [
-              mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+              mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
               dyn_status();
               div [
                 pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
@@ -337,7 +337,7 @@ let handle_show_errors (self:t) : unit =
           let data =
             "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
           in
-          mk_a ~cls:["btn"; "btn-link"]
+          mk_a ~cls:["btn"; "btn-link";"btn-sm"]
             ~a:[a_download (Some "problems.txt"); a_href data]
           [txt "download list"]
         in
@@ -389,7 +389,7 @@ let handle_show_as_table (self:t) : unit =
           let open Html in
           mk_page ~title:"show full table" @@
           List.flatten [
-            [mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+            [mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
              dyn_status()];
             [h3 [txt "full results"];
              div [pb_html full_table]];
@@ -412,7 +412,7 @@ let handle_show_detailed (self:t) : unit =
            let open Html in
            mk_page ~title:"detailed results"
              [
-               mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+               mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
                dyn_status();
                h3 [txt "detailed results"];
                let rows =
@@ -466,7 +466,7 @@ let handle_show_single (self:t) : unit =
            in
            let open Html in
            mk_page ~title:"single result" [
-             mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+             mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
              dyn_status();
              mk_a
                ~cls:["sticky-top"]
@@ -559,7 +559,7 @@ let handle_compare server : unit =
           let open Html in
           mk_page ~title:"compare"
             [
-              mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+              mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
               dyn_status();
               h3 [txt "comparison"];
               div [pb_html box_compare_l];
@@ -595,6 +595,19 @@ let handle_delete server : unit =
       Logs.debug (fun k->k "/delete1: path is %s" file);
       run [file]
     );
+  H.add_path_handler server ~meth:`POST "/delete/" (fun req ->
+      let body = H.Request.body req |> String.trim in
+      Logs.debug (fun k->k "/delete: body is %s" body);
+      let names =
+        CCString.split_on_char '&' body
+        |> CCList.filter_map
+          (fun s -> match CCString.Split.left ~by:"=" (String.trim s) with
+             | Some (name, "on") -> Some name
+             | _ -> None)
+      in
+      Logs.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
+      run names
+    );
   ()
 
 let handle_provers (self:t) : unit =
@@ -626,7 +639,7 @@ let handle_provers (self:t) : unit =
         let l = List.map mk_prover provers in
         mk_page ~title:"provers"
           [
-            mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+            mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
             dyn_status();
             h3 [txt "list of provers"];
             mk_ul l
@@ -650,7 +663,7 @@ let handle_tasks (self:t) : unit =
                      form ~a:[a_id (uri_of_string @@ "launch_task"^s);
                             a_action (uri_of_string @@ "/run/" ^ U.percent_encode s);
                             a_method `Post;]
-                       [mk_button ~cls:["btn-primary"] [txt "run"]];
+                       [mk_button ~cls:["btn-primary";"btn-sm"] [txt "run"]];
                    ];
                    mk_col ~cls:["col-auto"] [pre [txt @@Format.asprintf "%a@?" Task.pp t]];
                    begin match t.Task.defined_in with
@@ -663,7 +676,7 @@ let handle_tasks (self:t) : unit =
         in
         mk_page ~title:"tasks"
           [
-            mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+            mk_a ~cls:["sticky-top"; "btn-info"; "btn-sm"] ~a:[a_href "/"] [txt "back to root"];
             dyn_status();
             h3 [txt "list of tasks"];
             mk_ul l;
@@ -777,8 +790,11 @@ let handle_root (self:t) : unit =
               div ~a:[a_class ["container"]] [
                 mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] [
                   mk_col [
-                    mk_button ~cls:["btn-primary"] ~a:[a_formaction "/compare/"]
+                    mk_button ~cls:["btn-primary";"btn-sm"] ~a:[a_formaction "/compare/"]
                       [txt "compare selected"]];
+                  mk_col [
+                    mk_button ~cls:["btn-danger";"btn-sm"] ~a:[a_formaction "/delete/"]
+                      [txt "delete selected"]]
                 ];
                 mk_ul l
               ]];
