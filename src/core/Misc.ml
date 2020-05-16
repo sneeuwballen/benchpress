@@ -77,7 +77,7 @@ module Pp = struct
   let pp_opt what f out = function
     | None -> ()
     | Some x -> Fmt.fprintf out "@ (@[%s@ %a@])" what f x
-  let pp_l1 f out l = if l=[] then () else pp_l f out l
+  let pp_l1 f out l = if l=[] then () else Fmt.fprintf out "@,%a" (pp_l f) l
   let pp_str out s = Sexp_loc.pp out (Sexp_loc.atom s)
   let pp_regex out r = Fmt.fprintf out "%S" r
 end

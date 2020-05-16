@@ -149,9 +149,6 @@ let html_redirect (s:string) =
     ~title:s
     [txt s]
 
-let link_prover prover =
-  PB.link (PB.text prover) ~uri:("/provers/?name=" ^ U.percent_encode prover)
-
 let uri_show db_file prover path =
   Printf.sprintf "/show_single/%s/%s/%s/"
     (U.percent_encode db_file)
@@ -178,7 +175,15 @@ let handle_show (self:t) : unit =
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
       | Ok (_file_full, cr) ->
         Log.info (fun k->k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
-        let box_meta = Test.Metadata.to_printbox ~link:link_prover cr.T.cr_meta in
+        let box_meta =
+          let link prover =
+            (* link to the prover locally *)
+            PB.link (PB.text prover)
+              ~uri:(Printf.sprintf "/prover-in/%s/%s/"
+                      (U.percent_encode file) (U.percent_encode prover))
+          in
+          Test.Metadata.to_printbox ~link cr.T.cr_meta
+        in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
         let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
@@ -244,6 +249,37 @@ let handle_show (self:t) : unit =
                            (Misc.Chrono.since_last chrono));
         Log.debug (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string h))
+    )
+
+(* prover in a given file *)
+let handle_prover_in (self:t) : unit =
+  H.add_path_handler self.server ~meth:`GET "/prover-in/%s@/%s@/%!" (fun file prover _req ->
+      Log.info (fun k->k "----- start prover-in %s %s -----" file prover);
+      let file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode file in
+      let r = Bin_utils.with_file_as_db file (fun scope db ->
+          let prover = Prover.of_db db prover |> scope.unwrap in
+          let open Html in
+          mk_page ~title:"prover"
+            [
+              mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+              dyn_status();
+              div [
+                pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
+                begin match prover.Prover.defined_in with
+                  | None -> span[]
+                  | Some f ->
+                    div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+                end;
+              ]
+            ]
+        ) in
+      match r with
+      | Ok h ->
+        Log.debug (fun k->k "successful reply for prover-in/%S/%s" file prover);
+        H.Response.make_string (Ok (Html.to_string h))
+      | Error e ->
+        Log.err (fun k->k "error in prover-in/%S/%s:\n%s" file prover e);
+        H.Response.fail ~code:500 "could not show prover %s for %S:\n%s" file prover e
     )
 
 (* gnuplot for a file *)
@@ -887,6 +923,7 @@ module Cmd = struct
       handle_css server;
       handle_show self;
       handle_show_gp self;
+      handle_prover_in self;
       handle_show_errors self;
       handle_show_as_table self;
       handle_show_detailed self;

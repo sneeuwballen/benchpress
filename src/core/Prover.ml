@@ -107,7 +107,7 @@ let pp out self =
     (pp_opt "timeout" pp_regex) timeout
     (pp_opt "unknown" pp_regex) unknown
     (pp_opt "defined_in" pp_str) defined_in
-    (pp_l (pp_pair pp_str pp_regex)) custom
+    (pp_l1 (pp_pair pp_str pp_regex)) custom
 
 exception Subst_not_found of string
 
