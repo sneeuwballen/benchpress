@@ -168,7 +168,7 @@ let add_stanza (st:Stanza.t) self : t or_error =
     Ok (add_dir d self)
   | St_prover {
       name; cmd; sat; unsat; timeout; unknown; memory;
-      version; binary; binary_deps;
+      version; binary; binary_deps; custom;
     } ->
     (* add prover *)
     let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
@@ -188,7 +188,7 @@ let add_stanza (st:Stanza.t) self : t or_error =
     let p = {
       Prover.
       name; cmd; sat; unsat; timeout; unknown; memory; binary; binary_deps;
-      version=get_version ~binary version; defined_in=self.config_file;
+      version=get_version ~binary version; custom; defined_in=self.config_file;
     } in
     Ok (add_prover p self)
   | St_task {name; synopsis; action; } ->

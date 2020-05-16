@@ -35,6 +35,7 @@ type t = {
   unknown : string option;  (* regex for "unknown" *)
   timeout : string option;  (* regex for "timeout" *)
   memory  : string option;  (* regex for "out of memory" *)
+  custom  : (string * string) list; (* custom tags *)
   defined_in: string option;
 }
 
@@ -93,9 +94,9 @@ end
 let pp out self =
   let open Misc.Pp in
   let {name; version; cmd; unsat; sat; timeout; unknown; memory;
-       binary; binary_deps=_; defined_in} = self in
+       binary; custom; binary_deps=_; defined_in} = self in
   Fmt.fprintf out
-    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a@])"
+    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a@])"
     (pp_f "name" pp_str) name
     (pp_f "version" Version.pp) version
     (pp_f "cmd" pp_str) cmd
@@ -106,6 +107,7 @@ let pp out self =
     (pp_opt "timeout" pp_regex) timeout
     (pp_opt "unknown" pp_regex) unknown
     (pp_opt "defined_in" pp_str) defined_in
+    (pp_l (pp_pair pp_str pp_regex)) custom
 
 exception Subst_not_found of string
 
@@ -201,18 +203,25 @@ let run ?env ~timeout ~memory ~file (self:t) : Proc_run_result.t =
 
 let analyze_p_opt (self:t) (r:Proc_run_result.t) : Res.t option =
   (* find if [re: re option] is present in [stdout] *)
+  let find_ re =
+    let re = Re.Perl.compile_pat ~opts:[`Multiline] re in
+    Re.execp re r.stdout ||
+    Re.execp re r.stderr
+  in
   let find_opt_ re = match re with
     | None -> false
-    | Some re ->
-      let re = Re.Perl.compile_pat ~opts:[`Multiline] re in
-      Re.execp re r.stdout ||
-      Re.execp re r.stderr
+    | Some re -> find_ re
   in
   if find_opt_ self.sat then Some Res.Sat
   else if find_opt_ self.unsat then Some Res.Unsat
   else if find_opt_ self.timeout then Some Res.Timeout
   else if find_opt_ self.unknown then Some Res.Unknown
-  else None
+  else (
+    (* look for custom tags *)
+    CCList.find_map
+      (fun (tag,re) -> if find_ re then Some (Res.Tag tag) else None)
+      self.custom
+  )
 
 let db_prepare (db:Db.t) : unit or_error =
   Db.exec0 db {|
@@ -227,30 +236,57 @@ let db_prepare (db:Db.t) : unit or_error =
       timeout text not null,
       memory text not null
     );
+
+  create table if not exists
+    custom_tags (
+      prover_name text not null,
+      tag text not null,
+      regex text not null,
+    );
   |}
   |> Misc.db_err ~ctx:"creating prover table"
 
 let to_db db (self:t) : unit or_error =
   let str_or = CCOpt.get_or ~default:"" in
-  Db.exec_no_cursor db
-    {|insert into prover values (?,?,?,?,?,?,?,?);
-    |}
-    ~ty:Db.Ty.(p3 text text blob @>> text @> p4 text text text text)
-    self.name
-    (Version.ser_sexp self.version)
-    self.binary
-    (self.unsat |> str_or)
-    (self.sat |> str_or)
-    (self.unknown |> str_or)
-    (self.timeout |> str_or)
-    (self.memory |> str_or)
-  |> Misc.db_err ~ctx:"prover.to-db"
+  Misc.err_with (fun scope ->
+    Db.exec_no_cursor db
+      {|insert into prover values (?,?,?,?,?,?,?,?);
+      |}
+      ~ty:Db.Ty.(p3 text text blob @>> text @> p4 text text text text)
+      self.name
+      (Version.ser_sexp self.version)
+      self.binary
+      (self.unsat |> str_or)
+      (self.sat |> str_or)
+      (self.unknown |> str_or)
+      (self.timeout |> str_or)
+      (self.memory |> str_or)
+      |> Misc.db_err ~ctx:"prover.to-db" |> scope.unwrap;
+    if self.custom <> [] then (
+      List.iter
+        (fun (tag,re) ->
+           Db.exec_no_cursor db
+             {|insert into custom_tags values (?,?,?);
+             |}
+             ~ty:Db.Ty.(p3 text text text)
+             self.name tag re
+           |> Misc.db_err ~ctx:"prover.to-db.add tag" |> scope.unwrap)
+        self.custom;
+      ))
 
 let of_db db name : t or_error =
   Misc.err_with
     ~map_err:(Printf.sprintf "while parsing prover %s: %s" name)
     (fun scope ->
        let nonnull s = if s="" then None else Some s in
+       let custom =
+         try
+           Db.exec_exn db
+             {| select tag, re from custom_tags where prover=?; |}
+             ~ty:Db.Ty.(p1 text, p2 text text, mkp2) ~f:Db.Cursor.to_list
+             name
+         with _ -> []
+       in
        Db.exec db
          {|select
             version, binary, unsat, sat, unknown, timeout, memory
@@ -270,7 +306,7 @@ let of_db db name : t or_error =
                       let unknown = nonnull unknown in
                       let timeout = nonnull timeout in
                       let memory = nonnull memory in
-                      { name; cmd; binary_deps=[]; defined_in=None;
+                      { name; cmd; binary_deps=[]; defined_in=None; custom;
                         version; binary;unsat;sat;unknown;timeout;memory})
        |> scope.unwrap_with Db.Rc.to_string
        |> CCOpt.to_result "expected a result"

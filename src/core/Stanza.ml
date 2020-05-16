@@ -60,6 +60,7 @@ type t =
       unknown : regex option;  (** regex for "unknown" *)
       timeout : regex option;  (** regex for "timeout" *)
       memory  : regex option;  (** regex for "out of memory" *)
+      custom  : (string * regex) list; (** regex for custom results *)
     }
   | St_dir of {
       path: string;
@@ -123,9 +124,11 @@ let pp out =
       (pp_opt "pattern" pp_regex) pattern
   | St_prover {
       name; cmd; version; unsat; sat; unknown; timeout; memory;
-      binary=_; binary_deps=_;
+      binary=_; binary_deps=_; custom;
     } ->
-    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a@])"
+    let pp_custom out (x,y) =
+      Fmt.fprintf out "(@[tag %a@ %a@])" pp_str x pp_regex y in
+    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a@])"
       (pp_f "name" pp_str) name
       (pp_f "cmd" pp_str) cmd
       (pp_opt "version" pp_version_field) version
@@ -134,6 +137,7 @@ let pp out =
       (pp_opt "unknown" pp_regex) unknown
       (pp_opt "timeout" pp_regex) timeout
       (pp_opt "memory" pp_regex) memory
+      (pp_l1 pp_custom) custom
   | St_task {name; synopsis; action;} ->
     Fmt.fprintf out "(@[<v>task%a%a%a@])"
       (pp_f "name" pp_str) name
@@ -251,6 +255,12 @@ let dec : t Se.D.decoder =
     field_opt "pattern" dec_regex >>= fun pattern ->
     succeed (St_dir {path;expect;pattern})
   | "prover" ->
+    let tag = string >>:: function
+      | "tag" ->
+        string >>:: fun name ->
+        dec_regex >>:: fun re -> succeed @@ Some (name,re)
+      | _ -> succeed None
+    in
     field "name" string >>= fun name ->
     field "cmd" string >>= fun cmd ->
     field_opt "version" dec_version >>= fun version ->
@@ -259,10 +269,12 @@ let dec : t Se.D.decoder =
     field_opt "unknown" dec_regex >>= fun unknown ->
     field_opt "timeout" dec_regex >>= fun timeout ->
     field_opt "memory" dec_regex >>= fun memory ->
+    list_filter tag >>= fun custom ->
     succeed @@
     St_prover {
-      name; cmd; version; sat; unsat; unknown; timeout; memory;
-      binary=None; binary_deps=[]; (* TODO *)
+      name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
+      binary=None;
+      binary_deps=[]; (* TODO *)
     }
   | "task" ->
     field "name" string >>= fun name ->

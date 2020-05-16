@@ -55,21 +55,26 @@ module Stat = struct
     unknown: int;
     timeout: int;
     memory: int;
+    custom: (string * int) list;
     total: int;
     total_time: float; (* for sat+unsat *)
   }
 
   let as_printbox_record s : _ list =
     let open PB in
-    [ "sat", pb_int_color Style.(fg_color Green) s.sat;
-      "unsat", pb_int_color Style.(fg_color Green) s.unsat;
-      "sat+unsat", pb_int_color Style.(fg_color Green) (s.sat+s.unsat);
-      "errors", pb_int_color Style.(fg_color Cyan) s.errors;
-      "unknown", int s.unknown;
-      "timeout", int s.timeout;
-      "memory", int s.memory;
-      "total", int s.total;
-      "total_time", line (Misc.human_duration s.total_time);
+    List.flatten @@ [
+      ["sat", pb_int_color Style.(fg_color Green) s.sat;
+       "unsat", pb_int_color Style.(fg_color Green) s.unsat;
+       "sat+unsat", pb_int_color Style.(fg_color Green) (s.sat+s.unsat);
+       "errors", pb_int_color Style.(fg_color Cyan) s.errors;
+       "unknown", int s.unknown;
+       "timeout", int s.timeout;
+      ];
+      List.map (fun (tag,i) -> "tag." ^ tag, int i) s.custom;
+      ["memory", int s.memory;
+       "total", int s.total;
+       "total_time", line (Misc.human_duration s.total_time);
+      ];
     ]
 
   let to_printbox (s:t) : PrintBox.t =
@@ -84,6 +89,15 @@ module Stat = struct
       ~map_err:(Printf.sprintf "while reading stat(%s) from DB: %s" prover)
       (fun scope ->
          let f c = Db.Cursor.next c |> CCOpt.to_result "no result" |> scope.unwrap in
+         let custom =
+           try Db.exec_exn db {|select tag from custom_tags where prover=?; |}
+                 ~ty:Db.Ty.(p1 text, p1 text, id) ~f:Db.Cursor.to_list prover
+           with e ->
+             Logs.info
+               (fun k->k"reading custom tags for prover %s: %s"
+                   prover (Printexc.to_string e));
+             []
+         in
          let get_res r =
            Logs.debug (fun k->k "get-res %s" r);
            Db.exec db
@@ -97,7 +111,10 @@ module Stat = struct
          let timeout = get_res "timeout" in
          let memory = get_res "memory" in
          let errors = get_res "error" in
-         let total = sat+unsat+unknown+timeout+memory+errors in
+         let custom = List.map (fun tag -> tag, get_res tag) custom in
+         let total =
+           sat + unsat + unknown + timeout + memory + errors
+           + List.fold_left (fun n (_,i) -> n+i) 0 custom in
          let total_time =
            Db.exec db {|
           select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
@@ -105,7 +122,7 @@ module Stat = struct
              ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.) ~f
            |> scope.unwrap_with Db.Rc.to_string
          in
-         { sat; unsat; timeout; memory; unknown; errors; total; total_time; }
+         { sat; unsat; timeout; memory; unknown; errors; custom; total; total_time; }
       )
 
   let of_db (db:Db.t) : (Prover.name * t) list or_error =
@@ -829,6 +846,7 @@ end = struct
     | Res.Unknown -> "unknown"
     | Res.Sat -> "sat"
     | Res.Unsat -> "unsat"
+    | Res.Tag s -> s
 
   let table_to_csv (t:table): Csv.t =
     let header_line =
@@ -1082,23 +1100,24 @@ end = struct
       | Res.Error -> text_with_style Style.(set_fg_color Red@@bold) @@ Res.to_string r
       | _ -> text @@ Res.to_string r
     in
-    v_record [
-      "prover.name", text self.program.Prover.name;
-      "prover.cmd", text self.program.Prover.cmd;
-      "prover.version",
-      (text @@ Format.asprintf "%a" Prover.Version.pp self.program.Prover.version);
-      "prover.sat", text (CCOpt.get_or ~default:"<none>" self.program.Prover.sat);
-      "prover.unsat", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unsat);
-      "prover.unknown", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unknown);
-      "prover.timeout", text (CCOpt.get_or ~default:"<none>" self.program.Prover.timeout);
-      "prover.memory", text (CCOpt.get_or ~default:"<none>" self.program.Prover.memory);
-      "problem.path", mk_link self.program.Prover.name self.problem.Problem.name;
-      "problem.expected_res", pp_res self.problem.Problem.expected;
-      "res", pp_res self.res;
-      "rtime", text (Misc.human_duration self.raw.rtime);
-      "stime", text (Misc.human_duration self.raw.stime);
-      "utime", text (Misc.human_duration self.raw.utime);
-      "errcode", int self.raw.errcode;
+    v_record @@ List.flatten [
+      ["prover.name", text self.program.Prover.name;
+       "prover.cmd", text self.program.Prover.cmd;
+       "prover.version",
+       (text @@ Format.asprintf "%a" Prover.Version.pp self.program.Prover.version);
+       "prover.sat", text (CCOpt.get_or ~default:"<none>" self.program.Prover.sat);
+       "prover.unsat", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unsat);
+       "prover.unknown", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unknown);
+       "prover.timeout", text (CCOpt.get_or ~default:"<none>" self.program.Prover.timeout);];
+      List.map (fun (tag,re) -> "prover.tag." ^ tag, text re) self.program.Prover.custom;
+      ["prover.memory", text (CCOpt.get_or ~default:"<none>" self.program.Prover.memory);
+       "problem.path", mk_link self.program.Prover.name self.problem.Problem.name;
+       "problem.expected_res", pp_res self.problem.Problem.expected;
+       "res", pp_res self.res;
+       "rtime", text (Misc.human_duration self.raw.rtime);
+       "stime", text (Misc.human_duration self.raw.stime);
+       "utime", text (Misc.human_duration self.raw.utime);
+       "errcode", int self.raw.errcode;]
     ],
     self.raw.stdout, self.raw.stderr
 end

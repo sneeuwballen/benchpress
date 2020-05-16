@@ -90,20 +90,25 @@ let make_find_expect ~expect file : t or_error =
   find_expect ~expect file >|= fun expect ->
   make file expect
 
-let compare_res pb res = match pb.expected, res with
-  | Res.Unsat, Res.Unsat
-  | Res.Sat, Res.Sat
-  | Res.Timeout, Res.Timeout
-  | Res.Unknown, Res.Unknown
-  | Res.Error, Res.Error -> `Same
-  | Res.Timeout, Res.Unknown
-  | Res.Unknown, Res.Timeout
-  | (Res.Sat | Res.Unsat | Res.Error), (Res.Unknown | Res.Timeout) -> `Disappoint
-  | (Res.Unsat | Res.Error), Res.Sat
-  | (Res.Sat | Res.Error), Res.Unsat -> `Mismatch
-  | (Res.Sat | Res.Unknown | Res.Timeout | Res.Unsat), Res.Error ->
+let compare_res pb res =
+  let open Res in
+  match pb.expected, res with
+  | Unsat, Unsat
+  | Sat, Sat
+  | Timeout, Timeout
+  | Unknown, Unknown
+  | Error, Error -> `Same
+  | Tag s1, Tag s2 when s1=s2 -> `Same
+  | Timeout, Unknown
+  | Unknown, Timeout
+  | (Sat | Unsat | Error | Tag _), (Unknown | Timeout) -> `Disappoint
+  | (Unsat | Sat | Error), Tag _
+  | (Unsat | Error | Tag _), Sat
+  | Tag _, Tag _
+  | (Sat | Error | Tag _), Unsat -> `Mismatch
+  | (Sat | Unknown | Timeout | Unsat | Tag _), Error ->
     `Error
-  | (Res.Unknown | Res.Timeout), (Res.Sat | Res.Unsat) ->
+  | (Unknown | Timeout), (Sat | Unsat | Tag _) ->
     `Improvement
 
 let pp out p =

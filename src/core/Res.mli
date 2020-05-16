@@ -8,6 +8,7 @@ type t =
   | Unknown
   | Timeout
   | Error
+  | Tag of string
 
 val compare: t -> t -> [`Same | `LeftBetter | `RightBetter | `Mismatch]
 (** [compare a b] compares results [a] and [b] (assuming they are results
@@ -23,5 +24,5 @@ val compare: t -> t -> [`Same | `LeftBetter | `RightBetter | `Mismatch]
 
 val pp : t CCFormat.printer
 val to_string : t -> string
-val of_string : string -> t
+val of_string : ?tags:string list -> string -> t
 
