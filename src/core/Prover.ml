@@ -241,7 +241,7 @@ let db_prepare (db:Db.t) : unit or_error =
     custom_tags (
       prover_name text not null,
       tag text not null,
-      regex text not null,
+      regex text not null
     );
   |}
   |> Misc.db_err ~ctx:"creating prover table"
