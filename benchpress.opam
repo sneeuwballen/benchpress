@@ -23,7 +23,6 @@ depends: [
   "sqlite3_utils" { >= "0.3" & < "0.4" }
   "printbox" { >= "0.5" & < "0.6" }
   "decoders" { >= "0.3.0" & < "0.4" }
-  "decoders-yojson" { >= "0.3.0" & < "0.4" }
   "ocaml" {>= "4.03" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"

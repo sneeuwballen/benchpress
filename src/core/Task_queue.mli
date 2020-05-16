@@ -44,6 +44,4 @@ type status = {
 
 val status : t -> status
 
-module J = Misc.Json.Encode
-
-val encode_status : status J.encoder
+val status_to_json : status -> string

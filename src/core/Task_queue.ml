@@ -83,17 +83,17 @@ type status = {
 let status self =
   {cur_job=M.get self.cur; in_queue=CCBlockingQueue.size self.jobs}
 
-module J = Misc.Json.Encode
-
-let encode_status st =
-  J.obj [
-    "cur_job",
-    (match st.cur_job with
-     | None -> J.null
-     | Some j ->
-       J.obj [
-         "task", J.string (Job.to_string j);
-         "elapsed", J.string (Printf.sprintf "%0.3f" @@ Job.time_elapsed j);
-       ]);
-    "in_queue", J.int st.in_queue;
-  ]
+let status_to_json st =
+  let spf = Printf.sprintf in
+  let cj = match st.cur_job with
+    | None -> "null"
+    | Some j ->
+       spf {|
+         "task": %S,
+         "elapsed": %0.3f
+       |} (Job.to_string j) (Job.time_elapsed j)
+  in
+  spf {|
+    { "cur_job": %s,
+      "in_queue": %d
+    |} cj st.in_queue

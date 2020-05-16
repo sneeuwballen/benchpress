@@ -809,7 +809,7 @@ let handle_task_status self =
   H.add_path_handler self.server ~meth:`GET "/api/tasks_status/" (fun _req ->
       let j =
         Task_queue.status self.task_q
-        |> Misc.Json.Encode.encode_string Task_queue.encode_status
+        |> Task_queue.status_to_json
       in
       H.Response.make_string ~headers:["Content-Type", "text/json"] (Ok j)
     );

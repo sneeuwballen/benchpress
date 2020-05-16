@@ -3,7 +3,6 @@
 (** {1 Event Stored on Disk or Transmitted on Network} *)
 
 module E = CCResult
-module J = Misc.Json
 module Db = Sqlite3_utils
 module Fmt = CCFormat
 

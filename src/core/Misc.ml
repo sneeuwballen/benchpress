@@ -218,21 +218,6 @@ module Par_map = struct
     res
 end
 
-module Json = struct
-  type t = Yojson.Basic.t
-  module J = Yojson.Basic
-  module Encode = struct
-    include Decoders_yojson.Basic.Encode
-    type 'a t = 'a encoder
-  end
-  module Decode = struct
-    include Decoders_yojson.Basic.Decode
-    type 'a t = 'a decoder
-    let (>>::) x f = uncons f x
-    let list1 s = list s >>= function [x] -> succeed x | _ -> fail "need unary list"
-  end
-end
-
 module Git = struct
   (* obtain the current commit name *)
   let get_commit (dir:string) : string =

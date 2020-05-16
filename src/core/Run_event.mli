@@ -3,7 +3,6 @@
 (** {1 Event Stored on Disk or Transmitted on Network} *)
 
 module Db = Sqlite3_utils
-module J = Misc.Json
 
 type 'a or_error = ('a, string) CCResult.t
 

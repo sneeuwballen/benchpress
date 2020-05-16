@@ -3,7 +3,6 @@
 (** {1 Tools to test a prover} *)
 
 module E = CCResult
-module J = Misc.Json
 module PB = PrintBox
 module Db = Sqlite3_utils
 module Fmt = CCFormat

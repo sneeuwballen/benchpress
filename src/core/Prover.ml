@@ -5,7 +5,6 @@
 module Fmt = CCFormat
 module E = CCResult
 module Db = Sqlite3_utils
-module J = Misc.Json
 type 'a or_error = ('a, string) E.t
 
 let src_log = Logs.Src.create "prover"
