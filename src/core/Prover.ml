@@ -250,7 +250,7 @@ let to_db db (self:t) : unit or_error =
   let str_or = CCOpt.get_or ~default:"" in
   Misc.err_with (fun scope ->
     Db.exec_no_cursor db
-      {|insert into prover values (?,?,?,?,?,?,?,?);
+      {|insert into prover values (?,?,?,?,?,?,?,?) on conflict do nothing;
       |}
       ~ty:Db.Ty.(p3 text text blob @>> text @> p4 text text text text)
       self.name

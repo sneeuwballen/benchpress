@@ -174,11 +174,15 @@ end = struct
     ) else (
       let total_wall_time = Some (Unix.gettimeofday() -. start) in
       let uuid = uuid in
+      Logs.info (fun k->k"benchmark done in %a, uuid=%a"
+                    Misc.pp_human_duration (CCOpt.get_exn total_wall_time)
+                    Uuidm.pp uuid);
       let timestamp = Some timestamp in
       let meta = {
         T.uuid; timestamp; total_wall_time; n_results=0;
         provers=List.map Prover.name self.provers;
       } in
+      Logs.debug (fun k->k "saving metadata…");
       T.Metadata.to_db db meta >>= fun () ->
       let top_res = lazy (
         let provers = List.map fst jobs in
@@ -187,6 +191,7 @@ end = struct
       ) in
       T.Compact_result.of_db db >>= fun r ->
       on_done r;
+      Logs.debug (fun k->k "closing db…");
       ignore (Sqlite3.db_close db : bool);
       Ok (top_res, r)
     )
