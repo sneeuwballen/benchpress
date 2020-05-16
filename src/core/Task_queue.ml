@@ -88,12 +88,7 @@ let status_to_json st =
   let cj = match st.cur_job with
     | None -> "null"
     | Some j ->
-       spf {|
-         "task": %S,
-         "elapsed": %0.3f
-       |} (Job.to_string j) (Job.time_elapsed j)
+      spf {| { "task": %S, "elapsed": %0.3f } |}
+        (Job.to_string j) (Job.time_elapsed j)
   in
-  spf {|
-    { "cur_job": %s,
-      "in_queue": %d
-    |} cj st.in_queue
+  spf {| { "cur_job": %s, "in_queue": %d } |} cj st.in_queue
