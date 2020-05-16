@@ -5,22 +5,8 @@
  (modes native)
  (promote (into ../..) (until-clean))
  (libraries benchpress containers cmdliner result uuidm logs logs.cli
-            tiny_httpd tyxml sqlite3_utils base64)
+            sqlite3_utils base64)
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress))
-
-(rule
-  (targets web_data.ml)
-  (deps (:css bootstrap.min.css) (:js embed.js))
-  (action
-    (with-stdout-to %{targets}
-     (progn
-       (echo "let css = {css|")
-       (cat %{css})
-       (echo "|css}")
-       (echo "let js = {j|")
-       (cat %{js})
-       (echo "|j}")
-       ))))
 
 (rule
  (with-stdout-to benchpress.1 (run ./benchpress_bin.exe --help=groff)))
@@ -28,17 +14,8 @@
 (rule
  (with-stdout-to benchpress-run.1 (run ./benchpress_bin.exe run --help=groff)))
 
-(rule
- (with-stdout-to benchpress-serve.1 (run ./benchpress_bin.exe serve --help=groff)))
-
-(rule
-  (targets embed.js)
-  (deps embed.ts tsconfig.json)
-  (mode promote)
-  (action (run tsc --build tsconfig.json)))
-
 (install
  (section man)
  (package benchpress)
- (files benchpress.1 benchpress-run.1 benchpress-serve.1))
+ (files benchpress.1 benchpress-run.1))
 

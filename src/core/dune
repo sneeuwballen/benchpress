@@ -5,8 +5,8 @@
  (synopsis "Benchpress core library, with all the data structures and functions")
  (wrapped true)
  (libraries containers containers.unix containers.thread containers.sexp re
-   re.perl csv iter decoders printbox yojson logs
-   decoders-yojson uuidm sqlite3 sqlite3_utils gnuplot)
+   re.perl csv iter decoders printbox yojson logs logs.cli ISO8601 gnuplot
+   decoders-yojson uuidm sqlite3 sqlite3_utils cmdliner)
  (flags :standard -warn-error -3-32-34-50 -safe-string))
 
 (rule

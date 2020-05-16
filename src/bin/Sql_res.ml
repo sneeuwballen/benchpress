@@ -2,12 +2,10 @@
 (* run tests, or compare results *)
 module T = Test
 module E = CCResult
-module Fmt = CCFormat
-module Db = Sqlite3_utils
 
 let run _defs files =
   Misc.err_with (fun scope ->
-      let res_l = List.map (fun x -> scope.unwrap @@ Utils.load_file_full x) files in
+      let res_l = List.map (fun x -> scope.unwrap @@ Bin_utils.load_file_full x) files in
       List.iter
         (fun (file, res) ->
            Logs.app (fun k->k "convert to sql file %S (uuid %a)"

@@ -79,15 +79,15 @@ let main ?j ?dyn ?timeout ?memory ?csv ?(provers=[])
         run_provers_action
       >>= fun (top_res, (results:T.Compact_result.t)) ->
       if CCOpt.is_some csv then (
-        Utils.dump_csv ~csv @@ Lazy.force top_res;
+        Bin_utils.dump_csv ~csv @@ Lazy.force top_res;
       );
       if CCOpt.is_some summary then (
-        Utils.dump_summary ~summary @@ Lazy.force top_res;
+        Bin_utils.dump_summary ~summary @@ Lazy.force top_res;
       );
       (* now fail if results were bad *)
-      let r = Utils.check_compact_res notify results in
+      let r = Bin_utils.check_compact_res notify results in
       Notify.sync notify;
-      Utils.printbox_compact_results results;
+      Bin_utils.printbox_compact_results results;
       (* try to send a desktop notification *)
       (try CCUnix.call "notify-send 'benchmark done (%s)'"
              (CCOpt.map_or ~default:"?" Misc.human_duration results.T.cr_meta.total_wall_time) |> ignore

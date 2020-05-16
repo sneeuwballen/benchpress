@@ -6,8 +6,7 @@ module H = Tiny_httpd
 module U = Tiny_httpd_util
 module PB = PrintBox
 
-let src = Logs.Src.create "benchpress.serve"
-module Log = (val Logs.src_log src)
+module Log = (val Logs.src_log (Logs.Src.create "benchpress-serve"))
 
 type t = {
   mutable defs: Definitions.t;
@@ -173,7 +172,7 @@ let handle_show (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show/%s%!" (fun file _req ->
       Log.info (fun k->k "----- start show %s -----" file);
       let chrono = Misc.Chrono.start () in
-      match Utils.load_file_summary ~full:false file with
+      match Bin_utils.load_file_summary ~full:false file with
       | Error e ->
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
@@ -251,7 +250,7 @@ let handle_show (self:t) : unit =
 let handle_show_gp (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show-gp/%s%!" (fun file _req ->
       Log.info (fun k->k "----- start show-gp %s -----" file);
-      match Utils.mk_file_full file with
+      match Bin_utils.mk_file_full file with
       | Error e ->
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
@@ -286,7 +285,7 @@ let handle_show_errors (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show-err/%s%!" (fun file _req ->
       Log.info (fun k->k "----- start show-err %s -----" file);
       let chrono = Misc.Chrono.start() in
-      match Utils.load_file_summary ~full:true file with
+      match Bin_utils.load_file_summary ~full:true file with
       | Error e ->
         Log.err (fun k->k "cannot find %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
@@ -338,7 +337,7 @@ let handle_show_errors (self:t) : unit =
 (* show full table for a file *)
 let handle_show_as_table (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_table/%s%!" (fun file _req ->
-      match Utils.load_file file with
+      match Bin_utils.load_file file with
       | Error e ->
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
@@ -367,7 +366,7 @@ let handle_show_as_table (self:t) : unit =
 let handle_show_detailed (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_detailed/%s%!" (fun db_file _req ->
       let db_file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode db_file in
-      Utils.with_file_as_db db_file
+      Bin_utils.with_file_as_db db_file
         (fun scope db ->
            let l = Test.Detailed_res.list_keys db |> scope.unwrap in
            let open Html in
@@ -412,9 +411,10 @@ let handle_show_detailed (self:t) : unit =
 
 (* show invidual result *)
 let handle_show_single (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show_single/%s@/%s@/%s@/%!" (fun db_file prover pb_file _req ->
+  H.add_path_handler self.server ~meth:`GET "/show_single/%s@/%s@/%s@/%!"
+    (fun db_file prover pb_file _req ->
       Logs.debug (fun k->k "show single called with prover%s, pb_file=%s" prover pb_file);
-      Utils.with_file_as_db (U.percent_decode db_file |> CCOpt.get_or ~default:"")
+      Bin_utils.with_file_as_db (U.percent_decode db_file |> CCOpt.get_or ~default:"")
         (fun scope db ->
            let prover =
              U.percent_decode prover |> CCOpt.to_result "invalid prover" |> scope.unwrap in
@@ -452,7 +452,7 @@ let handle_show_single (self:t) : unit =
 (* export as CSV *)
 let handle_show_csv (self:t): unit =
   H.add_path_handler self.server ~meth:`GET "/show_csv/%s@?%s%!" (fun file _q req ->
-      match Utils.load_file file with
+      match Bin_utils.load_file file with
       | Error e ->
         Log.err (fun k->k "cannot load %S:\n%s" file e);
         H.Response.fail ~code:500 "could not load %S:\n%s" file e
@@ -490,7 +490,7 @@ let handle_compare server : unit =
         let files =
           names
           |> List.map
-            (fun s -> match Utils.mk_file_full s with
+            (fun s -> match Bin_utils.mk_file_full s with
                | Error e ->
                  Log.err (fun k->k "cannot load file %S" s);
                  H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
@@ -538,7 +538,7 @@ let handle_delete server : unit =
     let files =
       names
       |> List.map
-        (fun s -> match Utils.mk_file_full s with
+        (fun s -> match Bin_utils.mk_file_full s with
            | Error e ->
              Log.err (fun k->k "cannot load file %S" s);
              H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
@@ -689,7 +689,7 @@ let get_meta (self:t) (p:string) : _ result =
 (* index *)
 let handle_root (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/%!" (fun _req ->
-      let entries = Utils.list_entries self.data_dir in
+      let entries = Bin_utils.list_entries self.data_dir in
       let chrono = Misc.Chrono.start() in
       let h =
         let open Html in
@@ -750,7 +750,7 @@ let handle_root (self:t) : unit =
 let handle_file_summary (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/file-sum/%s%!" (fun file _req ->
       let chrono = Misc.Chrono.start() in
-      match Utils.mk_file_full file with
+      match Bin_utils.mk_file_full file with
       | Error _e ->
         H.Response.fail_raise ~code:404 "file %s not found" file
       | Ok file_full ->
@@ -857,42 +857,69 @@ let handle_file self : unit =
         ~code:200 bytes
     )
 
-let main ?(local_only=false) ?port (defs:Definitions.t) () =
-  try
-    let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
-    let server = H.create ~max_connections:32 ~addr ?port () in
-    let data_dir = Misc.data_dir () in
-    let self = {
-      defs; server; data_dir; task_q=Task_queue.create ~defs ();
-      meta_cache=Hashtbl.create ~random:true 16;
-    } in
-    (* thread to execute tasks *)
-    let _th_r = Thread.create Task_queue.loop self.task_q in
-    (* trick: see if debug level is active *)
-    Logs.debug (fun k ->
-        H._enable_debug true;
-        k "enable http debug"
-      );
-    Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
-    handle_root self;
-    handle_task_status self;
-    handle_file_summary self;
-    handle_css server;
-    handle_show self;
-    handle_show_gp self;
-    handle_show_errors self;
-    handle_show_as_table self;
-    handle_show_detailed self;
-    handle_show_single self;
-    handle_show_csv self;
-    handle_tasks self;
-    handle_provers self;
-    handle_run self;
-    handle_job_interrupt self;
-    handle_compare server;
-    handle_delete server;
-    handle_file server;
-    H.run server |> E.map_err Printexc.to_string
-  with e ->
-    E.of_exn_trace e
+(** {2 Embedded web server} *)
 
+module Cmd = struct
+  let main ?(local_only=false) ?port (defs:Definitions.t) () =
+    try
+      let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
+      let server = H.create ~max_connections:32 ~addr ?port () in
+      let data_dir = Misc.data_dir () in
+      let self = {
+        defs; server; data_dir; task_q=Task_queue.create ~defs ();
+        meta_cache=Hashtbl.create ~random:true 16;
+      } in
+      (* thread to execute tasks *)
+      let _th_r = Thread.create Task_queue.loop self.task_q in
+      (* trick: see if debug level is active *)
+      Logs.debug (fun k ->
+          H._enable_debug true;
+          k "enable http debug"
+        );
+      Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
+      handle_root self;
+      handle_task_status self;
+      handle_file_summary self;
+      handle_css server;
+      handle_show self;
+      handle_show_gp self;
+      handle_show_errors self;
+      handle_show_as_table self;
+      handle_show_detailed self;
+      handle_show_single self;
+      handle_show_csv self;
+      handle_tasks self;
+      handle_provers self;
+      handle_run self;
+      handle_job_interrupt self;
+      handle_compare server;
+      handle_delete server;
+      handle_file server;
+      H.run server |> E.map_err Printexc.to_string
+    with e ->
+      E.of_exn_trace e
+
+  (* sub-command to serve the web UI *)
+  let cmd =
+    let open Cmdliner in
+    let port =
+      Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
+    and local_only =
+      Arg.(value & flag & info ["local-only"] ~doc:"only listen on localhost")
+    and defs =
+      Bin_utils.definitions_term
+    in
+    let doc = "serve embedded web UI on given port" in
+    let aux defs port local_only () =
+      main ?port ~local_only defs () in
+    Term.(pure aux $ defs $ port $ local_only $ pure () ), Term.info ~doc "serve"
+end
+
+let () =
+  CCFormat.set_color_default true;
+  match Cmdliner.Term.eval Cmd.cmd with
+  | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
+  | `Ok (Ok ()) | `Version | `Help -> ()
+  | `Ok (Error e) ->
+    print_endline ("error: " ^ e);
+    exit 1

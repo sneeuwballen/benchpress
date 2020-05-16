@@ -21,7 +21,7 @@ module Run = struct
       Run_main.main ?dyn ~j ?timeout ?memory ?csv ~provers
         ~meta ?task ?summary ?dir_file defs paths ()
     in
-    let defs = Utils.definitions_term
+    let defs = Bin_utils.definitions_term
     and dyn =
       Arg.(value & flag & info ["progress"] ~doc:"print progress bar")
     and dir_file =
@@ -59,7 +59,7 @@ module List_files = struct
   let main ?(abs=false) () =
     try
       let data_dir = Misc.data_dir() in
-      let entries = Utils.list_entries data_dir in
+      let entries = Bin_utils.list_entries data_dir in
       List.iter
         (fun (s,size) ->
            let s = if abs then s else Filename.basename s in
@@ -117,7 +117,7 @@ module Plot = struct
     let open E.Infix in
     Logs.debug (fun k->k "plot file %s" file);
     try
-      Utils.mk_file_full file >>= fun file ->
+      Bin_utils.mk_file_full file >>= fun file ->
       Db.with_db ~timeout:500 ~mode:`READONLY file
         (fun db ->
            T.Cactus_plot.of_db db >>= fun p ->
@@ -194,25 +194,6 @@ module Sample = struct
     Term.(pure aux $ n $ dir), Term.info ~doc "sample"
 end
 
-(** {2 Embedded web server} *)
-
-module Serve = struct
-  (* sub-command to serve the web UI *)
-  let cmd =
-    let open Cmdliner in
-    let port =
-      Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
-    and local_only =
-      Arg.(value & flag & info ["local-only"] ~doc:"only listen on localhost")
-    and defs =
-      Utils.definitions_term
-    in
-    let doc = "serve embedded web UI on given port" in
-    let aux defs port local_only () =
-      Serve.main ?port ~local_only defs () in
-    Term.(pure aux $ defs $ port $ local_only $ pure () ), Term.info ~doc "serve"
-end
-
 (** {2 Show directories} *)
 
 module Dir = struct
@@ -279,7 +260,7 @@ module Prover_show = struct
     let open Cmdliner in
     let doc = "show definitions of given prover(s)" in
     let names = Arg.(value & pos_all string [] & info []) in
-    Term.(pure run $ Utils.definitions_term $ names ), Term.info ~doc "prover-show"
+    Term.(pure run $ Bin_utils.definitions_term $ names ), Term.info ~doc "prover-show"
 end
 
 (** {2 List provers} *)
@@ -293,7 +274,7 @@ module Prover_list = struct
   let cmd =
     let open Cmdliner in
     let doc = "list prover(s) defined in config" in
-    Term.(pure run $ Utils.definitions_term), Term.info ~doc "prover-list"
+    Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "prover-list"
 end
 
 (** {2 Show Task} *)
@@ -309,7 +290,7 @@ module Task_show = struct
     let open Cmdliner in
     let doc = "show definitions of given task(s)" in
     let names = Arg.(value & pos_all string [] & info []) in
-    Term.(pure run $ Utils.definitions_term $ names ), Term.info ~doc "task-show"
+    Term.(pure run $ Bin_utils.definitions_term $ names ), Term.info ~doc "task-show"
 end
 
 (** {2 List Tasks} *)
@@ -323,7 +304,7 @@ module Task_list = struct
   let cmd =
     let open Cmdliner in
     let doc = "list task(s) defined in config" in
-    Term.(pure run $ Utils.definitions_term), Term.info ~doc "task-list"
+    Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "task-list"
 end
 
 (** {2 Convert results to Sql} *)
@@ -337,7 +318,7 @@ module Sql_convert = struct
            info [] ~docv:"FILES" ~doc:"files to read")
     in
     let doc = "convert result(s) into sqlite files" in
-    Term.(pure Sql_res.run $ Utils.definitions_term $ files),
+    Term.(pure Sql_res.run $ Bin_utils.definitions_term $ files),
     Term.info ~doc "sql-convert"
 end
 
@@ -363,7 +344,6 @@ let parse_opt () =
     Sample.cmd;
     List_files.cmd;
     Show.cmd;
-    Serve.cmd;
     Check_config.cmd;
     Prover_show.cmd;
     Prover_list.cmd;
