@@ -575,11 +575,20 @@ end = struct
       (fun scope ->
          let provers = list_provers db |> scope.unwrap in
          Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
+         let has_custom_tags =
+           try ignore (Db.exec0_exn db "select 1 from custom_tags;"); true
+           with _ -> false
+         in
          let get_prover prover =
            Db.exec db
-             {| select rtime from prover_res
-              where prover=? and res in ('sat','unsat')
-              order by rtime|} prover
+             (Printf.sprintf {| select rtime from prover_res
+              where prover=? and
+              (res in ('sat','unsat')
+               %s
+               )
+              order by rtime|}
+                (if has_custom_tags then "or exists (select 1 from custom_tags where tag=res)" else ""))
+             prover
              ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
            |> scope.unwrap_with Db.Rc.to_string
          in
