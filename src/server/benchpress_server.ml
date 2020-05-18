@@ -163,24 +163,30 @@ let link_show_single db_file prover path =
   PB.link (PB.text path) ~uri:(uri_show_single db_file prover path)
 
 (* navigation bar *)
-let mk_navigation path =
+let mk_navigation ?(btns=[]) path =
   let open Html in
   let path = ("/", "root", false) :: path in
-  ol ~a:[a_class ["breadcrumb"; "sticky-top"]] @@
-  List.map (fun (uri, descr, active) ->
-      li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
-        mk_a ~a:[a_href uri] [txt descr]
-      ])
-    path
+  div ~a:[a_class ["sticky-top"; "row"; "align-items-center"]] @@ List.flatten [
+    [ol ~a:[a_class ["breadcrumb"; "col-8"]] @@
+     List.map (fun (uri, descr, active) ->
+         li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
+           mk_a ~a:[a_href uri] [txt descr]
+         ])
+       path];
+    btns
+  ]
 
 let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
 let uri_gnuplot pb = spf "/show-gp/%s" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s" (U.percent_encode pb)
-let uri_show_detailed ?(offset=0) ?(search="") pb =
-  let search = String.trim search in
-  spf "/show_detailed/%s/?%soffset=%d"
+let uri_show_detailed
+    ?(offset=0) ?(filter_prover="") ?(filter_pb="") ?(filter_res="") pb =
+  spf "/show_detailed/%s/?%s%s%soffset=%d"
     (U.percent_encode pb)
-    (if search="" then "" else spf "search=%s&" @@ U.percent_encode search) offset
+    (if filter_prover="" then "" else spf "prover=%s&" @@ U.percent_encode filter_prover)
+    (if filter_pb="" then "" else spf "pb=%s&" @@ U.percent_encode filter_pb)
+    (if filter_res="" then "" else spf "res=%s&" @@ U.percent_encode filter_res)
+    offset
 let uri_prover_in file prover =
   spf "/prover-in/%s/%s/" (U.percent_encode file) (U.percent_encode prover)
 let uri_show_table file = "/show_table/"^U.percent_encode file
@@ -451,34 +457,66 @@ let handle_show_detailed (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_detailed/%s@/" (fun db_file req ->
       let params = H.Request.query req in
       let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
-      let search = try List.assoc "search" params |> U.percent_encode with Not_found -> "" in
-      let page_size = 50 in
-      Logs.debug (fun k->k "-- show detailed file=%S offset=%d search=`%s` --"
-                     db_file offset search);
+      let filter_res = try List.assoc "res" params |> U.percent_encode with Not_found -> "" in
+      let filter_prover = try List.assoc "prover" params |> U.percent_encode with Not_found -> "" in
+      let filter_pb = try List.assoc "pb" params |> U.percent_encode with Not_found -> "" in
+      let page_size = 25 in
+      Logs.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
+                     db_file offset filter_pb filter_res filter_prover);
       let db_file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode db_file in
       Bin_utils.with_file_as_db db_file
         (fun scope db ->
            let l, complete =
-             Test.Detailed_res.list_keys ~page_size ~offset ~search db
+             Test.Detailed_res.list_keys
+               ~page_size ~offset ~filter_prover ~filter_res ~filter_pb db
              |> scope.unwrap in
            Logs.debug (fun k->k "got %d results, complete=%B" (List.length l) complete);
            let open Html in
+           (* pagination buttons *)
+           let btns = List.flatten [
+               (if offset > 0 then (
+                   [mk_a ~cls:["btn-info";"btn-sm";"col-sm-1"]
+                      ~a:[a_href
+                            (uri_show_detailed ~offset:(max 0 (offset-page_size))
+                               ~filter_res ~filter_pb ~filter_prover db_file)]
+                      [txt "prev"]]
+                 ) else []);
+               (if complete then [] else [
+                   mk_a ~cls:["btn-info";"btn-sm";"col-sm-1"]
+                     ~a:[a_href
+                           (uri_show_detailed ~offset:(offset+page_size)
+                              ~filter_res ~filter_pb ~filter_prover db_file)]
+                     [txt "next"]
+                 ]);
+             ]
+           in
            mk_page ~title:"detailed results" @@ List.flatten [
-             [mk_navigation [
+             [mk_navigation ~btns [
                  uri_show db_file, "file", false;
-                 uri_show_detailed db_file, "detailed", true;
+                 uri_show_detailed db_file,
+                 (if offset=0 then "detailed" else spf "detailed [%d..%d]" offset (offset+List.length l-1)),
+                 true;
                ];
               dyn_status();
               h3 [txt "detailed results"];
               form ~a:[a_action (uri_show_detailed db_file);
-                       a_method `Get]
+                       a_method `Get;
+                       a_class ["form-row"]]
                 [
-                  input ~a:[a_name "search";
-                            a_value search;
-                            a_placeholder "search";
-                            a_required ();
+                  input ~a:[a_name "prover"; a_class ["form-control-sm"];
+                            a_value filter_prover;
+                            a_placeholder "prover";
                             a_input_type `Text] ();
-                  mk_button ~cls:["btn-info";"btn-sm"] [txt "search"];
+                  input ~a:[a_name "pb"; a_class ["form-control-sm"];
+                            a_value filter_pb;
+                            a_placeholder "problem";
+                            a_input_type `Text] ();
+                  input ~a:[a_name "res"; a_class ["form-control-sm"];
+                            a_value filter_res;
+                            a_placeholder "result";
+                            a_input_type `Text] ();
+                  mk_button ~cls:["btn-info";"btn-sm";"form-control-sm"]
+                    [txt "filter"];
                 ];
               let rows =
                 List.map
@@ -504,12 +542,6 @@ let handle_show_detailed (self:t) : unit =
               in
               table ~a:[a_class ["framed"]] ~thead rows;
              ];
-             (if complete then [] else [
-                 mk_a ~cls:["btn-info";"btn-sm"]
-                   ~a:[a_href
-                         (uri_show_detailed ~offset:(offset+page_size) ~search db_file)]
-                   [txt "next"]
-               ]);
            ]
         )
       |> E.catch
@@ -597,7 +629,7 @@ let handle_compare server : unit =
       let body = U.parse_query body |> E.get_or_failwith in
       let names =
         CCList.filter_map
-          (fun (k,v) -> if k="on" then Some v else None)
+          (fun (k,v) -> if v="on" then Some k else None)
           body
       in
       Logs.debug (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
@@ -714,7 +746,7 @@ let handle_provers (self:t) : unit =
         let l = List.map mk_prover provers in
         mk_page ~title:"provers"
           [
-            mk_navigation ["/provers", "provers", true];
+            mk_navigation ["/provers/", "provers", true];
             dyn_status();
             h3 [txt "list of provers"];
             mk_ul l

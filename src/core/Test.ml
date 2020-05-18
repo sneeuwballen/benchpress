@@ -1031,7 +1031,10 @@ module Detailed_res : sig
   (** Summary of a result *)
 
   val list_keys :
-    ?offset:int -> ?page_size:int -> ?search:string ->
+    ?offset:int -> ?page_size:int ->
+    ?filter_prover:string ->
+    ?filter_pb:string ->
+    ?filter_res:string ->
     Db.t -> (key list * bool) or_error
   (** List available results.
       @returns pair [l, is_done], where [is_done] is true if there are
@@ -1055,8 +1058,17 @@ end = struct
   }
   type t = Prover.t Run_result.t
 
-  let list_keys ?(offset=0) ?(page_size=500) ?(search="") db : (key list*_) or_error =
-    let search = if search="" then "%" else Printf.sprintf "%%%s%%" search in
+  let list_keys ?(offset=0) ?(page_size=500)
+      ?(filter_prover="") ?(filter_pb="") ?(filter_res="")
+      db : (key list*_) or_error =
+    let clean_s wildcard s =
+      let s = String.trim s in
+      if s="" then "%" else if wildcard then "%"^s^"%" else s
+    in
+    let filter_prover = clean_s true filter_prover in
+    let filter_pb = clean_s true filter_pb in
+    (* no wildcard here, as "sat" would match "unsat"… *)
+    let filter_res = clean_s false filter_res in
     Misc.err_with
       ~map_err:(Printf.sprintf "when listing detailed results: %s")
       (fun scope ->
@@ -1066,7 +1078,7 @@ end = struct
            Db.exec db
              {|select distinct prover, file, res, file_expect, rtime
                from prover_res
-               where prover like ? or res like ? or file like ?
+               where prover like ? and res like ? and file like ?
                order by file, prover desc
                 limit ? offset ?
               ; |}
@@ -1077,7 +1089,7 @@ end = struct
                           let file_expect=Res.of_string ~tags file_expect in
                           {prover;file;res;file_expect;rtime})
              ~f:Db.Cursor.to_list_rev
-             search search search (page_size+1) offset
+             filter_prover filter_res filter_pb (page_size+1) offset
            |> scope.unwrap_with Db.Rc.to_string
          in
          if List.length l > page_size then (
