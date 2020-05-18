@@ -1139,34 +1139,56 @@ end = struct
              {|select
                   res, file_expect, timeout, errcode, stdout, stderr,
                   rtime, utime, stime
-               from prover_res where prover=? and file=?; |}
+               from prover_res where prover=? and file=? ; |}
              prover file
              ~f:Db.Cursor.next
              ~ty:Db.Ty.(p2 text text,
-                        p2 text text @>> p4 int int any_str any_str
+                        p2 any_str any_str @>>
+                        p4 int int (nullable blob) (nullable blob)
                         @>> p3 float float float,
-                        fun res file_expect timeout errcode stdout stderr
-                          rtime utime stime ->
-                          Run_result.make prover ~timeout ~res:(Res.of_string ~tags res)
-                            {Problem.name=file; expected=Res.of_string ~tags file_expect}
-                            { Proc_run_result.errcode;stdout;stderr;rtime;utime;stime}
-                       )
-           |> scope.unwrap_with Db.Rc.to_string
-           |> CCOpt.to_result "expected a result"
+                        fun x1 x2 x3 x4 x5 x6 x7 x8 x9 ->
+                          Logs.info (fun k->k "got results");
+                          x1,x2,x3,x4,x5,x6,x7,x8,x9)
+           |> E.map_err
+             (fun e -> Printf.sprintf "sqlite error: %s" (Db.Rc.to_string e))
            |> scope.unwrap
+           |> CCOpt.to_result_lazy
+             (fun () ->
+                Printf.sprintf
+                  "expected a non-empty result for prover='%s', file='%s'"
+                  prover file)
+           |> scope.unwrap
+           |> (fun (res, file_expect, timeout, errcode, stdout, stderr, rtime, utime, stime) ->
+               Gc.compact();
+               Gc.full_major();
+               Logs.info (fun k->k "got results 2");
+               let stdout=CCOpt.get_or ~default:"" stdout in
+               let stderr=CCOpt.get_or ~default:"" stderr in
+               Logs.debug (fun k->k"res.of_string tags=[%s]" (String.concat "," tags));
+               let expected = Res.of_string ~tags file_expect in
+               Logs.debug (fun k->k"got expected %a" Res.pp expected);
+               let res = Res.of_string ~tags res in
+               Logs.debug (fun k->k"got res %a" Res.pp res);
+               Run_result.make prover ~timeout ~res
+                 {Problem.name=file; expected}
+                 { Proc_run_result.errcode;stdout;stderr;rtime;utime;stime})
          in
+         Logs.info (fun k->k "try to get prover");
          let prover = Prover.of_db db prover |> scope.unwrap in
+         Logs.info (fun k->k "got prover");
          Run_result.map ~f:(fun _ -> prover) res
       )
 
   let to_printbox ?link:(mk_link=default_pp_linker) (self:t) : PB.t*string*string =
     let open PB in
+    Logs.debug (fun k->k "coucou");
     let pp_res r =
       match r with
       | Res.Sat | Res.Unsat -> text_with_style Style.(set_fg_color Green@@bold) @@ Res.to_string r
       | Res.Error -> text_with_style Style.(set_fg_color Red@@bold) @@ Res.to_string r
       | _ -> text @@ Res.to_string r
     in
+    Logs.debug (fun k->k "prover is %a" Prover.pp self.program);
     v_record @@ List.flatten [
       ["prover.name", text self.program.Prover.name;
        "prover.cmd", text self.program.Prover.cmd;

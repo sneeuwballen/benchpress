@@ -172,7 +172,7 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
     | Ok file ->
       if Filename.check_suffix f ".sqlite" then (
         try
-          Db.with_db ~timeout:500 ~mode:`NO_CREATE file
+          Db.with_db ~timeout:1500 ~mode:`NO_CREATE file
             (fun db -> T.Top_result.of_db db |> E.map (fun r->file,r))
         with e -> E.of_exn e
       ) else (

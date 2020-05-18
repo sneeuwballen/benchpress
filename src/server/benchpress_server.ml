@@ -583,12 +583,14 @@ let handle_show_single (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_single/%s@/%s@/%s@/%!"
     (fun db_file p_name0 pb_file0 _req ->
       Log.debug (fun k->k "show single called with prover=%s, pb_file=%s" p_name0 pb_file0);
-      Bin_utils.with_file_as_db (U.percent_decode db_file |> CCOpt.get_or ~default:"")
+      let db_file = U.percent_decode db_file |> CCOpt.get_lazy (fun () -> failwith "bad db file") in
+      Bin_utils.with_file_as_db db_file
         (fun scope db ->
            let prover =
              U.percent_decode p_name0 |> CCOpt.to_result "invalid prover" |> scope.unwrap in
            let pb_file =
              U.percent_decode pb_file0 |> CCOpt.to_result "invalid pb_file" |> scope.unwrap in
+           Log.debug (fun k->k "got prover=`%s`, pb_file=`%s`" prover pb_file);
            let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
            let pb, stdout, stderr =
              Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
