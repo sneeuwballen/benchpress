@@ -189,7 +189,8 @@ let uri_show_detailed
     offset
 let uri_prover_in file prover =
   spf "/prover-in/%s/%s/" (U.percent_encode file) (U.percent_encode prover)
-let uri_show_table file = "/show_table/"^U.percent_encode file
+let uri_show_table ?(offset=0) file =
+  spf "/show_table/%s/?offset=%d" (U.percent_encode file) offset
 let uri_show_csv file = "/show_csv/"^U.percent_encode file
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
@@ -403,7 +404,10 @@ let handle_show_errors (self:t) : unit =
 
 (* show full table for a file *)
 let handle_show_as_table (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show_table/%s%!" (fun file _req ->
+  H.add_path_handler self.server ~meth:`GET "/show_table/%s@/" (fun file req ->
+      let params = H.Request.query req in
+      let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
+      let page_size = 25 in
       match Bin_utils.load_file file with
       | Error e ->
         Log.err (fun k->k "cannot load %S:\n%s" file e);
@@ -414,15 +418,35 @@ let handle_show_as_table (self:t) : unit =
           let link_res prover pb ~res =
             PB.link ~uri:(uri_show_single file prover pb) (PB.text res)
           in
-          Test.Top_result.to_printbox_table ~link_pb:link_get_file ~link_res res
+          Test.Top_result.to_printbox_table ~offset ~link_pb:link_get_file
+            ~page_size ~link_res res
         in
         let h =
           let open Html in
+           (* pagination buttons *)
+          (* FIXME: only display next if not complete *)
+           let btns = List.flatten [
+              (if offset > 0 then (
+                  [mk_a ~cls:["btn-info";"btn-sm";"col-sm-1"]
+                     ~a:[a_href
+                           (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
+                     [txt "prev"]]
+                ) else []);
+               [
+                 mk_a ~cls:["btn-info";"btn-sm";"col-sm-1"]
+                   ~a:[a_href
+                         (uri_show_table ~offset:(offset+page_size) file)]
+                   [txt "next"]
+               ];
+             ]
+           in
           mk_page ~title:"show full table" @@
           List.flatten [
-            [mk_navigation [
+            [mk_navigation ~btns [
                 uri_show file, "file", false;
-                uri_show_table file, "csv", true;
+                uri_show_table file,
+                (if offset=0 then "csv" else spf "csv[%d..]" offset),
+                true;
               ];
              dyn_status()];
             [h3 [txt "full results"];

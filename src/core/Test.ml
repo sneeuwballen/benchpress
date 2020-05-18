@@ -714,7 +714,9 @@ module Top_result : sig
     t_provers: string list;
   }
 
-  val to_table : ?provers:string list -> t -> table
+  val to_table :
+    ?offset:int -> ?page_size:int ->
+    ?provers:string list -> t -> table
 
   val table_to_csv : table -> Csv.t
 
@@ -726,6 +728,7 @@ module Top_result : sig
   val to_printbox_stat : t -> (string * PrintBox.t) list
 
   val to_printbox_table :
+    ?offset:int -> ?page_size:int ->
     ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
     t -> PrintBox.t
 
@@ -798,7 +801,7 @@ end = struct
     t_provers: string list;
   }
 
-  let to_table ?provers (self:t): table =
+  let to_table ?(offset=0) ?(page_size=max_int) ?provers (self:t): table =
     let line0 =
       Printf.sprintf "(snapshot :uuid %s :date %s)"
         (Uuidm.to_string self.meta.uuid)
@@ -812,9 +815,11 @@ end = struct
            | Some l -> l
            | None -> list_provers self.db |> scope.unwrap
          in
-         let files = Db.exec_no_params self.db
-             {| select distinct file from prover_res; |}
-             ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
+         let files = Db.exec self.db
+             {| select distinct file from prover_res
+                limit ? offset ?
+             ; |} page_size offset
+             ~ty:Db.Ty.(p2 int int, p1 text, id) ~f:Db.Cursor.to_list_rev
                      |> scope.unwrap_with Db.Rc.to_string
          in
          let tags = Prover.tags_of_db self.db in
@@ -825,7 +830,8 @@ end = struct
                 let tr_res =
                   Db.exec self.db
                     {| select prover, res, rtime from
-                   prover_res where file=? order by prover ; |}
+                   prover_res where file=?
+                   order by file, prover; |}
                     file
                     ~ty:Db.Ty.(p1 text, p3 text text float,
                                fun prover res t ->
@@ -902,8 +908,8 @@ end = struct
     let a = analyze self in
     Analyze.to_printbox_l a
 
-  let to_printbox_table ?link_pb ?link_res self =
-    table_to_printbox ?link_pb ?link_res @@ to_table self
+  let to_printbox_table ?offset ?page_size ?link_pb ?link_res self =
+    table_to_printbox ?link_pb ?link_res @@ to_table ?offset ?page_size self
 
   let to_printbox_bad self =
     let a = analyze self in
