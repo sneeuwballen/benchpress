@@ -173,7 +173,7 @@ let mk_navigation ?(btns=[]) path =
            mk_a ~a:[a_href uri] [txt descr]
          ])
        path];
-    btns
+    (if btns=[] then [] else [div ~a:[a_class ["btn-group-vertical"]] btns]);
   ]
 
 let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
@@ -425,13 +425,13 @@ let handle_show_as_table (self:t) : unit =
           (* FIXME: only display next if not complete *)
            let btns = List.flatten [
               (if offset > 0 then (
-                  [mk_a ~cls:["btn-info";"btn-sm";"col-sm-1"]
+                  [mk_a ~cls:["btn-info";"btn-sm"]
                      ~a:[a_href
                            (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
                      [txt "prev"]]
                 ) else []);
                [
-                 mk_a ~cls:["btn-info";"btn-sm";"col-sm-1"]
+                 mk_a ~cls:["btn-info";"btn-sm"]
                    ~a:[a_href
                          (uri_show_table ~offset:(offset+page_size) file)]
                    [txt "next"]
@@ -500,14 +500,14 @@ let handle_show_detailed (self:t) : unit =
            (* pagination buttons *)
            let btns = List.flatten [
                (if offset > 0 then (
-                   [mk_a ~cls:["btn-info";"btn-sm";"col-sm-1"]
+                   [mk_a ~cls:["btn-info";"btn-sm"]
                       ~a:[a_href
                             (uri_show_detailed ~offset:(max 0 (offset-page_size))
                                ~filter_res ~filter_pb ~filter_prover db_file)]
                       [txt "prev"]]
                  ) else []);
                (if complete then [] else [
-                   mk_a ~cls:["btn-info";"btn-sm";"col-sm-1"]
+                   mk_a ~cls:["btn-info";"btn-sm"]
                      ~a:[a_href
                            (uri_show_detailed ~offset:(offset+page_size)
                               ~filter_res ~filter_pb ~filter_prover db_file)]
