@@ -152,10 +152,6 @@ end = struct
            if interrupted() then E.fail "interrupted"
            else (
              begin
-               CCLock.with_lock db (fun db ->
-                   Prover.to_db db prover
-                   |> E.add_ctxf "adding prover %a to DB" Prover.pp_name prover)
-               >>= fun () ->
                Run_prover_problem.run
                  ~timeout:self.timeout ~memory:self.memory
                  prover pb >>= fun result ->
