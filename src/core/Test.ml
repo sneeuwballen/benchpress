@@ -1117,7 +1117,9 @@ end = struct
                           {prover;file;res;file_expect;rtime})
              ~f:Db.Cursor.to_list_rev
              filter_prover filter_res filter_pb (page_size+1) offset
-           |> scope.unwrap_with Db.Rc.to_string
+           |> E.map_err
+             (fun e -> Printf.sprintf "sqlite error: %s" (Db.Rc.to_string e))
+           |> scope.unwrap
          in
          if List.length l > page_size then (
            (* there are more result, cut the last one *)
@@ -1129,7 +1131,7 @@ end = struct
 
   let get_res db prover file : _ or_error =
     Misc.err_with
-      ~map_err:(Printf.sprintf "when get detailed result for %s on %s: %s" prover file)
+      ~map_err:(Printf.sprintf "in get_res for '%s' on '%s':\n%s" prover file)
       (fun scope ->
          let tags = Prover.tags_of_db db in
          let res: Prover.name Run_result.t =

@@ -241,7 +241,8 @@ let db_prepare (db:Db.t) : unit or_error =
     custom_tags (
       prover_name text not null,
       tag text not null,
-      regex text not null
+      regex text not null,
+      unique (prover_name,tag) on conflict fail
     );
   |}
   |> Misc.db_err ~ctx:"creating prover table"
@@ -266,7 +267,8 @@ let to_db db (self:t) : unit or_error =
       List.iter
         (fun (tag,re) ->
            Db.exec_no_cursor db
-             {|insert into custom_tags values (?,?,?);
+             {|insert into custom_tags values (?,?,?)
+               on conflict do nothing ;
              |}
              ~ty:Db.Ty.(p3 text text text)
              self.name tag re
@@ -292,7 +294,7 @@ let of_db db name : t or_error =
          try
            Db.exec_exn db
              {| select tag, regex from custom_tags where prover_name=?; |}
-             ~ty:Db.Ty.(p1 text, p2 text text, mkp2) ~f:Db.Cursor.to_list
+             ~ty:Db.Ty.(p1 text, p2 any_str any_str, mkp2) ~f:Db.Cursor.to_list
              name
          with e ->
            Logs.err
