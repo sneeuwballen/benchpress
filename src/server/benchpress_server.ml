@@ -162,14 +162,29 @@ let uri_show_single db_file prover path =
 let link_show_single db_file prover path =
   PB.link (PB.text path) ~uri:(uri_show_single db_file prover path)
 
+(* navigation bar *)
+let mk_navigation path =
+  let open Html in
+  let path = ("/", "root", false) :: path in
+  ol ~a:[a_class ["breadcrumb"; "sticky-top"]] @@
+  List.map (fun (uri, descr, active) ->
+      li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
+        mk_a ~a:[a_href uri] [txt descr]
+      ])
+    path
+
 let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
 let uri_gnuplot pb = spf "/show-gp/%s" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s" (U.percent_encode pb)
-let uri_detailed ?(offset=0) ?(search="") pb =
+let uri_show_detailed ?(offset=0) ?(search="") pb =
   let search = String.trim search in
   spf "/show_detailed/%s/?%soffset=%d"
     (U.percent_encode pb)
     (if search="" then "" else spf "search=%s&" @@ U.percent_encode search) offset
+let uri_prover_in file prover =
+  spf "/prover-in/%s/%s/" (U.percent_encode file) (U.percent_encode prover)
+let uri_show_table file = "/show_table/"^U.percent_encode file
+let uri_show_csv file = "/show_csv/"^U.percent_encode file
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
@@ -187,9 +202,7 @@ let handle_show (self:t) : unit =
         let box_meta =
           let link prover =
             (* link to the prover locally *)
-            PB.link (PB.text prover)
-              ~uri:(Printf.sprintf "/prover-in/%s/%s/"
-                      (U.percent_encode file) (U.percent_encode prover))
+            PB.link (PB.text prover) ~uri:(uri_prover_in file prover)
           in
           Test.Metadata.to_printbox ~link cr.T.cr_meta
         in
@@ -203,18 +216,18 @@ let handle_show (self:t) : unit =
           let open Html in
           mk_page ~title:"show" @@
           List.flatten [
-            [mk_a ~cls:["sticky-top"; "btn-info"] ~a:[a_href "/"] [txt "back to root"];
+            [mk_navigation [uri_show file, "show", true];
              dyn_status();
              h3 [txt file];
              mk_row @@ List.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@ [
                mk_a ~cls:["btn-info";"btn-sm"]
-                 ~a:[a_href (uri_detailed file)]
+                 ~a:[a_href (uri_show_detailed file)]
                  [txt "show individual results"];
                mk_a ~cls:["btn-info";"btn-sm"]
-                 ~a:[a_href ("/show_csv/"^U.percent_encode file)]
+                 ~a:[a_href (uri_show_csv file)]
                  [txt "download as csv"];
                mk_a ~cls:["btn-info";"btn-sm"]
-                 ~a:[a_href ("/show_table/"^U.percent_encode file)]
+                 ~a:[a_href (uri_show_table file)]
                  [txt "show table of results"];
                form ~a:[a_method `Post] [
                  mk_button ~cls:["btn-danger";"btn-sm"]
@@ -262,15 +275,18 @@ let handle_show (self:t) : unit =
 
 (* prover in a given file *)
 let handle_prover_in (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/prover-in/%s@/%s@/%!" (fun file prover _req ->
-      Log.info (fun k->k "----- start prover-in %s %s -----" file prover);
+  H.add_path_handler self.server ~meth:`GET "/prover-in/%s@/%s@/%!" (fun file p_name _req ->
+      Log.info (fun k->k "----- start prover-in %s %s -----" file p_name);
       let file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode file in
       let r = Bin_utils.with_file_as_db file (fun scope db ->
-          let prover = Prover.of_db db prover |> scope.unwrap in
+          let prover = Prover.of_db db p_name |> scope.unwrap in
           let open Html in
           mk_page ~title:"prover"
             [
-              mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
+              mk_navigation [
+                uri_show file, "file", false;
+                uri_prover_in file p_name, "prover", true;
+              ];
               dyn_status();
               div [
                 pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
@@ -284,11 +300,11 @@ let handle_prover_in (self:t) : unit =
         ) in
       match r with
       | Ok h ->
-        Log.debug (fun k->k "successful reply for prover-in/%S/%s" file prover);
+        Log.debug (fun k->k "successful reply for prover-in/%S/%s" file p_name);
         H.Response.make_string (Ok (Html.to_string h))
       | Error e ->
-        Log.err (fun k->k "error in prover-in/%S/%s:\n%s" file prover e);
-        H.Response.fail ~code:500 "could not show prover %s for %S:\n%s" file prover e
+        Log.err (fun k->k "error in prover-in/%S/%s:\n%s" file p_name e);
+        H.Response.fail ~code:500 "could not show prover %s for %S:\n%s" file p_name e
     )
 
 (* gnuplot for a file *)
@@ -398,7 +414,10 @@ let handle_show_as_table (self:t) : unit =
           let open Html in
           mk_page ~title:"show full table" @@
           List.flatten [
-            [mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
+            [mk_navigation [
+                uri_show file, "file", false;
+                uri_show_table file, "csv", true;
+              ];
              dyn_status()];
             [h3 [txt "full results"];
              div [pb_html full_table]];
@@ -429,17 +448,6 @@ let mk_file_summary filename m : _ Html.elt =
 
 (* show list of individual results with URLs to single results for a file *)
 let handle_show_detailed (self:t) : unit =
-  (* redirect for the form *)
-  H.add_path_handler self.server ~meth:`POST "/show_detailed/%s@/" (fun db_file req ->
-      let body =
-        H.Request.body req |> String.trim
-        |> U.parse_query |> E.get_or_failwith in
-      let search = try List.assoc "search" body with Not_found -> "" in
-      let uri = uri_detailed ~search db_file in
-      Log.info (fun k->k"redirect to %s" uri);
-      let html = html_redirect ~href:uri "" |> Html.to_string in
-      H.Response.make_string (Ok html)
-    );
   H.add_path_handler self.server ~meth:`GET "/show_detailed/%s@/" (fun db_file req ->
       let params = H.Request.query req in
       let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
@@ -456,18 +464,21 @@ let handle_show_detailed (self:t) : unit =
            Logs.debug (fun k->k "got %d results, complete=%B" (List.length l) complete);
            let open Html in
            mk_page ~title:"detailed results" @@ List.flatten [
-             [dyn_status();
+             [mk_navigation [
+                 uri_show db_file, "file", false;
+                 uri_show_detailed db_file, "detailed", true;
+               ];
+              dyn_status();
               h3 [txt "detailed results"];
-              form ~a:[a_action (uri_detailed db_file);
-                       a_method `Post]
+              form ~a:[a_action (uri_show_detailed db_file);
+                       a_method `Get]
                 [
                   input ~a:[a_name "search";
                             a_value search;
                             a_placeholder "search";
                             a_required ();
                             a_input_type `Text] ();
-                  mk_button ~cls:["btn-info";"btn-sm"]
-                    ~a:[a_formaction (uri_detailed db_file)] [txt "search"];
+                  mk_button ~cls:["btn-info";"btn-sm"] [txt "search"];
                 ];
               let rows =
                 List.map
@@ -496,7 +507,7 @@ let handle_show_detailed (self:t) : unit =
              (if complete then [] else [
                  mk_a ~cls:["btn-info";"btn-sm"]
                    ~a:[a_href
-                         (uri_detailed ~offset:(offset+page_size) ~search db_file)]
+                         (uri_show_detailed ~offset:(offset+page_size) ~search db_file)]
                    [txt "next"]
                ]);
            ]
@@ -513,21 +524,25 @@ let handle_show_detailed (self:t) : unit =
 (* show invidual result *)
 let handle_show_single (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_single/%s@/%s@/%s@/%!"
-    (fun db_file prover pb_file _req ->
-      Logs.debug (fun k->k "show single called with prover%s, pb_file=%s" prover pb_file);
+    (fun db_file p_name0 pb_file0 _req ->
+      Logs.debug (fun k->k "show single called with prover=%s, pb_file=%s" p_name0 pb_file0);
       Bin_utils.with_file_as_db (U.percent_decode db_file |> CCOpt.get_or ~default:"")
         (fun scope db ->
            let prover =
-             U.percent_decode prover |> CCOpt.to_result "invalid prover" |> scope.unwrap in
+             U.percent_decode p_name0 |> CCOpt.to_result "invalid prover" |> scope.unwrap in
            let pb_file =
-             U.percent_decode pb_file |> CCOpt.to_result "invalid pb_file" |> scope.unwrap in
+             U.percent_decode pb_file0 |> CCOpt.to_result "invalid pb_file" |> scope.unwrap in
            let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
            let pb, stdout, stderr =
              Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
            in
            let open Html in
            mk_page ~title:"single result" [
-             mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
+             mk_navigation [
+               uri_show db_file, "file", false;
+               uri_show_detailed db_file, "detailed", false;
+               uri_show_single db_file prover pb_file, "single", true;
+             ];
              dyn_status();
              mk_a
                ~cls:["sticky-top"]
@@ -619,7 +634,7 @@ let handle_compare server : unit =
           let open Html in
           mk_page ~title:"compare"
             [
-              mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
+              mk_navigation [];
               dyn_status();
               h3 [txt "comparison"];
               div [pb_html box_compare_l];
@@ -699,7 +714,7 @@ let handle_provers (self:t) : unit =
         let l = List.map mk_prover provers in
         mk_page ~title:"provers"
           [
-            mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
+            mk_navigation ["/provers", "provers", true];
             dyn_status();
             h3 [txt "list of provers"];
             mk_ul l
@@ -736,7 +751,7 @@ let handle_tasks (self:t) : unit =
         in
         mk_page ~title:"tasks"
           [
-            mk_a ~cls:["sticky-top"; "btn-info"; "btn-sm"] ~a:[a_href "/"] [txt "back to root"];
+            mk_navigation ["/tasks/", "tasks", true];
             dyn_status();
             h3 [txt "list of tasks"];
             mk_ul l;
