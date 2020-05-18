@@ -7,6 +7,7 @@ module U = Tiny_httpd_util
 module PB = PrintBox
 
 module Log = (val Logs.src_log (Logs.Src.create "benchpress-serve"))
+let spf = Printf.sprintf
 
 type t = {
   mutable defs: Definitions.t;
@@ -142,25 +143,33 @@ let dyn_status () =
   let open Html in
   ul ~a:[a_id "dyn-status"; a_class ["list-group"]] []
 
-let html_redirect (s:string) =
+let html_redirect ~href (s:string) =
   let open Html in
   mk_page
-    ~meta:[a_http_equiv "Refresh"; a_content "0; url=/"]
+    ~meta:[a_http_equiv "Refresh"; a_content (spf "0; url=%s" href)]
     ~title:s
     [txt s]
 
-let uri_show db_file prover path =
-  Printf.sprintf "/show_single/%s/%s/%s/"
+let uri_show file =
+  Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') file)
+
+let uri_show_single db_file prover path =
+  spf "/show_single/%s/%s/%s/"
     (U.percent_encode db_file)
     (U.percent_encode prover)
     (U.percent_encode path)
 
-let link_show db_file prover path =
-  PB.link (PB.text path) ~uri:(uri_show db_file prover path)
+let link_show_single db_file prover path =
+  PB.link (PB.text path) ~uri:(uri_show_single db_file prover path)
 
-let uri_get_file pb = Printf.sprintf "/get-file/%s" (U.percent_encode pb)
-let uri_gnuplot pb = Printf.sprintf "/show-gp/%s" (U.percent_encode pb)
-let uri_error_bad pb = Printf.sprintf "/show-err/%s" (U.percent_encode pb)
+let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
+let uri_gnuplot pb = spf "/show-gp/%s" (U.percent_encode pb)
+let uri_error_bad pb = spf "/show-err/%s" (U.percent_encode pb)
+let uri_detailed ?(offset=0) ?(search="") pb =
+  let search = String.trim search in
+  spf "/show_detailed/%s/?%soffset=%d"
+    (U.percent_encode pb)
+    (if search="" then "" else spf "search=%s&" @@ U.percent_encode search) offset
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
@@ -198,13 +207,13 @@ let handle_show (self:t) : unit =
              dyn_status();
              h3 [txt file];
              mk_row @@ List.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@ [
-               mk_a ~cls:["btn-info"]
-                 ~a:[a_href ("/show_detailed/"^U.percent_encode file)]
+               mk_a ~cls:["btn-info";"btn-sm"]
+                 ~a:[a_href (uri_detailed file)]
                  [txt "show individual results"];
-               mk_a ~cls:["btn-info"]
+               mk_a ~cls:["btn-info";"btn-sm"]
                  ~a:[a_href ("/show_csv/"^U.percent_encode file)]
                  [txt "download as csv"];
-               mk_a ~cls:["btn-info"]
+               mk_a ~cls:["btn-info";"btn-sm"]
                  ~a:[a_href ("/show_table/"^U.percent_encode file)]
                  [txt "show table of results"];
                form ~a:[a_method `Post] [
@@ -328,7 +337,7 @@ let handle_show_errors (self:t) : unit =
       | Ok (_file_full, cr) ->
         Log.info (fun k->k "show-err: loaded full summary in %.3fs"
                      (Misc.Chrono.since_last chrono));
-        let link_file = link_show file in
+        let link_file = link_show_single file in
         let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
         let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
         Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
@@ -381,7 +390,7 @@ let handle_show_as_table (self:t) : unit =
         try
         let full_table =
           let link_res prover pb ~res =
-            PB.link ~uri:(uri_show file prover pb) (PB.text res)
+            PB.link ~uri:(uri_show_single file prover pb) (PB.text res)
           in
           Test.Top_result.to_printbox_table ~link_pb:link_get_file ~link_res res
         in
@@ -402,43 +411,95 @@ let handle_show_as_table (self:t) : unit =
           H.Response.make (Error (500, "boo"))
     )
 
+(* html for the summary of [file] with metadata [m] *)
+let mk_file_summary filename m : _ Html.elt =
+  let open Html in
+  let entry_descr, title =
+    let descr = Printf.sprintf "%d res for {%s} at %s"
+        m.Test.n_results (String.concat "," m.Test.provers)
+        (CCOpt.map_or ~default:"<unknown date>"
+           Misc.human_datetime m.Test.timestamp)
+    in
+    descr, [a_title (Test.Metadata.to_string m)]
+  in
+  let url_show =
+    Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') filename)
+  in
+  mk_a ~a:(a_href url_show :: title) [txt entry_descr]
+
 (* show list of individual results with URLs to single results for a file *)
 let handle_show_detailed (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show_detailed/%s%!" (fun db_file _req ->
+  (* redirect for the form *)
+  H.add_path_handler self.server ~meth:`POST "/show_detailed/%s@/" (fun db_file req ->
+      let body =
+        H.Request.body req |> String.trim
+        |> U.parse_query |> E.get_or_failwith in
+      let search = try List.assoc "search" body with Not_found -> "" in
+      let uri = uri_detailed ~search db_file in
+      Log.info (fun k->k"redirect to %s" uri);
+      let html = html_redirect ~href:uri "" |> Html.to_string in
+      H.Response.make_string (Ok html)
+    );
+  H.add_path_handler self.server ~meth:`GET "/show_detailed/%s@/" (fun db_file req ->
+      let params = H.Request.query req in
+      let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
+      let search = try List.assoc "search" params |> U.percent_encode with Not_found -> "" in
+      let page_size = 50 in
+      Logs.debug (fun k->k "-- show detailed file=%S offset=%d search=`%s` --"
+                     db_file offset search);
       let db_file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode db_file in
       Bin_utils.with_file_as_db db_file
         (fun scope db ->
-           let l = Test.Detailed_res.list_keys db |> scope.unwrap in
+           let l, complete =
+             Test.Detailed_res.list_keys ~page_size ~offset ~search db
+             |> scope.unwrap in
+           Logs.debug (fun k->k "got %d results, complete=%B" (List.length l) complete);
            let open Html in
-           mk_page ~title:"detailed results"
-             [
-               mk_a ~cls:["sticky-top";"btn-info";"btn-sm"] ~a:[a_href "/"] [txt "back to root"];
-               dyn_status();
-               h3 [txt "detailed results"];
-               let rows =
-                 List.map
-                   (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
-                      let url_file_res = uri_show db_file prover pb_file in
-                      let url_file = uri_get_file pb_file in
-                      tr [
-                        td [txt prover];
-                        td [
-                          mk_a ~a:[a_href url_file_res; a_title pb_file] [txt pb_file];
-                          mk_a ~a:[a_href url_file; a_title pb_file] [txt "(content)"];
-                        ];
-                        td [txt (Res.to_string res)];
-                        td [txt (Res.to_string file_expect)];
-                        td [txt (Misc.human_duration rtime)]
-                      ])
-                   l
-               in
-               let thead =
-                 List.map (fun x->th [txt x])
-                   ["prover"; "file"; "res"; "expected"; "time"]
-                 |> tr |> CCList.return |> thead
-               in
-               table ~a:[a_class ["framed"]] ~thead rows
-             ]
+           mk_page ~title:"detailed results" @@ List.flatten [
+             [dyn_status();
+              h3 [txt "detailed results"];
+              form ~a:[a_action (uri_detailed db_file);
+                       a_method `Post]
+                [
+                  input ~a:[a_name "search";
+                            a_value search;
+                            a_placeholder "search";
+                            a_required ();
+                            a_input_type `Text] ();
+                  mk_button ~cls:["btn-info";"btn-sm"]
+                    ~a:[a_formaction (uri_detailed db_file)] [txt "search"];
+                ];
+              let rows =
+                List.map
+                  (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
+                     let url_file_res = uri_show_single db_file prover pb_file in
+                     let url_file = uri_get_file pb_file in
+                     tr [
+                       td [txt prover];
+                       td [
+                         mk_a ~a:[a_href url_file_res; a_title pb_file] [txt pb_file];
+                         mk_a ~a:[a_href url_file; a_title pb_file] [txt "(content)"];
+                       ];
+                       td [txt (Res.to_string res)];
+                       td [txt (Res.to_string file_expect)];
+                       td [txt (Misc.human_duration rtime)]
+                     ])
+                  l
+              in
+              let thead =
+                List.map (fun x->th [txt x])
+                  ["prover"; "file"; "res"; "expected"; "time"]
+                |> tr |> CCList.return |> thead
+              in
+              table ~a:[a_class ["framed"]] ~thead rows;
+             ];
+             (if complete then [] else [
+                 mk_a ~cls:["btn-info";"btn-sm"]
+                   ~a:[a_href
+                         (uri_detailed ~offset:(offset+page_size) ~search db_file)]
+                   [txt "next"]
+               ]);
+           ]
         )
       |> E.catch
         ~ok:(fun h ->
@@ -518,12 +579,11 @@ let handle_compare server : unit =
   H.add_path_handler server ~meth:`POST "/compare" (fun req ->
       let body = H.Request.body req |> String.trim in
       Logs.debug (fun k->k "/compare: body is %s" body);
+      let body = U.parse_query body |> E.get_or_failwith in
       let names =
-        CCString.split_on_char '&' body
-        |> CCList.filter_map
-          (fun s -> match CCString.Split.left ~by:"=" (String.trim s) with
-             | Some (name, "on") -> Some name
-             | _ -> None)
+        CCList.filter_map
+          (fun (k,v) -> if k="on" then Some v else None)
+          body
       in
       Logs.debug (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
       if List.length names>=2 then (
@@ -588,7 +648,7 @@ let handle_delete server : unit =
         Log.info (fun k->k  "delete file %s" @@ Filename.quote file);
         Sys.remove file)
       files;
-    let h = html_redirect @@ Format.asprintf "deleted %d files" (List.length files) in
+    let h = html_redirect ~href:"/" @@ Format.asprintf "deleted %d files" (List.length files) in
     H.Response.make_string (Ok (Html.to_string h))
   in
   H.add_path_handler server ~meth:`POST "/delete1/%s@/%!" (fun file _req ->
@@ -702,7 +762,7 @@ let handle_run (self:t) : unit =
       let msg =
         Format.asprintf "task queued (%d in queue)!" (Task_queue.size self.task_q)
       in
-      H.Response.make_string @@ Ok (Html.to_string @@ html_redirect msg)
+      H.Response.make_string @@ Ok (Html.to_string @@ html_redirect ~href:"/" msg)
     )
 
 let handle_job_interrupt (self:t) : unit =
@@ -710,10 +770,10 @@ let handle_job_interrupt (self:t) : unit =
       Logs.debug (fun k->k "interrupt current task");
       let r =
         match Task_queue.cur_job self.task_q with
-        | None -> Ok (Html.to_string @@ html_redirect "no job to interrupt.")
+        | None -> Ok (Html.to_string @@ html_redirect ~href:"/" "no job to interrupt.")
         | Some j ->
           Task_queue.Job.interrupt j;
-          Ok (Html.to_string @@ html_redirect "job interrupted")
+          Ok (Html.to_string @@ html_redirect ~href:"/" "job interrupted")
       in
       H.Response.make_string r
     )
@@ -762,6 +822,7 @@ let handle_root (self:t) : unit =
               List.map
                 (fun (s0,size) ->
                    let s = Filename.basename s0 in
+                   let meta = CCHashtbl.get self.meta_cache s0 in
                    let url_show =
                      Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
                    and url_meta =
@@ -772,10 +833,17 @@ let handle_root (self:t) : unit =
                         [
                           (* lazy loading of status *)
                           div ~a:[a_class ["col-md-9"; "justify-self-left"]]
-                            [mk_a ~cls:["disabled"; "lazy-load"]
-                               ~a:[a_href url_show;
-                                   Unsafe.string_attrib "x_src" url_meta]
-                               [txt s0]];
+                            (match meta with
+                             | Some meta ->
+                               (* metadata cached, just display it *)
+                               [mk_file_summary s meta]
+                             | None ->
+                               (* lazy loading *)
+                               [mk_a ~cls:["disabled"; "lazy-load"]
+                                  ~a:[a_href url_show;
+                                      Unsafe.string_attrib "x_src" url_meta]
+                                  [txt s0]]
+                            );
                           h4 ~a:[a_class ["col-md-2"]] [
                             span ~a:[a_class ["badge"; "text-secondary"]]
                               [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
@@ -813,22 +881,13 @@ let handle_file_summary (self:t) : unit =
         let s = Filename.basename file_full in
         let h =
           let open Html in
-          let url_show =
-            Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
-          in
-          let entry_descr, title =
-            get_meta self file_full
-            |> E.catch
-              ~err:(fun e -> s, [a_title @@ "<no metadata>: "  ^ e])
-              ~ok:(fun m ->
-                  let descr = Printf.sprintf "%d res for {%s} at %s"
-                      m.Test.n_results (String.concat "," m.Test.provers)
-                      (CCOpt.map_or ~default:"<unknown date>"
-                         Misc.human_datetime m.Test.timestamp)
-                  in
-                  descr, [a_title (Test.Metadata.to_string m)])
-          in
-          mk_a ~a:(a_href url_show :: title) [txt entry_descr]
+          get_meta self file_full
+          |> E.catch
+            ~err:(fun e ->
+                let title = [a_title @@ "<no metadata>: "  ^ e] in
+                mk_a ~a:(a_href (uri_show s) :: title) [txt s]
+              )
+            ~ok:(fun m -> mk_file_summary s m)
         in
         Log.debug (fun k->k "reply to handle-file-summary %s in %.3fs"
                      file (Misc.Chrono.since_last chrono));

@@ -1030,8 +1030,12 @@ module Detailed_res : sig
   }
   (** Summary of a result *)
 
-  val list_keys : Db.t -> key list or_error
-  (** List available results *)
+  val list_keys :
+    ?offset:int -> ?page_size:int -> ?search:string ->
+    Db.t -> (key list * bool) or_error
+  (** List available results.
+      @returns pair [l, is_done], where [is_done] is true if there are
+      no more results *)
 
   type t = Prover.t Run_result.t
   (** Detailed result *)
@@ -1051,24 +1055,37 @@ end = struct
   }
   type t = Prover.t Run_result.t
 
-  let list_keys db : key list or_error =
+  let list_keys ?(offset=0) ?(page_size=500) ?(search="") db : (key list*_) or_error =
+    let search = if search="" then "%" else Printf.sprintf "%%%s%%" search in
     Misc.err_with
       ~map_err:(Printf.sprintf "when listing detailed results: %s")
       (fun scope ->
          let tags = Prover.tags_of_db db in
+         (* ask for [limit+1] entries *)
          let l =
-           Db.exec_no_params db
+           Db.exec db
              {|select distinct prover, file, res, file_expect, rtime
-              from prover_res order by file, prover desc; |}
-             ~ty:Db.Ty.(p5 text any_str text text float,
+               from prover_res
+               where prover like ? or res like ? or file like ?
+               order by file, prover desc
+                limit ? offset ?
+              ; |}
+             ~ty:Db.Ty.(p5 text text text int int,
+                        p5 text any_str text text float,
                         fun prover file res file_expect rtime ->
                           let res=Res.of_string ~tags res in
                           let file_expect=Res.of_string ~tags file_expect in
                           {prover;file;res;file_expect;rtime})
              ~f:Db.Cursor.to_list_rev
+             search search search (page_size+1) offset
            |> scope.unwrap_with Db.Rc.to_string
          in
-         l
+         if List.length l > page_size then (
+           (* there are more result, cut the last one *)
+           CCList.take page_size l, false
+         ) else (
+           l, true
+         )
       )
 
   let get_res db prover file : _ or_error =
