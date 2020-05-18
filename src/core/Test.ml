@@ -41,7 +41,7 @@ let pb_int_color c n =
 (* list provers from the main table *)
 let list_provers db : string list or_error =
   Db.exec_no_params db
-    {| select distinct prover from prover_res order by prover; |}
+    {| select distinct prover from prover_res ; |}
     ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
   |> Misc.db_err ~ctx:"listing provers"
 
@@ -542,11 +542,12 @@ module Compact_result = struct
 
   let of_db ?full db : t or_error =
     let open E.Infix in
-    Metadata.of_db db >>= fun cr_meta ->
-    Stat.of_db db >>= fun cr_stat ->
-    Analyze.of_db ?full db >>= fun cr_analyze ->
-    Comparison_short.of_db db >>= fun cr_comparison ->
-    Ok {cr_stat; cr_analyze; cr_comparison; cr_meta; }
+    Db.transact db (fun _ ->
+      Metadata.of_db db >>= fun cr_meta ->
+      Stat.of_db db >>= fun cr_stat ->
+      Analyze.of_db ?full db >>= fun cr_analyze ->
+      Comparison_short.of_db db >>= fun cr_comparison ->
+      Ok {cr_stat; cr_analyze; cr_comparison; cr_meta; })
 
   let pp out _self = Fmt.fprintf out "<compact result>"
 end
@@ -718,6 +719,10 @@ module Top_result : sig
     ?offset:int -> ?page_size:int ->
     ?provers:string list -> t -> table
 
+  val db_to_table :
+    ?offset:int -> ?page_size:int ->
+    ?provers:string list -> Db.t -> table
+
   val table_to_csv : table -> Csv.t
 
   val table_to_printbox :
@@ -731,6 +736,11 @@ module Top_result : sig
     ?offset:int -> ?page_size:int ->
     ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
     t -> PrintBox.t
+
+  val db_to_printbox_table :
+    ?offset:int -> ?page_size:int ->
+    ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
+    Db.t -> PrintBox.t
 
   val to_printbox_bad : t -> (string * PrintBox.t) list
   val to_printbox_errors : t -> (string * PrintBox.t) list
@@ -801,37 +811,41 @@ end = struct
     t_provers: string list;
   }
 
-  let to_table ?(offset=0) ?(page_size=max_int) ?provers (self:t): table =
-    let line0 =
-      Printf.sprintf "(snapshot :uuid %s :date %s)"
-        (Uuidm.to_string self.meta.uuid)
-        (CCOpt.map_or ~default:"<none>" Misc.human_datetime self.meta.timestamp)
-    in
+  let db_to_table ?(offset=0) ?(page_size=max_int) ?provers (db:Db.t): table =
+    let c = Misc.Chrono.start() in
     Misc.err_with
       ~map_err:(Printf.sprintf "while converting to CSV table: %s")
       (fun scope ->
+         Db.transact db @@ fun _ ->
+         let meta = Metadata.of_db db |> scope.unwrap in
+         let line0 =
+           Printf.sprintf "(snapshot :uuid %s :date %s)"
+             (Uuidm.to_string meta.uuid)
+             (CCOpt.map_or ~default:"<none>" Misc.human_datetime meta.timestamp)
+         in
          let provers =
            match provers with
            | Some l -> l
-           | None -> list_provers self.db |> scope.unwrap
+           | None -> list_provers db |> scope.unwrap
          in
-         let files = Db.exec self.db
+         let files = Db.exec db
              {| select distinct file from prover_res
                 limit ? offset ?
              ; |} page_size offset
              ~ty:Db.Ty.(p2 int int, p1 text, id) ~f:Db.Cursor.to_list_rev
                      |> scope.unwrap_with Db.Rc.to_string
          in
-         let tags = Prover.tags_of_db self.db in
+         Logs.info (fun k->k"to_table: found %d files in %.3fs" (List.length files)
+                   (Misc.Chrono.since_last c));
+         let tags = Prover.tags_of_db db in
          Logs.info (fun k->k"to_table: found tags [%s]" (String.concat "," tags));
          let t_rows =
            List.rev_map
              (fun file ->
                 let tr_res =
-                  Db.exec self.db
+                  Db.exec db
                     {| select prover, res, rtime from
-                   prover_res where file=?
-                   order by file, prover; |}
+                   prover_res where file=? order by prover; |}
                     file
                     ~ty:Db.Ty.(p1 text, p3 text text float,
                                fun prover res t ->
@@ -843,6 +857,7 @@ end = struct
                 {tr_problem=file; tr_res})
              files
          in
+         Logs.info (fun k->k"to_table: gathered lines in %.3fs" (Misc.Chrono.since_last c));
          {t_meta=line0; t_provers=provers; t_rows}
       )
     |> (function
@@ -850,6 +865,9 @@ end = struct
         | Error e ->
           Logs.err (fun k->k "conversion to CSV failed: %s" e);
           failwith ("error while converting to CSV: " ^ e))
+
+  let to_table ?offset ?page_size ?provers (self:t): table =
+    db_to_table ?offset ?page_size ?provers self.db
 
   let time_to_csv (_:Res.t) f = Printf.sprintf "%.2f" f
   let res_to_csv (r:Res.t) = match r with
@@ -907,6 +925,9 @@ end = struct
   let to_printbox_summary (self:t) : (_ * PB.t) list =
     let a = analyze self in
     Analyze.to_printbox_l a
+
+  let db_to_printbox_table ?offset ?page_size ?link_pb ?link_res db =
+    table_to_printbox ?link_pb ?link_res @@ db_to_table ?offset ?page_size db
 
   let to_printbox_table ?offset ?page_size ?link_pb ?link_res self =
     table_to_printbox ?link_pb ?link_res @@ to_table ?offset ?page_size self

@@ -44,7 +44,7 @@ let db_prepare (db:Db.t) : unit or_error =
         stime float,
         unique (prover, file) on conflict fail
       );
-    create index if not exists pr_prover on prover_res(prover);
+    create index if not exists pr_prover_res on prover_res(prover,res,file_expect);
     create index if not exists pr_file on prover_res(file);
     |}
   |> Misc.db_err ~ctx:"run-event.db-prepare"

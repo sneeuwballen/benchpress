@@ -405,22 +405,20 @@ let handle_show_errors (self:t) : unit =
 (* show full table for a file *)
 let handle_show_as_table (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_table/%s@/" (fun file req ->
+      let chrono = Misc.Chrono.start() in
       let params = H.Request.query req in
       let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
       let page_size = 25 in
-      match Bin_utils.load_file file with
-      | Error e ->
-        Log.err (fun k->k "cannot load %S:\n%s" file e);
-        H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok res ->
-        try
+      Bin_utils.with_file_as_db file (fun _scope db ->
         let full_table =
           let link_res prover pb ~res =
             PB.link ~uri:(uri_show_single file prover pb) (PB.text res)
           in
-          Test.Top_result.to_printbox_table ~offset ~link_pb:link_get_file
-            ~page_size ~link_res res
+          Test.Top_result.db_to_printbox_table ~offset ~link_pb:link_get_file
+            ~page_size ~link_res db
         in
+        Log.info (fun k->k "loaded table[offset=%d] in %.3fs"
+                     offset (Misc.Chrono.since_last chrono));
         let h =
           let open Html in
            (* pagination buttons *)
@@ -455,9 +453,12 @@ let handle_show_as_table (self:t) : unit =
         in
         Log.debug (fun k->k "successful reply for %S" file);
         H.Response.make_string (Ok (Html.to_string h))
-        with e ->
-          Log.err (fun k->k"exn: %s" (Printexc.to_string e));
-          H.Response.make (Error (500, "boo"))
+        )
+      |> E.catch
+        ~ok:(fun r -> r)
+        ~err:(fun e ->
+          Log.err (fun k->k"exn: %s" e);
+          H.Response.make (Error (500, "failure: " ^ e)))
     )
 
 (* html for the summary of [file] with metadata [m] *)
@@ -485,7 +486,7 @@ let handle_show_detailed (self:t) : unit =
       let filter_prover = try List.assoc "prover" params |> U.percent_encode with Not_found -> "" in
       let filter_pb = try List.assoc "pb" params |> U.percent_encode with Not_found -> "" in
       let page_size = 25 in
-      Logs.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
+      Log.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
                      db_file offset filter_pb filter_res filter_prover);
       let db_file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode db_file in
       Bin_utils.with_file_as_db db_file
@@ -494,7 +495,7 @@ let handle_show_detailed (self:t) : unit =
              Test.Detailed_res.list_keys
                ~page_size ~offset ~filter_prover ~filter_res ~filter_pb db
              |> scope.unwrap in
-           Logs.debug (fun k->k "got %d results, complete=%B" (List.length l) complete);
+           Log.debug (fun k->k "got %d results, complete=%B" (List.length l) complete);
            let open Html in
            (* pagination buttons *)
            let btns = List.flatten [
@@ -581,7 +582,7 @@ let handle_show_detailed (self:t) : unit =
 let handle_show_single (self:t) : unit =
   H.add_path_handler self.server ~meth:`GET "/show_single/%s@/%s@/%s@/%!"
     (fun db_file p_name0 pb_file0 _req ->
-      Logs.debug (fun k->k "show single called with prover=%s, pb_file=%s" p_name0 pb_file0);
+      Log.debug (fun k->k "show single called with prover=%s, pb_file=%s" p_name0 pb_file0);
       Bin_utils.with_file_as_db (U.percent_decode db_file |> CCOpt.get_or ~default:"")
         (fun scope db ->
            let prover =
@@ -649,14 +650,14 @@ let handle_show_csv (self:t): unit =
 let handle_compare server : unit =
   H.add_path_handler server ~meth:`POST "/compare" (fun req ->
       let body = H.Request.body req |> String.trim in
-      Logs.debug (fun k->k "/compare: body is %s" body);
+      Log.debug (fun k->k "/compare: body is %s" body);
       let body = U.parse_query body |> E.get_or_failwith in
       let names =
         CCList.filter_map
           (fun (k,v) -> if v="on" then Some k else None)
           body
       in
-      Logs.debug (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
+      Log.debug (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
       if List.length names>=2 then (
         let files =
           names
@@ -705,7 +706,7 @@ let handle_compare server : unit =
 (* delete files *)
 let handle_delete server : unit =
   let run names =
-    Logs.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
+    Log.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
     let files =
       names
       |> List.map
@@ -723,12 +724,12 @@ let handle_delete server : unit =
     H.Response.make_string (Ok (Html.to_string h))
   in
   H.add_path_handler server ~meth:`POST "/delete1/%s@/%!" (fun file _req ->
-      Logs.debug (fun k->k "/delete1: path is %s" file);
+      Log.debug (fun k->k "/delete1: path is %s" file);
       run [file]
     );
   H.add_path_handler server ~meth:`POST "/delete/" (fun req ->
       let body = H.Request.body req |> String.trim in
-      Logs.debug (fun k->k "/delete: body is %s" body);
+      Log.debug (fun k->k "/delete: body is %s" body);
       let names =
         CCString.split_on_char '&' body
         |> CCList.filter_map
@@ -736,7 +737,7 @@ let handle_delete server : unit =
              | Some (name, "on") -> Some name
              | _ -> None)
       in
-      Logs.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
+      Log.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
       run names
     );
   ()
@@ -818,7 +819,7 @@ let handle_tasks (self:t) : unit =
 
 let handle_run (self:t) : unit =
   H.add_path_handler self.server ~meth:`POST "/run/%s" (fun name _r ->
-      Logs.debug (fun k->k "run task %S" name);
+      Log.debug (fun k->k "run task %S" name);
       let name =
         U.percent_decode name
         |> CCOpt.get_lazy (fun () -> H.Response.fail_raise ~code:404 "cannot find task %S" name)
@@ -828,7 +829,7 @@ let handle_run (self:t) : unit =
         | Ok t -> t
         | Error e -> H.Response.fail_raise ~code:404 "cannot find task %s: %s" name e
       in
-      Logs.debug (fun k->k "found task %s, run it" name);
+      Log.debug (fun k->k "found task %s, run it" name);
       Task_queue.push self.task_q task;
       let msg =
         Format.asprintf "task queued (%d in queue)!" (Task_queue.size self.task_q)
@@ -838,7 +839,7 @@ let handle_run (self:t) : unit =
 
 let handle_job_interrupt (self:t) : unit =
   H.add_path_handler self.server ~meth:`POST "/interrupt/" (fun _r ->
-      Logs.debug (fun k->k "interrupt current task");
+      Log.debug (fun k->k "interrupt current task");
       let r =
         match Task_queue.cur_job self.task_q with
         | None -> Ok (Html.to_string @@ html_redirect ~href:"/" "no job to interrupt.")
@@ -1006,7 +1007,7 @@ let handle_css self : unit =
     H.add_path_handler self ~meth:`GET path (fun req ->
         let h = Digest.to_hex (Digest.string value) in
         if H.Request.get_header req "If-None-Match" = Some h then (
-           Logs.debug (fun k->k "cached object (etag: %S)" h);
+           Log.debug (fun k->k "cached object (etag: %S)" h);
            H.Response.make_raw ~code:304 ""
          ) else (
           H.Response.make_string
@@ -1058,7 +1059,7 @@ module Cmd = struct
       (* thread to execute tasks *)
       let _th_r = Thread.create Task_queue.loop self.task_q in
       (* trick: see if debug level is active *)
-      Logs.debug (fun k ->
+      Log.debug (fun k ->
           H._enable_debug true;
           k "enable http debug"
         );
