@@ -52,7 +52,7 @@ module Short = struct
            |> scope.unwrap_with Db.Rc.to_string
          in
          Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
-         List.map
+         CCList.map
            (fun prover ->
               let get_n q =
                 Db.exec db q prover

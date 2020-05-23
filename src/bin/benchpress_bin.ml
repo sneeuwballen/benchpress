@@ -176,7 +176,7 @@ module Sample = struct
         ~cmp:CCInt.compare n (CCRandom.int len)
       |> CCRandom.run ?st:None
     in
-    let sample = List.map (Array.get files) sample_idx in
+    let sample = CCList.map (Array.get files) sample_idx in
     (* print sample *)
     Misc.synchronized (fun () -> List.iter (Printf.printf "%s\n%!") sample);
     E.return ()

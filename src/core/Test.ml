@@ -31,7 +31,7 @@ let time_of_res e = e.Run_result.raw.rtime
 
 let pb_v_record ?bars l =
   PB.grid_l ?bars
-    (List.map (fun (field,value) -> [PB.text field; value]) l)
+    (CCList.map (fun (field,value) -> [PB.text field; value]) l)
 
 let pb_int_color c n =
   let open PB in
@@ -70,7 +70,7 @@ module Stat = struct
        "unknown", int s.unknown;
        "timeout", int s.timeout;
       ];
-      List.map (fun (tag,i) -> "tag." ^ tag, int i) s.custom;
+      CCList.map (fun (tag,i) -> "tag." ^ tag, int i) s.custom;
       ["memory", int s.memory;
        "total", int s.total;
        "total_time", line (Misc.human_duration s.total_time);
@@ -81,7 +81,7 @@ module Stat = struct
     pb_v_record @@ as_printbox_record s
 
   let to_printbox_l =
-    List.map (fun ((p:string), a) -> p, to_printbox a)
+    CCList.map (fun ((p:string), a) -> p, to_printbox a)
 
   (* obtain stats for this prover *)
   let of_db_for ~(prover:Prover.name) (db:Db.t) : t or_error =
@@ -103,7 +103,7 @@ module Stat = struct
          let timeout = get_res "timeout" in
          let memory = get_res "memory" in
          let errors = get_res "error" in
-         let custom = List.map (fun tag -> tag, get_res tag) custom in
+         let custom = CCList.map (fun tag -> tag, get_res tag) custom in
          let total =
            sat + unsat + unknown + timeout + memory + errors
            + List.fold_left (fun n (_,i) -> n+i) 0 custom in
@@ -122,7 +122,7 @@ module Stat = struct
       ~map_err:(Printf.sprintf "while reading stats from DB: %s")
       (fun scope ->
          let provers = list_provers db |> scope.unwrap in
-         List.map
+         CCList.map
            (fun p -> p, of_db_for db ~prover:p |> scope.unwrap)
            provers)
 
@@ -271,7 +271,7 @@ end = struct
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
          let provers = list_provers db |> scope.unwrap in
-         List.map (fun p -> p, of_db_for ~full db ~prover:p |> scope.unwrap) provers)
+         CCList.map (fun p -> p, of_db_for ~full db ~prover:p |> scope.unwrap) provers)
 
   (* build statistics and list of mismatch from raw results *)
 
@@ -292,13 +292,13 @@ end = struct
     pb_v_record ~bars:true fields
 
   let to_printbox_l =
-    List.map (fun (p, a) -> p, to_printbox a)
+    CCList.map (fun (p, a) -> p, to_printbox a)
 
   let to_printbox_bad ?link:(mk_link=default_linker) r : PrintBox.t =
     let open PB in
     if r.bad <> 0 then (
       let l =
-        List.map
+        CCList.map
           (fun (pb, res, t) ->
              [ mk_link pb.Problem.name;
                text (Res.to_string res);
@@ -317,14 +317,14 @@ end = struct
     CCList.filter_map
       (fun ((p:string), a) ->
          if a.bad = 0 then None
-         else Some (p, List.map (fun (pb,_,_) -> pb.Problem.name) a.bad_full,
+         else Some (p, CCList.map (fun (pb,_,_) -> pb.Problem.name) a.bad_full,
                     to_printbox_bad ~link:(link p) a))
 
   let to_printbox_errors ?link:(mk_link=default_linker) r : PrintBox.t =
     let open PB in
     if r.errors <> 0 then (
       let l =
-        List.map
+        CCList.map
           (fun (pb, res, t) ->
              [ mk_link pb.Problem.name;
                text (Res.to_string res);
@@ -343,7 +343,7 @@ end = struct
     CCList.filter_map
       (fun ((p:string), a) ->
          if a.errors = 0 then None
-         else Some (p, List.map (fun (pb,_,_) -> pb.Problem.name) a.errors_full,
+         else Some (p, CCList.map (fun (pb,_,_) -> pb.Problem.name) a.errors_full,
                     to_printbox_errors ~link:(link p) a))
 
   let pp_bad out self =
@@ -434,7 +434,7 @@ end = struct
       "same", int self.same;
     ]
 
-  let to_printbox_l l = List.map (fun (p1,p2,r) -> p1, p2, to_printbox p1 p2 r) l
+  let to_printbox_l l = CCList.map (fun (p1,p2,r) -> p1, p2, to_printbox p1 p2 r) l
 
   (* TODO: grid display (-> to array, then by index + reverse when i<j?)
      let to_printbox_grid l : PB.t =
@@ -593,7 +593,7 @@ end = struct
              ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
            |> scope.unwrap_with Db.Rc.to_string
          in
-         let lines = List.map (fun p -> p, get_prover p) provers in
+         let lines = CCList.map (fun p -> p, get_prover p) provers in
          { lines }
       )
 
@@ -606,11 +606,11 @@ end = struct
     Gp.with_ (fun gp ->
         let series =
           self.lines
-          |> List.map
+          |> CCList.map
             (fun (prover,l) ->
                let l =
                  let sum = ref 0. in
-                 List.mapi
+                 CCList.mapi
                    (fun i rtime ->
                       sum := !sum +. rtime;
                       (float i, !sum))
@@ -882,14 +882,14 @@ end = struct
     let header_line =
       "problem" ::
       t.t_provers @
-      (List.map (fun p -> p ^ ".time") t.t_provers)
+      (CCList.map (fun p -> p ^ ".time") t.t_provers)
     in
     let lines =
-      List.map
+      CCList.map
         (fun r ->
            r.tr_problem
-           :: List.map (fun (_,res,_) ->  res_to_csv res) r.tr_res
-           @ List.map (fun (_,res,t) -> time_to_csv res t) r.tr_res)
+           :: CCList.map (fun (_,res,_) ->  res_to_csv res) r.tr_res
+           @ CCList.map (fun (_,res,t) -> time_to_csv res t) r.tr_res)
         t.t_rows
     in
     header_line :: lines
@@ -902,25 +902,25 @@ end = struct
       ?(link_res=default_ppr_linker)
       (self:table) : PB.t =
     let header_line =
-      List.map PB.(text_with_style Style.bold) @@
+      CCList.map PB.(text_with_style Style.bold) @@
       "problem" ::
       self.t_provers @
-      (List.map (fun p -> p ^ ".time") self.t_provers)
+      (CCList.map (fun p -> p ^ ".time") self.t_provers)
     in
     let lines =
-      List.map
+      CCList.map
         (fun r ->
            link_pb r.tr_problem
-           :: List.map (fun (prover,res,_) ->
+           :: CCList.map (fun (prover,res,_) ->
                link_res prover r.tr_problem ~res:(res_to_csv res)) r.tr_res
-           @ List.map (fun (_,res,t) -> PB.text @@ time_to_csv res t) r.tr_res)
+           @ CCList.map (fun (_,res,t) -> PB.text @@ time_to_csv res t) r.tr_res)
         self.t_rows
     in
     PB.grid_l (header_line::lines)
 
   let to_printbox_stat (self:t) : (_ * PB.t) list =
     let a = stat self in
-    List.map (fun (p, st) -> p, Stat.to_printbox st) a
+    CCList.map (fun (p, st) -> p, Stat.to_printbox st) a
 
   let to_printbox_summary (self:t) : (_ * PB.t) list =
     let a = analyze self in
@@ -951,7 +951,7 @@ end = struct
      let open PB in
      let pm side m =
       MStr.to_list m
-      |> List.map
+      |> CCList.map
         (fun (p,c) ->
            [text_with_style Style.bold (p ^ " ("^side^")");
             Analyze.to_printbox c])
@@ -959,7 +959,7 @@ end = struct
      grid_l @@ List.flatten [
       [
         MStr.to_list self.both
-        |> List.map
+        |> CCList.map
           (fun (p,c) ->
              hlist [text_with_style Style.bold (p ^" (both)");
                     if short
@@ -1039,7 +1039,7 @@ end = struct
          let meta = Metadata.of_db db |> scope.unwrap in
          let prover_names = Prover.db_names db |> scope.unwrap in
          let provers =
-           List.map (fun p -> Prover.of_db db p |> scope.unwrap) prover_names in
+           CCList.map (fun p -> Prover.of_db db p |> scope.unwrap) prover_names in
          Logs.debug (fun k->k "loading events from DB");
          let events =
            Run_event.of_db_l db |> scope.unwrap
@@ -1198,7 +1198,7 @@ end = struct
        "prover.unsat", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unsat);
        "prover.unknown", text (CCOpt.get_or ~default:"<none>" self.program.Prover.unknown);
        "prover.timeout", text (CCOpt.get_or ~default:"<none>" self.program.Prover.timeout);];
-      List.map (fun (tag,re) -> "prover.tag." ^ tag, text re) self.program.Prover.custom;
+      CCList.map (fun (tag,re) -> "prover.tag." ^ tag, text re) self.program.Prover.custom;
       ["prover.memory", text (CCOpt.get_or ~default:"<none>" self.program.Prover.memory);
        "problem.path", mk_link self.program.Prover.name self.problem.Problem.name;
        "problem.expected_res", pp_res self.problem.Problem.expected;

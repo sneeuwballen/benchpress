@@ -38,7 +38,7 @@ end = struct
       "table.framed th, table.framed td { border: 1px solid black; }";
       "th, td { padding: 3px; }";
     ] in
-    H.style (List.map H.txt l)
+    H.style (CCList.map H.txt l)
 
   let attrs_of_style (s:B.Style.t) : _ list * _ =
     let open B.Style in
@@ -59,7 +59,7 @@ end = struct
     in
     let a = match s with
       | [] -> []
-      | s -> [H.a_style @@ String.concat ";" @@ List.map (fun (k,v) -> k ^ ": " ^ v) s] in
+      | s -> [H.a_style @@ String.concat ";" @@ CCList.map (fun (k,v) -> k ^ ": " ^ v) s] in
     a, bold
 
   let rec to_html_rec (b: B.t) : [< Html_types.flow5 > `Div `Ul `Table `P] html =
@@ -67,8 +67,8 @@ end = struct
     | B.Empty -> H.div []
     | B.Text {l; style} ->
       let a, bold = attrs_of_style style in
-      let l = List.map H.txt l in
-      let l = if bold then List.map (fun x->H.b [x]) l else l in
+      let l = CCList.map H.txt l in
+      let l = if bold then CCList.map (fun x->H.b [x]) l else l in
       H.div ~a l
     | B.Pad (_, b)
     | B.Frame b -> to_html_rec b
@@ -84,18 +84,18 @@ end = struct
       in
       let to_row a =
         Array.to_list a
-        |> List.map (fun b -> H.td ~a:[H.a_class ["thead"]] [to_html_rec b])
+        |> CCList.map (fun b -> H.td ~a:[H.a_class ["thead"]] [to_html_rec b])
         |> (fun x -> H.tr x)
       in
       let rows =
-        Array.to_list a |> List.map to_row
+        Array.to_list a |> CCList.map to_row
       in
       H.table ~a:[H.a_class ("table" :: (*"table-striped" ::*) "table-hover" :: class_)] rows
     | B.Tree (_, b, l) ->
       let l = Array.to_list l in
       H.div
         [ to_html_rec b
-        ; H.ul (List.map (fun x -> H.li [to_html_rec x]) l)
+        ; H.ul (CCList.map (fun x -> H.li [to_html_rec x]) l)
         ]
     | B.Link {uri; inner} ->
       H.div [H.a ~a:[H.a_class ["btn-link"]; H.a_href uri] [to_html_rec inner]]
@@ -168,7 +168,7 @@ let mk_navigation ?(btns=[]) path =
   let path = ("/", "root", false) :: path in
   div ~a:[a_class ["sticky-top"; "row"; "align-items-center"]] @@ List.flatten [
     [ol ~a:[a_class ["breadcrumb"; "col-8"]] @@
-     List.map (fun (uri, descr, active) ->
+     CCList.map (fun (uri, descr, active) ->
          li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
            mk_a ~a:[a_href uri] [txt descr]
          ])
@@ -226,7 +226,7 @@ let handle_show (self:t) : unit =
             [mk_navigation [uri_show file, "show", true];
              dyn_status();
              h3 [txt file];
-             mk_row @@ List.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@ [
+             mk_row @@ CCList.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@ [
                mk_a ~cls:["btn-info";"btn-sm"]
                  ~a:[a_href (uri_show_detailed file)]
                  [txt "show individual results"];
@@ -544,7 +544,7 @@ let handle_show_detailed (self:t) : unit =
                     [txt "filter"];
                 ];
               let rows =
-                List.map
+                CCList.map
                   (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
                      let url_file_res = uri_show_single db_file prover pb_file in
                      let url_file = uri_get_file pb_file in
@@ -561,7 +561,7 @@ let handle_show_detailed (self:t) : unit =
                   l
               in
               let thead =
-                List.map (fun x->th [txt x])
+                CCList.map (fun x->th [txt x])
                   ["prover"; "file"; "res"; "expected"; "time"]
                 |> tr |> CCList.return |> thead
               in
@@ -635,7 +635,7 @@ let handle_show_csv (self:t): unit =
         let query = H.Request.query req in
         Log.debug
           (fun k->k  "query: [%s]"
-              (String.concat ";" (List.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query)));
+              (String.concat ";" (CCList.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query)));
         let provers =
           try Some (List.assoc "provers" query |> CCString.split_on_char ',')
           with _ -> None
@@ -663,7 +663,7 @@ let handle_compare server : unit =
       if List.length names>=2 then (
         let files =
           names
-          |> List.map
+          |> CCList.map
             (fun s -> match Bin_utils.mk_file_full s with
                | Error e ->
                  Log.err (fun k->k "cannot load file %S" s);
@@ -673,7 +673,7 @@ let handle_compare server : unit =
         let box_compare_l =
           let open PrintBox in
           CCList.diagonal files
-          |> List.map (fun (f1,f2) ->
+          |> CCList.map (fun (f1,f2) ->
               let c =
                 match Test_compare.Short.make f1 f2 with
                 | Ok x -> x
@@ -684,7 +684,7 @@ let handle_compare server : unit =
               vlist ~bars:false [
                 text f1; text f2;
                 Test.pb_v_record @@
-                List.map (fun (pr,c) -> pr, Test_compare.Short.to_printbox c)
+                CCList.map (fun (pr,c) -> pr, Test_compare.Short.to_printbox c)
                   c
               ])
           |> vlist
@@ -711,7 +711,7 @@ let handle_delete server : unit =
     Log.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
     let files =
       names
-      |> List.map
+      |> CCList.map
         (fun s -> match Bin_utils.mk_file_full s with
            | Error e ->
              Log.err (fun k->k "cannot load file %S" s);
@@ -770,7 +770,7 @@ let handle_provers (self:t) : unit =
             end;
           ]
         in
-        let l = List.map mk_prover provers in
+        let l = CCList.map mk_prover provers in
         mk_page ~title:"provers"
           [
             mk_navigation ["/provers/", "provers", true];
@@ -788,7 +788,7 @@ let handle_tasks (self:t) : unit =
       let h =
         let open Html in
         let l =
-          List.map
+          CCList.map
             (fun t ->
                let s = t.Task.name in
                mk_li [
@@ -893,7 +893,7 @@ let handle_root (self:t) : unit =
             ];
             h3 [txt "list of results"];
             let l =
-              List.map
+              CCList.map
                 (fun (s0,size) ->
                    let s = Filename.basename s0 in
                    let meta = CCHashtbl.get self.meta_cache s0 in
