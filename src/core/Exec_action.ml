@@ -141,7 +141,7 @@ end = struct
     (* build list of tasks *)
     let jobs =
       CCList.flat_map
-        (fun pb -> List.map (fun prover -> prover,pb) self.provers)
+        (fun pb -> CCList.map (fun prover -> prover,pb) self.provers)
         self.problems
     in
     (* run provers *)
@@ -185,7 +185,7 @@ end = struct
       Logs.debug (fun k->k "saving metadata…");
       T.Metadata.to_db db meta >>= fun () ->
       let top_res = lazy (
-        let provers = List.map fst jobs in
+        let provers = CCList.map fst jobs in
         T.Top_result.make ~meta ~provers res_l
         |> E.get_or_failwith
       ) in
