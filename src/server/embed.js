@@ -100,9 +100,13 @@ function updateTasks() {
         });
     });
 }
-window.onload = updateTasks;
-setInterval(updateTasks, 500);
 lazyLoadAll();
 document.addEventListener('change', function () {
     lazyLoadAll();
 });
+window.onload = function () {
+    if (document.getElementById('dyn-status') !== undefined) {
+        updateTasks;
+        setInterval(updateTasks, 500);
+    }
+};

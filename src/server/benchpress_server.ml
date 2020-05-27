@@ -15,6 +15,7 @@ type t = {
   task_q: Task_queue.t;
   data_dir: string;
   meta_cache: (string, Test.metadata) Hashtbl.t;
+  dyn_status: bool;
 }
 
 (* TODO: use printbox 0.5 and use custom classes with its tyxml printer *)
@@ -139,9 +140,13 @@ module Html = struct
   let to_string_elt h = Format.asprintf "@[%a@]@." (pp_elt ()) h
 end
 
-let dyn_status () =
+let dyn_status self =
   let open Html in
-  ul ~a:[a_id "dyn-status"; a_class ["list-group"]] []
+  if self.dyn_status then (
+    ul ~a:[a_id "dyn-status"; a_class ["list-group"]] []
+  ) else (
+    div[] (* nothing *)
+  )
 
 let html_redirect ~href (s:string) =
   let open Html in
@@ -224,7 +229,7 @@ let handle_show (self:t) : unit =
           mk_page ~title:"show" @@
           List.flatten [
             [mk_navigation [uri_show file, "show", true];
-             dyn_status();
+             dyn_status self;
              h3 [txt file];
              mk_row @@ CCList.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@ [
                mk_a ~cls:["btn-info";"btn-sm"]
@@ -294,7 +299,7 @@ let handle_prover_in (self:t) : unit =
                 uri_show file, "file", false;
                 uri_prover_in file p_name, "prover", true;
               ];
-              dyn_status();
+              dyn_status self;
               div [
                 pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
                 begin match prover.Prover.defined_in with
@@ -446,7 +451,7 @@ let handle_show_as_table (self:t) : unit =
                 (if offset=0 then "csv" else spf "csv[%d..]" offset),
                 true;
               ];
-             dyn_status()];
+             dyn_status self];
             [h3 [txt "full results"];
              div [pb_html full_table]];
           ]
@@ -522,7 +527,7 @@ let handle_show_detailed (self:t) : unit =
                  (if offset=0 then "detailed" else spf "detailed [%d..%d]" offset (offset+List.length l-1)),
                  true;
                ];
-              dyn_status();
+              dyn_status self;
               h3 [txt "detailed results"];
               form ~a:[a_action (uri_show_detailed db_file);
                        a_method `Get;
@@ -602,7 +607,7 @@ let handle_show_single (self:t) : unit =
                uri_show_detailed db_file, "detailed", false;
                uri_show_single db_file prover pb_file, "single", true;
              ];
-             dyn_status();
+             dyn_status self;
              mk_a
                ~cls:["sticky-top"]
                ~a:[ a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file))]
@@ -649,7 +654,8 @@ let handle_show_csv (self:t): unit =
     )
 
 (* compare files *)
-let handle_compare server : unit =
+let handle_compare self : unit =
+  let server = self.server in
   H.add_path_handler server ~meth:`POST "/compare" (fun req ->
       let body = H.Request.body req |> String.trim in
       Log.debug (fun k->k "/compare: body is %s" body);
@@ -694,7 +700,7 @@ let handle_compare server : unit =
           mk_page ~title:"compare"
             [
               mk_navigation [];
-              dyn_status();
+              dyn_status self;
               h3 [txt "comparison"];
               div [pb_html box_compare_l];
             ]
@@ -706,7 +712,7 @@ let handle_compare server : unit =
     )
 
 (* delete files *)
-let handle_delete server : unit =
+let handle_delete self : unit =
   let run names =
     Log.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
     let files =
@@ -725,11 +731,11 @@ let handle_delete server : unit =
     let h = html_redirect ~href:"/" @@ Format.asprintf "deleted %d files" (List.length files) in
     H.Response.make_string (Ok (Html.to_string h))
   in
-  H.add_path_handler server ~meth:`POST "/delete1/%s@/%!" (fun file _req ->
+  H.add_path_handler self.server ~meth:`POST "/delete1/%s@/%!" (fun file _req ->
       Log.debug (fun k->k "/delete1: path is %s" file);
       run [file]
     );
-  H.add_path_handler server ~meth:`POST "/delete/" (fun req ->
+  H.add_path_handler self.server ~meth:`POST "/delete/" (fun req ->
       let body = H.Request.body req |> String.trim in
       Log.debug (fun k->k "/delete: body is %s" body);
       let names =
@@ -774,7 +780,7 @@ let handle_provers (self:t) : unit =
         mk_page ~title:"provers"
           [
             mk_navigation ["/provers/", "provers", true];
-            dyn_status();
+            dyn_status self;
             h3 [txt "list of provers"];
             mk_ul l
           ]
@@ -811,7 +817,7 @@ let handle_tasks (self:t) : unit =
         mk_page ~title:"tasks"
           [
             mk_navigation ["/tasks/", "tasks", true];
-            dyn_status();
+            dyn_status self;
             h3 [txt "list of tasks"];
             mk_ul l;
           ]
@@ -883,7 +889,7 @@ let handle_root (self:t) : unit =
         mk_page ~title:"benchpress"
           [
             h1 [txt "Benchpress"];
-            dyn_status ();
+            dyn_status self;
             h3 [txt "configuration"];
             ul ~a:[a_class ["list-group"]] @@ List.flatten [
               [li ~a:[a_class ["list-group-item"]]
@@ -1023,7 +1029,7 @@ let handle_css self : unit =
   ()
 
 let handle_file self : unit =
-  H.add_path_handler self ~meth:`GET "/get-file/%s%!" (fun file _req ->
+  H.add_path_handler self.server ~meth:`GET "/get-file/%s%!" (fun file _req ->
       let unwrap_ code = function
         | Ok x -> x
         | Error e -> H.Response.fail_raise ~code "error in get-file: %s" e
@@ -1049,7 +1055,7 @@ let handle_file self : unit =
 (** {2 Embedded web server} *)
 
 module Cmd = struct
-  let main ?(local_only=false) ?port (defs:Definitions.t) () =
+  let main ?(local_only=false) ?port ~dyn_status (defs:Definitions.t) () =
     try
       let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
       let server = H.create ~max_connections:32 ~addr ?port () in
@@ -1057,6 +1063,7 @@ module Cmd = struct
       let self = {
         defs; server; data_dir; task_q=Task_queue.create ~defs ();
         meta_cache=Hashtbl.create ~random:true 16;
+        dyn_status;
       } in
       (* thread to execute tasks *)
       let _th_r = Thread.create Task_queue.loop self.task_q in
@@ -1082,9 +1089,9 @@ module Cmd = struct
       handle_provers self;
       handle_run self;
       handle_job_interrupt self;
-      handle_compare server;
-      handle_delete server;
-      handle_file server;
+      handle_compare self;
+      handle_delete self;
+      handle_file self;
       H.run server |> E.map_err Printexc.to_string
     with e ->
       E.of_exn_trace e
@@ -1096,13 +1103,16 @@ module Cmd = struct
       Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
     and local_only =
       Arg.(value & flag & info ["local-only"] ~doc:"only listen on localhost")
+    and dyn_status =
+      Arg.(value & opt bool false & info ["dyn-status"] ~doc:"dynamic status in page")
     and defs =
       Bin_utils.definitions_term
     in
     let doc = "serve embedded web UI on given port" in
-    let aux defs port local_only () =
-      main ?port ~local_only defs () in
-    Term.(pure aux $ defs $ port $ local_only $ pure () ), Term.info ~doc "serve"
+    let aux defs port local_only dyn_status () =
+      main ?port ~local_only ~dyn_status defs () in
+    Term.(pure aux $ defs $ port $ local_only $ dyn_status $ pure () ),
+    Term.info ~doc "serve"
 end
 
 let () =

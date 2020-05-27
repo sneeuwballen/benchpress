@@ -38,7 +38,7 @@ function lazyLoadAll() {
 
 // update the 'dyn-status' object
 async function updateTasks() {
-    const targetNode =document.getElementById('dyn-status');
+    const targetNode = document.getElementById('dyn-status');
     if (targetNode) {
         const st = await fetch('/api/tasks_status/');
         const st_json = await st.json();
@@ -60,11 +60,14 @@ async function updateTasks() {
     }
 }
 
-window.onload = updateTasks;
-setInterval(updateTasks, 500);
-
 lazyLoadAll();
 document.addEventListener('change', () => {
     lazyLoadAll();
 });
 
+window.onload = () => {
+    if (document.getElementById('dyn-status') !== undefined) {
+        updateTasks;
+        setInterval(updateTasks, 500);
+    }
+}
