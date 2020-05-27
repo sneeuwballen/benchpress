@@ -20,10 +20,13 @@ depends: [
   "gnuplot" { >= "0.6" & < "0.8" }
   "sqlite3"
   "sqlite3_utils" { >= "0.3" & < "0.4" }
-  "tiny_httpd" { >= "0.4" & < "0.6" }
+  "tiny_httpd" { >= "0.6" & < "0.7" }
   "printbox" { >= "0.5" & < "0.6" }
   "tyxml"  # for printbox.tyxml
   "ocaml" {>= "4.03" }
+]
+pin-depends: [
+  ["tiny_httpd.0.6" "git+https://github.com/c-cube/tiny_httpd.git#master"]
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
