@@ -722,10 +722,6 @@ module Top_result : sig
     ?offset:int -> ?page_size:int ->
     ?provers:string list -> t -> table
 
-  val db_to_table :
-    ?offset:int -> ?page_size:int ->
-    ?provers:string list -> Db.t -> table
-
   val table_to_csv : table -> Csv.t
 
   val table_to_printbox :
