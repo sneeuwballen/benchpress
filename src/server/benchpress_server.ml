@@ -448,7 +448,7 @@ let handle_show_as_table (self:t) : unit =
             [mk_navigation ~btns [
                 uri_show file, "file", false;
                 uri_show_table file,
-                (if offset=0 then "csv" else spf "csv[%d..]" offset),
+                (if offset=0 then "full" else spf "full[%d..]" offset),
                 true;
               ];
              dyn_status self];
@@ -631,26 +631,34 @@ let handle_show_single (self:t) : unit =
 
 (* export as CSV *)
 let handle_show_csv (self:t): unit =
-  H.add_path_handler self.server ~meth:`GET "/show_csv/%s@?%s%!" (fun file _q req ->
-      match Bin_utils.load_file file with
-      | Error e ->
-        Log.err (fun k->k "cannot load %S:\n%s" file e);
-        H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok res ->
-        let query = H.Request.query req in
-        Log.debug
-          (fun k->k  "query: [%s]"
-              (String.concat ";" (CCList.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query)));
-        let provers =
-          try Some (List.assoc "provers" query |> CCString.split_on_char ',')
-          with _ -> None
-        in
-        let csv = Test.Top_result.to_csv_string ?provers res in
-        Log.debug (fun k->k "successful reply for /show_csv/%S" file);
-        H.Response.make_string
-          ~headers:["Content-Type", "plain/csv";
-                    "Content-Disposition", "attachment; filename=\"results.csv\""]
-          (Ok csv)
+  H.add_path_handler self.server ~meth:`GET "/show_csv/%s@?%s%!" (fun db_file _q req ->
+      let db_file =
+        U.percent_decode db_file
+        |> CCOpt.get_lazy (fun () -> failwith "bad db file") in
+      Bin_utils.with_file_as_db db_file
+        (fun _scope db ->
+          let query = H.Request.query req in
+          Log.debug
+            (fun k->k  "query: [%s]"
+                (String.concat ";"  @@
+                 CCList.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query));
+          let provers =
+            try Some (List.assoc "provers" query |> CCString.split_on_char ',')
+            with _ -> None
+          in
+          let csv = Test.Top_result.db_to_csv_string ?provers db in
+          Log.debug (fun k->k "successful reply for /show_csv/%S" db_file);
+          H.Response.make_string
+            ~headers:["Content-Type", "plain/csv";
+                      "Content-Disposition", "attachment; filename=\"results.csv\""]
+            (Ok csv))
+      |> E.catch
+        ~ok:(fun h ->
+            Log.debug (fun k->k "successful reply for %S" db_file);
+            h)
+        ~err:(fun e ->
+            Log.err (fun k->k "error in show-single %S:\n%s" db_file e);
+            H.Response.fail ~code:500 "could not show single res for %S:\n%s" db_file e)
     )
 
 (* compare files *)

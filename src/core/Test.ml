@@ -715,6 +715,9 @@ module Top_result : sig
     t_provers: string list;
   }
 
+  val db_to_table :
+    ?offset:int -> ?page_size:int ->
+    ?provers:string list -> Db.t -> table
   val to_table :
     ?offset:int -> ?page_size:int ->
     ?provers:string list -> t -> table
@@ -745,10 +748,12 @@ module Top_result : sig
   val to_printbox_bad : t -> (string * PrintBox.t) list
   val to_printbox_errors : t -> (string * PrintBox.t) list
 
+  val db_to_csv : ?provers:string list -> Db.t -> Csv.t
   val to_csv : ?provers:string list -> t -> Csv.t
 
   val to_csv_chan : ?provers:string list -> out_channel -> t -> unit
 
+  val db_to_csv_string : ?provers:string list -> Db.t -> string
   val to_csv_string : ?provers:string list -> t -> string
 
   val to_csv_file : ?provers:string list -> string -> t -> unit
@@ -894,8 +899,8 @@ end = struct
     in
     header_line :: lines
 
-  let to_csv ?provers t : Csv.t =
-    to_table ?provers t |> table_to_csv
+  let db_to_csv ?provers db : Csv.t = db_to_table ?provers db |> table_to_csv
+  let to_csv ?provers t : Csv.t = to_table ?provers t |> table_to_csv
 
   let table_to_printbox
       ?(link_pb=default_linker)
@@ -981,11 +986,17 @@ end = struct
     to_csv_chan ?provers oc t;
     close_out oc
 
-  let to_csv_string ?provers t =
+  let str_of_csv_ csv =
     let buf = Buffer.create 256 in
     let ch = Csv.to_buffer buf in
-    Csv.output_all ch (to_csv ?provers t);
+    Csv.output_all ch csv;
     Buffer.contents buf
+
+  let db_to_csv_string ?provers db =
+    str_of_csv_ @@ db_to_csv ?provers db
+
+  let to_csv_string ?provers t =
+    str_of_csv_ @@ to_csv ?provers t
 
   let db_prepare (db:Db.t) : _ or_error =
     let open E.Infix in
