@@ -1099,6 +1099,7 @@ module Cmd = struct
           k "enable http debug"
         );
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
+      Tiny_httpd_camlzip.setup ~buf_size:(1024 * 120) server;
       handle_root self;
       handle_task_status self;
       handle_file_summary self;
