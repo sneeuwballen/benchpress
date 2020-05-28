@@ -172,14 +172,19 @@ let link_show_single db_file prover path =
 let mk_navigation ?(btns=[]) path =
   let open Html in
   let path = ("/", "root", false) :: path in
-  div ~a:[a_class ["sticky-top"; "row"; "align-items-center"]] @@ List.flatten [
+  div ~a:[a_class ["sticky-top"; "navbar"; "navbar-expand-md"; "navbar-collapse"; "nabvar-align-center"]] @@
+  List.flatten [
     [ol ~a:[a_class ["breadcrumb"; "col-8"]] @@
      CCList.map (fun (uri, descr, active) ->
          li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
            mk_a ~a:[a_href uri] [txt descr]
          ])
-       path];
-    (if btns=[] then [] else [div ~a:[a_class ["btn-group-vertical"]] btns]);
+       path;
+    ];
+    (if btns=[] then []
+     else [div ~a:[a_class ["btn-group-vertical"; "align-items-center";
+                            "col-1"; "m-2"]]
+             btns]);
   ]
 
 let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
@@ -452,22 +457,19 @@ let handle_show_as_table (self:t) : unit =
         let h =
           let open Html in
            (* pagination buttons *)
-          (* FIXME: only display next if not complete *)
-           let btns = List.flatten [
-              (if offset > 0 then (
-                  [mk_a ~cls:["btn-info";"btn-sm"]
-                     ~a:[a_href
-                           (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
-                     [txt "prev"]]
-                ) else []);
-               [
-                 mk_a ~cls:["btn-info";"btn-sm"]
-                   ~a:[a_href
-                         (uri_show_table ~offset:(offset+page_size) file)]
-                   [txt "next"]
-               ];
-             ]
-           in
+           (* FIXME: only display next if not complete *)
+           let btns = [
+             mk_a
+               ~cls:((if offset>0 then [] else ["disabled"]) @ ["btn-info";"btn-sm"])
+               ~a:[a_href
+                     (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
+               [txt "prev"];
+             mk_a ~cls:["btn-info";"btn-sm"]
+               ~a:[a_href
+                     (uri_show_table ~offset:(offset+page_size) file)]
+               [txt "next"];
+           ]
+          in
           mk_page ~title:"show full table" @@
           List.flatten [
             [mk_navigation ~btns [
@@ -529,22 +531,19 @@ let handle_show_detailed (self:t) : unit =
            Log.debug (fun k->k "got %d results, complete=%B" (List.length l) complete);
            let open Html in
            (* pagination buttons *)
-           let btns = List.flatten [
-               (if offset > 0 then (
-                   [mk_a ~cls:["btn-info";"btn-sm"]
-                      ~a:[a_href
-                            (uri_show_detailed ~offset:(max 0 (offset-page_size))
-                               ~filter_res ~filter_pb ~filter_prover db_file)]
-                      [txt "prev"]]
-                 ) else []);
-               (if complete then [] else [
-                   mk_a ~cls:["btn-info";"btn-sm"]
-                     ~a:[a_href
-                           (uri_show_detailed ~offset:(offset+page_size)
-                              ~filter_res ~filter_pb ~filter_prover db_file)]
-                     [txt "next"]
-                 ]);
-             ]
+           let btns = [
+             mk_a
+               ~cls:((if offset>0 then [] else ["disabled"]) @ ["btn-info";"btn-sm"])
+               ~a:[a_href
+                     (uri_show_detailed ~offset:(max 0 (offset-page_size))
+                        ~filter_res ~filter_pb ~filter_prover db_file)]
+               [txt "prev"];
+             mk_a ~cls:["btn-info";"btn-sm"]
+               ~a:[a_href
+                     (uri_show_detailed ~offset:(offset+page_size)
+                        ~filter_res ~filter_pb ~filter_prover db_file)]
+               [txt "next"];
+           ]
            in
            mk_page ~title:"detailed results" @@ List.flatten [
              [mk_navigation ~btns [
@@ -554,26 +553,35 @@ let handle_show_detailed (self:t) : unit =
                  true;
                ];
               dyn_status self;
-              h3 [txt "detailed results"];
-              form ~a:[a_action (uri_show_detailed db_file);
-                       a_method `Get;
-                       a_class ["form-row"]]
-                [
-                  input ~a:[a_name "prover"; a_class ["form-control-sm"];
-                            a_value filter_prover;
-                            a_placeholder "prover";
-                            a_input_type `Text] ();
-                  input ~a:[a_name "pb"; a_class ["form-control-sm"];
-                            a_value filter_pb;
-                            a_placeholder "problem";
-                            a_input_type `Text] ();
-                  input ~a:[a_name "res"; a_class ["form-control-sm"];
-                            a_value filter_res;
-                            a_placeholder "result";
-                            a_input_type `Text] ();
-                  mk_button ~cls:["btn-info";"btn-sm";"form-control-sm"]
-                    [txt "filter"];
+              div ~a:[a_class ["container"]] [
+                h2 [txt "detailed results"];
+                div ~a:[a_class ["navbar"; "navbar-expand-lg"]] [
+                  form ~a:[a_action (uri_show_detailed db_file);
+                           a_method `Get;
+                           a_class ["form-row"; "form-inline"]]
+                    [
+                      input ~a:[a_name "prover";
+                                a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                                a_value filter_prover;
+                                a_placeholder "prover";
+                                a_input_type `Text] ();
+                      input ~a:[a_name "pb";
+                                a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                                a_value filter_pb;
+                                a_placeholder "problem";
+                                a_input_type `Text] ();
+                      input ~a:[a_name "res";
+                                a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                                a_value filter_res;
+                                a_placeholder "result";
+                                a_input_type `Text] ();
+                      mk_button
+                        ~cls:["btn-info"; "btn-sm"; "btn-success";
+                              "m-3";]
+                        [txt "filter"];
+                    ];
                 ];
+              ];
               let rows =
                 CCList.map
                   (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
@@ -630,11 +638,7 @@ let handle_show_single (self:t) : unit =
                uri_show_single db_file prover pb_file, "single", true;
              ];
              dyn_status self;
-             mk_a
-               ~cls:["sticky-top"]
-               ~a:[ a_href (Printf.sprintf "/show_detailed/%s" (U.percent_encode db_file))]
-               [txt "back to detailed results"];
-             h3 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
+             h2 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
              div [pb_html pb];
              details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stdout"])
                [pre [txt stdout]];
@@ -932,14 +936,15 @@ let handle_root (self:t) : unit =
           [
             h1 [txt "Benchpress"];
             dyn_status self;
-            h3 [txt "configuration"];
-            ul ~a:[a_class ["list-group"]] @@ List.flatten [
-              [li ~a:[a_class ["list-group-item"]]
-                 [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
-               li ~a:[a_class ["list-group-item"]]
-                 [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+            div ~a:[a_class ["container"]] [
+              h2 [txt "configuration"];
+              ul ~a:[a_class ["list-group"]] @@ List.flatten [
+                [li ~a:[a_class ["list-group-item"]]
+                   [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
+                 li ~a:[a_class ["list-group-item"]]
+                   [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+              ];
             ];
-            h3 [txt "list of results"];
             let l =
               CCList.map
                 (fun (s0,size) ->
@@ -976,8 +981,9 @@ let handle_root (self:t) : unit =
                 entries
             in
             Log.info (fun k->k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
-            form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
-              div ~a:[a_class ["container"]] [
+            div ~a:[a_class ["container"]] [
+              h2 [txt "list of results"];
+              form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
                 mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] @@
                 List.flatten [
                   [ mk_col [ mk_button ~cls:["btn-primary";"btn-sm"]
@@ -991,7 +997,8 @@ let handle_root (self:t) : unit =
                   ] else [];
                 ];
                 mk_ul l
-              ]];
+              ]
+            ];
           ]
       in
       H.Response.make_string ~headers:d_headers (Ok (Html.to_string h))
