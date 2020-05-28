@@ -60,28 +60,41 @@ module Stat = struct
     total_time: float; (* for sat+unsat *)
   }
 
-  let as_printbox_record s : _ list =
+  let as_printbox_record ?to_link s : _ list =
     let open PB in
+    let mk_row ?res lbl n mk_box =
+      match to_link with
+      | Some f when n>0 ->
+        let uri =
+          let res = CCOpt.get_or ~default:lbl res in
+          f res in
+        lbl, PB.link ~uri (mk_box n)
+      | _ -> lbl, mk_box n
+    in
     List.flatten @@ [
-      ["sat", pb_int_color Style.(fg_color Green) s.sat;
-       "unsat", pb_int_color Style.(fg_color Green) s.unsat;
+      [mk_row "sat" s.sat @@ pb_int_color Style.(fg_color Green);
+       mk_row "unsat" s.unsat @@ pb_int_color Style.(fg_color Green);
        "sat+unsat", pb_int_color Style.(fg_color Green) (s.sat+s.unsat);
-       "errors", pb_int_color Style.(fg_color Cyan) s.errors;
-       "unknown", int s.unknown;
-       "timeout", int s.timeout;
+       mk_row ~res:"error" "errors" s.errors @@ pb_int_color Style.(fg_color Cyan);
+       mk_row "unknown" s.unknown int;
+       mk_row "timeout" s.timeout int;
       ];
-      CCList.map (fun (tag,i) -> "tag." ^ tag, int i) s.custom;
+      CCList.map (fun (tag,i) -> mk_row ~res:tag ("tag." ^ tag) i int) s.custom;
       ["memory", int s.memory;
        "total", int s.total;
        "total_time", line (Misc.human_duration s.total_time);
       ];
     ]
 
-  let to_printbox (s:t) : PrintBox.t =
-    pb_v_record @@ as_printbox_record s
+  let to_printbox ?to_link (s:t) : PrintBox.t =
+    pb_v_record @@ as_printbox_record ?to_link s
 
-  let to_printbox_l =
-    CCList.map (fun ((p:string), a) -> p, to_printbox a)
+  let to_printbox_l ?to_link l =
+    CCList.map
+      (fun ((p:string), a) ->
+         let to_link = CCOpt.map (fun f x -> f p x) to_link in
+         p, to_printbox ?to_link a)
+      l
 
   (* obtain stats for this prover *)
   let of_db_for ~(prover:Prover.name) (db:Db.t) : t or_error =

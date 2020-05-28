@@ -222,7 +222,12 @@ let handle_show (self:t) : unit =
           Test.Metadata.to_printbox ~link cr.T.cr_meta
         in
         let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
-        let box_stat = Test.Stat.to_printbox_l cr.T.cr_stat in
+        let box_stat =
+          let to_link prover tag =
+            uri_show_detailed ~filter_prover:prover ~filter_res:tag file
+          in
+          Test.Stat.to_printbox_l ~to_link cr.T.cr_stat
+        in
         let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
         let uri_plot = uri_gnuplot file in
         let uri_err = uri_error_bad file in
@@ -267,6 +272,9 @@ let handle_show (self:t) : unit =
                      ~a:[a_href (Printf.sprintf "/show_csv/%s?provers=%s"
                                    (U.percent_encode file) (U.percent_encode n))]
                      [txt "download as csv"];
+                   mk_a ~cls:["btn-link"; "btn-sm"]
+                     ~a:[a_href (uri_show_detailed ~filter_prover:n file)]
+                     [txt "see detailed results"];
                    div [pb_html pb];
                   ])
                box_summary);
