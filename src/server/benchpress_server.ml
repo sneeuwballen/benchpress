@@ -126,6 +126,7 @@ module Html = struct
           div ~a:[a_class ["container"]] my_body
         ])
 
+  let div1 ?a x = div ?a [x]
   let mk_a ?(cls=["btn-link"]) ?a:(al=[]) x = a ~a:(a_class ("btn" :: cls) :: al) x
   let mk_row ?(cls=[]) x = div ~a:[a_class ("row"::cls)] x
   let mk_col ?(a=[]) ?(cls=[]) x = div ~a:(a_class ("col"::cls) :: a) x
@@ -172,19 +173,20 @@ let link_show_single db_file prover path =
 let mk_navigation ?(btns=[]) path =
   let open Html in
   let path = ("/", "root", false) :: path in
-  div ~a:[a_class ["sticky-top"; "navbar"; "navbar-expand-md"; "navbar-collapse"; "nabvar-align-center"]] @@
-  List.flatten [
-    [ol ~a:[a_class ["breadcrumb"; "col-8"]] @@
-     CCList.map (fun (uri, descr, active) ->
-         li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
-           mk_a ~a:[a_href uri] [txt descr]
-         ])
-       path;
-    ];
-    (if btns=[] then []
-     else [div ~a:[a_class ["btn-group-vertical"; "align-items-center";
-                            "col-1"; "m-2"]]
-             btns]);
+  div1 ~a:[a_class ["sticky-top"; "container"]] @@
+  nav ~a:[a_class ["navbar"; "navbar-expand-md"]] @@
+    List.flatten [
+      [ol ~a:[a_class ["breadcrumb"; "navbar-header"; "m-1"]] @@
+       CCList.map (fun (uri, descr, active) ->
+           li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
+             mk_a ~a:[a_href uri] [txt descr]
+           ])
+         path;
+      ];
+      (if btns=[] then []
+       else [div ~a:[a_class ["btn-group-vertical"; "align-items-center";
+                              "navbar-right"; "m-2"]]
+               btns]);
   ]
 
 let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
@@ -460,11 +462,12 @@ let handle_show_as_table (self:t) : unit =
            (* FIXME: only display next if not complete *)
            let btns = [
              mk_a
-               ~cls:((if offset>0 then [] else ["disabled"]) @ ["btn-info";"btn-sm"])
+               ~cls:((if offset>0 then [] else ["disabled"]) @
+                     ["page-link";"link-sm";"m-1"])
                ~a:[a_href
                      (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
                [txt "prev"];
-             mk_a ~cls:["btn-info";"btn-sm"]
+             mk_a ~cls:["page-link";"link-sm"; "m-1"]
                ~a:[a_href
                      (uri_show_table ~offset:(offset+page_size) file)]
                [txt "next"];
@@ -533,12 +536,13 @@ let handle_show_detailed (self:t) : unit =
            (* pagination buttons *)
            let btns = [
              mk_a
-               ~cls:((if offset>0 then [] else ["disabled"]) @ ["btn-info";"btn-sm"])
+               ~cls:((if offset>0 then [] else ["disabled"]) @
+                     ["page-link";"link-sm";"m-1"])
                ~a:[a_href
                      (uri_show_detailed ~offset:(max 0 (offset-page_size))
                         ~filter_res ~filter_pb ~filter_prover db_file)]
                [txt "prev"];
-             mk_a ~cls:["btn-info";"btn-sm"]
+             mk_a ~cls:["page-link";"link-sm"; "m-1"]
                ~a:[a_href
                      (uri_show_detailed ~offset:(offset+page_size)
                         ~filter_res ~filter_pb ~filter_prover db_file)]
@@ -555,8 +559,9 @@ let handle_show_detailed (self:t) : unit =
               dyn_status self;
               div ~a:[a_class ["container"]] [
                 h2 [txt "detailed results"];
-                div ~a:[a_class ["navbar"; "navbar-expand-lg"]] [
-                  form ~a:[a_action (uri_show_detailed db_file);
+                div ~a:[a_class ["navbar"; "navbar-expand-lg"]] @@
+                [div ~a:[a_class ["container-fluid"]] @@
+                 [form ~a:[a_action (uri_show_detailed db_file);
                            a_method `Get;
                            a_class ["form-row"; "form-inline"]]
                     [
@@ -581,7 +586,7 @@ let handle_show_detailed (self:t) : unit =
                         [txt "filter"];
                     ];
                 ];
-              ];
+                ]];
               let rows =
                 CCList.map
                   (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
