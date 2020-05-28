@@ -16,6 +16,7 @@ jobs:
         ocaml-version: ${{ matrix.ocaml-version }}
     - run: opam pin -n .
     - run: opam depext -yt benchpress
+    - run: opam depext -yt benchpress-server
     - run: opam install -t . --deps-only
     - run: opam exec -- dune build @all --ignore-promoted-rules
     - run: opam exec -- dune runtest --ignore-promoted-rules
