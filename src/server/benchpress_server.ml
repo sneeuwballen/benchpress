@@ -1063,6 +1063,7 @@ let handle_file self : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "get-file" @/ string_urlencoded @/ return)
     (fun file _req ->
+      Log.debug (fun k->k "get-file: `%s`" file);
       let bytes =
         if file = "prelude" then (
           H.Byte_stream.of_string Builtin_config.config (* magic file! *)
