@@ -202,7 +202,9 @@ let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
 (* show individual files *)
 let handle_show (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show/%s%!" (fun file _req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show" @/ string_urlencoded @/ return)
+    (fun file _req ->
       Log.info (fun k->k "----- start show %s -----" file);
       let chrono = Misc.Chrono.start () in
       match Bin_utils.load_file_summary ~full:false file with
@@ -287,9 +289,10 @@ let handle_show (self:t) : unit =
 
 (* prover in a given file *)
 let handle_prover_in (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/prover-in/%s@/%s@/%!" (fun file p_name _req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "prover-in" @/ string_urlencoded @/ string_urlencoded @/ return)
+    (fun file p_name _req ->
       Log.info (fun k->k "----- start prover-in %s %s -----" file p_name);
-      let file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode file in
       let r = Bin_utils.with_file_as_db file (fun scope db ->
           let prover = Prover.of_db db p_name |> scope.unwrap in
           let open Html in
@@ -321,7 +324,9 @@ let handle_prover_in (self:t) : unit =
 
 (* gnuplot for a file *)
 let handle_show_gp (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show-gp/%s%!" (fun file _req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show-gp" @/ string_urlencoded @/ return)
+    (fun file _req ->
       Log.info (fun k->k "----- start show-gp %s -----" file);
       match Bin_utils.mk_file_full file with
       | Error e ->
@@ -355,7 +360,9 @@ let handle_show_gp (self:t) : unit =
     )
 
 let handle_show_errors (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show-err/%s%!" (fun file _req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show-err" @/ string_urlencoded @/ return)
+    (fun file _req ->
       Log.info (fun k->k "----- start show-err %s -----" file);
       let chrono = Misc.Chrono.start() in
       match Bin_utils.load_file_summary ~full:true file with
@@ -409,7 +416,9 @@ let handle_show_errors (self:t) : unit =
 
 (* show full table for a file *)
 let handle_show_as_table (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show_table/%s@/" (fun file req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show_table" @/ string_urlencoded @/ return)
+    (fun file req ->
       let chrono = Misc.Chrono.start() in
       let params = H.Request.query req in
       let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
@@ -484,7 +493,9 @@ let mk_file_summary filename m : _ Html.elt =
 
 (* show list of individual results with URLs to single results for a file *)
 let handle_show_detailed (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show_detailed/%s@/" (fun db_file req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show_detailed" @/ string_urlencoded @/ return)
+    (fun db_file req ->
       let params = H.Request.query req in
       let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
       let filter_res = try List.assoc "res" params |> U.percent_encode with Not_found -> "" in
@@ -493,7 +504,6 @@ let handle_show_detailed (self:t) : unit =
       let page_size = 25 in
       Log.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
                      db_file offset filter_pb filter_res filter_prover);
-      let db_file = CCOpt.get_or ~default:"<no file>" @@ U.percent_decode db_file in
       Bin_utils.with_file_as_db db_file
         (fun scope db ->
            let l, complete =
@@ -585,17 +595,13 @@ let handle_show_detailed (self:t) : unit =
 
 (* show invidual result *)
 let handle_show_single (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/show_single/%s@/%s@/%s@/%!"
-    (fun db_file p_name0 pb_file0 _req ->
-      Log.debug (fun k->k "show single called with prover=%s, pb_file=%s" p_name0 pb_file0);
-      let db_file = U.percent_decode db_file |> CCOpt.get_lazy (fun () -> failwith "bad db file") in
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show_single" @/ string_urlencoded @/
+             string_urlencoded @/ string_urlencoded @/ return)
+    (fun db_file prover pb_file _req ->
+      Log.debug (fun k->k "show single called with prover=%s, pb_file=%s" prover pb_file);
       Bin_utils.with_file_as_db db_file
         (fun scope db ->
-           let prover =
-             U.percent_decode p_name0 |> CCOpt.to_result "invalid prover" |> scope.unwrap in
-           let pb_file =
-             U.percent_decode pb_file0 |> CCOpt.to_result "invalid pb_file" |> scope.unwrap in
-           Log.debug (fun k->k "got prover=`%s`, pb_file=`%s`" prover pb_file);
            let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
            let pb, stdout, stderr =
              Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
@@ -631,10 +637,9 @@ let handle_show_single (self:t) : unit =
 
 (* export as CSV *)
 let handle_show_csv (self:t): unit =
-  H.add_path_handler self.server ~meth:`GET "/show_csv/%s@?%s%!" (fun db_file _q req ->
-      let db_file =
-        U.percent_decode db_file
-        |> CCOpt.get_lazy (fun () -> failwith "bad db file") in
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show_csv" @/ string_urlencoded @/ return)
+    (fun db_file req ->
       Bin_utils.with_file_as_db db_file
         (fun _scope db ->
           let query = H.Request.query req in
@@ -664,7 +669,9 @@ let handle_show_csv (self:t): unit =
 (* compare files *)
 let handle_compare self : unit =
   let server = self.server in
-  H.add_path_handler server ~meth:`POST "/compare" (fun req ->
+  H.add_route_handler server ~meth:`POST
+    H.Route.(exact "compare" @/ return)
+    (fun req ->
       let body = H.Request.body req |> String.trim in
       Log.debug (fun k->k "/compare: body is %s" body);
       let body = U.parse_query body |> E.get_or_failwith in
@@ -739,12 +746,15 @@ let handle_delete self : unit =
     let h = html_redirect ~href:"/" @@ Format.asprintf "deleted %d files" (List.length files) in
     H.Response.make_string (Ok (Html.to_string h))
   in
-  H.add_path_handler self.server ~meth:`POST "/delete1/%s@/%!" (fun file _req ->
+  H.add_route_handler self.server ~meth:`POST
+    H.Route.(exact "delete1" @/ string_urlencoded @/ return)
+    (fun file _req ->
       Log.debug (fun k->k "/delete1: path is %s" file);
       run [file]
     );
-  H.add_path_handler self.server ~meth:`POST "/delete/" (fun req ->
-      let body = H.Request.body req |> String.trim in
+  H.add_route_handler self.server ~meth:`POST
+    H.Route.(exact "delete" @/ return)
+    (fun req -> let body = H.Request.body req |> String.trim in
       Log.debug (fun k->k "/delete: body is %s" body);
       let names =
         CCString.split_on_char '&' body
@@ -759,7 +769,9 @@ let handle_delete self : unit =
   ()
 
 let handle_provers (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/provers/" (fun req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "provers" @/ return)
+    (fun req ->
       let name =
         try Some (List.assoc "name" @@ H.Request.query req)
         with _ -> None
@@ -797,7 +809,9 @@ let handle_provers (self:t) : unit =
     )
 
 let handle_tasks (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/tasks/" (fun _r ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "tasks" @/ return)
+    (fun _r ->
       let tasks = Definitions.all_tasks self.defs in
       let h =
         let open Html in
@@ -834,12 +848,10 @@ let handle_tasks (self:t) : unit =
     )
 
 let handle_run (self:t) : unit =
-  H.add_path_handler self.server ~meth:`POST "/run/%s" (fun name _r ->
+  H.add_route_handler self.server ~meth:`POST
+    H.Route.(exact "run" @/ string_urlencoded @/ return)
+    (fun name _r ->
       Log.debug (fun k->k "run task %S" name);
-      let name =
-        U.percent_decode name
-        |> CCOpt.get_lazy (fun () -> H.Response.fail_raise ~code:404 "cannot find task %S" name)
-      in
       let task =
         match Definitions.find_task self.defs name with
         | Ok t -> t
@@ -854,7 +866,9 @@ let handle_run (self:t) : unit =
     )
 
 let handle_job_interrupt (self:t) : unit =
-  H.add_path_handler self.server ~meth:`POST "/interrupt/" (fun _r ->
+  H.add_route_handler self.server ~meth:`POST
+    H.Route.(exact "interrupt" @/ return)
+    (fun _r ->
       Log.debug (fun k->k "interrupt current task");
       let r =
         match Task_queue.cur_job self.task_q with
@@ -889,7 +903,9 @@ let get_meta (self:t) (p:string) : _ result =
 
 (* index *)
 let handle_root (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/%!" (fun _req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(return)
+    (fun _req ->
       let entries = Bin_utils.list_entries self.data_dir in
       let chrono = Misc.Chrono.start() in
       let h =
@@ -960,7 +976,9 @@ let handle_root (self:t) : unit =
     )
 
 let handle_file_summary (self:t) : unit =
-  H.add_path_handler self.server ~meth:`GET "/file-sum/%s%!" (fun file _req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "file-sum" @/ string_urlencoded @/ return)
+    (fun file _req ->
       let chrono = Misc.Chrono.start() in
       match Bin_utils.mk_file_full file with
       | Error _e ->
@@ -983,7 +1001,9 @@ let handle_file_summary (self:t) : unit =
     )
 
 let handle_task_status self =
-  H.add_path_handler self.server ~meth:`GET "/tasks_status%!" (fun _req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "tasks_status" @/ return)
+    (fun _req ->
       let open Html in
       let bod =
         mk_ul @@ List.flatten [
@@ -1009,7 +1029,9 @@ let handle_task_status self =
       let html = mk_page ~title:"tasks_status" [div [bod]] in
       H.Response.make_string (Ok (Html.to_string html))
     );
-  H.add_path_handler self.server ~meth:`GET "/api/tasks_status/" (fun _req ->
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "api" @/ exact "tasks_status" @/ return)
+    (fun _req ->
       let j =
         Task_queue.status self.task_q
         |> Task_queue.status_to_json
@@ -1019,8 +1041,9 @@ let handle_task_status self =
   ()
 
 let handle_css self : unit =
-  let mk_path path ctype value =
-    H.add_path_handler self ~meth:`GET path (fun req ->
+  let mk_path p' ctype value =
+    H.add_route_handler self ~meth:`GET H.Route.(exact p' @/ return)
+      (fun req ->
         let h = Digest.to_hex (Digest.string value) in
         if H.Request.get_header req "If-None-Match" = Some h then (
            Log.debug (fun k->k "cached object (etag: %S)" h);
@@ -1032,19 +1055,14 @@ let handle_css self : unit =
         )
       )
   in
-  mk_path "/css" "text/css" Web_data.css;
-  mk_path "/js" "text/javascript" Web_data.js;
+  mk_path "css" "text/css" Web_data.css;
+  mk_path "js" "text/javascript" Web_data.js;
   ()
 
 let handle_file self : unit =
-  H.add_path_handler self.server ~meth:`GET "/get-file/%s%!" (fun file _req ->
-      let unwrap_ code = function
-        | Ok x -> x
-        | Error e -> H.Response.fail_raise ~code "error in get-file: %s" e
-      in
-      let file =
-        U.percent_decode file |> CCOpt.to_result "invalid path" |> unwrap_ 404
-      in
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "get-file" @/ string_urlencoded @/ return)
+    (fun file _req ->
       let bytes =
         if file = "prelude" then (
           H.Byte_stream.of_string Builtin_config.config (* magic file! *)
