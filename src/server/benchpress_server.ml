@@ -16,6 +16,7 @@ type t = {
   data_dir: string;
   meta_cache: (string, Test.metadata) Hashtbl.t;
   dyn_status: bool;
+  allow_delete: bool;
 }
 
 (* TODO: use printbox 0.5 and use custom classes with its tyxml printer *)
@@ -233,22 +234,26 @@ let handle_show (self:t) : unit =
             [mk_navigation [uri_show file, "show", true];
              dyn_status self;
              h3 [txt file];
-             mk_row @@ CCList.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@ [
-               mk_a ~cls:["btn-info";"btn-sm"]
-                 ~a:[a_href (uri_show_detailed file)]
-                 [txt "show individual results"];
-               mk_a ~cls:["btn-info";"btn-sm"]
-                 ~a:[a_href (uri_show_csv file)]
-                 [txt "download as csv"];
-               mk_a ~cls:["btn-info";"btn-sm"]
-                 ~a:[a_href (uri_show_table file)]
-                 [txt "show table of results"];
-               form ~a:[a_method `Post] [
-                 mk_button ~cls:["btn-danger";"btn-sm"]
-                   ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/"); ]
-                   [txt "delete"];
+             mk_row @@
+             CCList.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@
+             List.flatten [
+               [ mk_a ~cls:["btn-info";"btn-sm"]
+                   ~a:[a_href (uri_show_detailed file)]
+                   [txt "show individual results"];
+                 mk_a ~cls:["btn-info";"btn-sm"]
+                   ~a:[a_href (uri_show_csv file)]
+                   [txt "download as csv"];
+                 mk_a ~cls:["btn-info";"btn-sm"]
+                   ~a:[a_href (uri_show_table file)]
+                   [txt "show table of results"];
+               ];
+               if self.allow_delete then [
+                 form ~a:[a_method `Post] [
+                   mk_button ~cls:["btn-danger";"btn-sm"]
+                     ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/"); ]
+                     [txt "delete"];
+                 ]] else [];
                ]
-             ]
             ];
             [h3 [txt "Summary"]; div [pb_html box_meta]];
             (CCList.flat_map
@@ -728,6 +733,7 @@ let handle_compare self : unit =
 
 (* delete files *)
 let handle_delete self : unit =
+  assert self.allow_delete;
   let run names =
     Log.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
     let files =
@@ -960,13 +966,17 @@ let handle_root (self:t) : unit =
             Log.info (fun k->k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
             form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
               div ~a:[a_class ["container"]] [
-                mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] [
-                  mk_col [
-                    mk_button ~cls:["btn-primary";"btn-sm"] ~a:[a_formaction "/compare/"]
-                      [txt "compare selected"]];
-                  mk_col [
-                    mk_button ~cls:["btn-danger";"btn-sm"] ~a:[a_formaction "/delete/"]
-                      [txt "delete selected"]]
+                mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] @@
+                List.flatten [
+                  [ mk_col [ mk_button ~cls:["btn-primary";"btn-sm"]
+                               ~a:[a_formaction "/compare/"] [txt "compare
+                               selected"]];
+                  ];
+                  if self.allow_delete then [
+                    mk_col [
+                      mk_button ~cls:["btn-danger";"btn-sm"] ~a:[a_formaction "/delete/"]
+                        [txt "delete selected"]]
+                  ] else [];
                 ];
                 mk_ul l
               ]];
@@ -1082,7 +1092,9 @@ let handle_file self : unit =
 (** {2 Embedded web server} *)
 
 module Cmd = struct
-  let main ?(local_only=false) ?port ~dyn_status (defs:Definitions.t) () =
+  let main
+      ?(local_only=false) ?port ~dyn_status ~allow_delete
+      (defs:Definitions.t) () =
     try
       let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
       let server = H.create ~max_connections:32 ~addr ?port () in
@@ -1090,7 +1102,7 @@ module Cmd = struct
       let self = {
         defs; server; data_dir; task_q=Task_queue.create ~defs ();
         meta_cache=Hashtbl.create ~random:true 16;
-        dyn_status;
+        dyn_status; allow_delete;
       } in
       (* thread to execute tasks *)
       let _th_r = Thread.create Task_queue.loop self.task_q in
@@ -1117,7 +1129,7 @@ module Cmd = struct
       handle_run self;
       handle_job_interrupt self;
       handle_compare self;
-      handle_delete self;
+      if allow_delete then handle_delete self;
       handle_file self;
       H.run server |> E.map_err Printexc.to_string
     with e ->
@@ -1132,13 +1144,15 @@ module Cmd = struct
       Arg.(value & flag & info ["local-only"] ~doc:"only listen on localhost")
     and dyn_status =
       Arg.(value & opt bool false & info ["dyn-status"] ~doc:"dynamic status in page")
+    and allow_delete =
+      Arg.(value & opt bool false & info ["allow-delete"] ~doc:"allow deletion of files")
     and defs =
       Bin_utils.definitions_term
     in
     let doc = "serve embedded web UI on given port" in
-    let aux defs port local_only dyn_status () =
-      main ?port ~local_only ~dyn_status defs () in
-    Term.(pure aux $ defs $ port $ local_only $ dyn_status $ pure () ),
+    let aux defs port local_only dyn_status allow_delete () =
+      main ?port ~local_only ~dyn_status ~allow_delete defs () in
+    Term.(pure aux $ defs $ port $ local_only $ dyn_status $ allow_delete $ pure () ),
     Term.info ~doc "serve"
 end
 
