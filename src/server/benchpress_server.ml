@@ -92,7 +92,8 @@ end = struct
       let rows =
         Array.to_list a |> CCList.map to_row
       in
-      H.table ~a:[H.a_class ("table" :: (*"table-striped" ::*) "table-hover" :: class_)] rows
+      H.table ~a:[H.a_class ("table" :: "table-hover" ::
+                             "table-striped" :: class_)] rows
     | B.Tree (_, b, l) ->
       let l = Array.to_list l in
       H.div
@@ -609,7 +610,7 @@ let handle_show_detailed (self:t) : unit =
                   ["prover"; "file"; "res"; "expected"; "time"]
                 |> tr |> CCList.return |> thead
               in
-              table ~a:[a_class ["framed"]] ~thead rows;
+              table ~a:[a_class ["framed"; "table"; "table-striped"]] ~thead rows;
              ];
            ]
         )
