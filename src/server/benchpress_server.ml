@@ -120,6 +120,7 @@ module Html = struct
       (head (title @@ txt s) [
           b_style;
           PB_html.style;
+          link ~rel:[`Icon] ~href:"/favicon.png" ();
           meta ~a:(a_charset "utf-8" :: my_meta) ();
           script ~a:[a_src "/js"; Unsafe.string_attrib "type" "module"] (txt "");
         ])
@@ -1092,6 +1093,7 @@ let handle_css self : unit =
   in
   mk_path "css" "text/css" Web_data.css;
   mk_path "js" "text/javascript" Web_data.js;
+  mk_path "favicon.png" "media/png" Web_data.favicon;
   ()
 
 let handle_file self : unit =

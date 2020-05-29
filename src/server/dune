@@ -10,7 +10,7 @@
 
 (rule
   (targets web_data.ml)
-  (deps (:css bootstrap.min.css) (:js embed.js))
+  (deps (:css bootstrap.min.css) (:js embed.js) (:icon ../../data/favicon.png.b64))
   (action
     (with-stdout-to %{targets}
      (progn
@@ -20,6 +20,9 @@
        (echo "let js = {j|")
        (cat %{js})
        (echo "|j}")
+       (echo "let favicon = Base64.decode_exn @@ String.trim @@ {fav|")
+       (cat %{icon})
+       (echo "|fav}")
        ))))
 
 (rule
