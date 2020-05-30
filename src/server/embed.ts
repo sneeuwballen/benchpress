@@ -67,7 +67,7 @@ document.addEventListener('change', () => {
 
 window.onload = () => {
     if (document.getElementById('dyn-status') !== undefined) {
-        updateTasks;
+        updateTasks();
         setInterval(updateTasks, 500);
     }
 }
