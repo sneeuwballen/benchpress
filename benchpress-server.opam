@@ -26,10 +26,6 @@ depends: [
   "tyxml"  # for printbox.tyxml
   "ocaml" {>= "4.03" }
 ]
-pin-depends: [
-  ["tiny_httpd.0.6" "git+https://github.com/c-cube/tiny_httpd.git#master"]
-  ["tiny_httpd_camlzip.0.6" "git+https://github.com/c-cube/tiny_httpd.git#master"]
-]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
 bug-reports: "https://github.com/sneeuwballen/benchpress/issues"
