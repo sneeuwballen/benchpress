@@ -993,17 +993,20 @@ let handle_root (self:t) : unit =
             div ~a:[a_class ["container"]] [
               h2 [txt "list of results"];
               form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
-                mk_row ~cls:["sticky-top"; "justify-self-center"; "w-50";] @@
+                mk_row ~cls:["m-2"] @@
                 List.flatten [
-                  [ mk_col [ mk_button ~cls:["btn-primary";"btn-sm"]
-                               ~a:[a_formaction "/compare/"] [txt "compare
-                               selected"]];
+                  [mk_col ~cls:["col-auto";"p-1"] [
+                      mk_button ~cls:["btn-primary";"btn-sm"]
+                     ~a:[a_formaction "/compare/"]
+                     [txt "compare selected"]];
                   ];
                   if self.allow_delete then [
-                    mk_col [
-                      mk_button ~cls:["btn-danger";"btn-sm"] ~a:[a_formaction "/delete/"]
+                    mk_col ~cls:["col-auto";"p-1"] [
+                      mk_button ~cls:["btn-danger";"btn-sm"]
+                        ~a:[a_formaction "/delete/"]
                         [txt "delete selected"]]
-                  ] else [];
+                  ]
+                  else [];
                 ];
                 mk_ul l
               ]
