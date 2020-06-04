@@ -1090,8 +1090,8 @@ module Detailed_res : sig
   type t = Prover.t Run_result.t
   (** Detailed result *)
 
-  val to_printbox : ?link:prover_path_linker -> t -> PrintBox.t * string * string
-  (** Display an individual result + stdout + stderr *)
+  val to_printbox : ?link:prover_path_linker -> t -> PrintBox.t * PrintBox.t * string * string
+  (** Display an individual result + prover descr + stdout + stderr *)
 
   val get_res : Db.t -> Prover.name -> string -> t or_error
   (** Get an individual result *)
@@ -1199,7 +1199,7 @@ end = struct
          Run_result.map ~f:(fun _ -> prover) res
       )
 
-  let to_printbox ?link:(mk_link=default_pp_linker) (self:t) : PB.t*string*string =
+  let to_printbox ?link:(mk_link=default_pp_linker) (self:t) : PB.t*PB.t*string*string =
     let open PB in
     Logs.debug (fun k->k "coucou");
     let pp_res r =
@@ -1209,6 +1209,15 @@ end = struct
       | _ -> text @@ Res.to_string r
     in
     Logs.debug (fun k->k "prover is %a" Prover.pp self.program);
+    v_record @@ [
+      "problem.path", mk_link self.program.Prover.name self.problem.Problem.name;
+      "problem.expected_res", pp_res self.problem.Problem.expected;
+      "res", pp_res self.res;
+      "rtime", text (Misc.human_duration self.raw.rtime);
+      "stime", text (Misc.human_duration self.raw.stime);
+      "utime", text (Misc.human_duration self.raw.utime);
+      "errcode", int self.raw.errcode;
+    ],
     v_record @@ List.flatten [
       ["prover.name", text self.program.Prover.name;
        "prover.cmd", text self.program.Prover.cmd;
@@ -1220,13 +1229,7 @@ end = struct
        "prover.timeout", text (CCOpt.get_or ~default:"<none>" self.program.Prover.timeout);];
       CCList.map (fun (tag,re) -> "prover.tag." ^ tag, text re) self.program.Prover.custom;
       ["prover.memory", text (CCOpt.get_or ~default:"<none>" self.program.Prover.memory);
-       "problem.path", mk_link self.program.Prover.name self.problem.Problem.name;
-       "problem.expected_res", pp_res self.problem.Problem.expected;
-       "res", pp_res self.res;
-       "rtime", text (Misc.human_duration self.raw.rtime);
-       "stime", text (Misc.human_duration self.raw.stime);
-       "utime", text (Misc.human_duration self.raw.utime);
-       "errcode", int self.raw.errcode;]
+      ]
     ],
     self.raw.stdout, self.raw.stderr
 end

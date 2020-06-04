@@ -634,7 +634,7 @@ let handle_show_single (self:t) : unit =
       Bin_utils.with_file_as_db db_file
         (fun scope db ->
            let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
-           let pb, stdout, stderr =
+           let pb, pb_prover, stdout, stderr =
              Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
            in
            let open Html in
@@ -651,6 +651,8 @@ let handle_show_single (self:t) : unit =
                [pre [txt stdout]];
              details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stderr"])
                [pre [txt stderr]];
+             details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "prover config"])
+               [pb_html pb_prover];
            ]
         )
       |> E.catch
