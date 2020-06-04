@@ -178,7 +178,7 @@ let mk_navigation ?(btns=[]) path =
   div1 ~a:[a_class ["sticky-top"; "container"]] @@
   nav ~a:[a_class ["navbar"; "navbar-expand-md"]] @@
     List.flatten [
-      [ol ~a:[a_class ["breadcrumb"; "navbar-header"; "m-1"]] @@
+      [ol ~a:[a_class ["breadcrumb"; "navbar-header"; "col-sm-6"; "m-1"]] @@
        CCList.map (fun (uri, descr, active) ->
            li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
              mk_a ~a:[a_href uri] [txt descr]
@@ -186,7 +186,7 @@ let mk_navigation ?(btns=[]) path =
          path;
       ];
       (if btns=[] then []
-       else [div ~a:[a_class ["btn-group-vertical"; "align-items-center";
+       else [div ~a:[a_class ["btn-group-vertical"; "col-sm-1"; "align-items-center";
                               "navbar-right"; "m-2"]]
                btns]);
   ]
@@ -465,11 +465,11 @@ let handle_show_as_table (self:t) : unit =
            let btns = [
              mk_a
                ~cls:((if offset>0 then [] else ["disabled"]) @
-                     ["page-link";"link-sm";"m-1"])
+                     ["page-link";"link-sm";"my-1"; "p-1"])
                ~a:[a_href
                      (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
                [txt "prev"];
-             mk_a ~cls:["page-link";"link-sm"; "m-1"]
+             mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
                ~a:[a_href
                      (uri_show_table ~offset:(offset+page_size) file)]
                [txt "next"];
@@ -539,12 +539,12 @@ let handle_show_detailed (self:t) : unit =
            let btns = [
              mk_a
                ~cls:((if offset>0 then [] else ["disabled"]) @
-                     ["page-link";"link-sm";"m-1"])
+                     ["page-link";"link-sm";"my-1";"p-1"])
                ~a:[a_href
                      (uri_show_detailed ~offset:(max 0 (offset-page_size))
                         ~filter_res ~filter_pb ~filter_prover db_file)]
                [txt "prev"];
-             mk_a ~cls:["page-link";"link-sm"; "m-1"]
+             mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
                ~a:[a_href
                      (uri_show_detailed ~offset:(offset+page_size)
                         ~filter_res ~filter_pb ~filter_prover db_file)]
