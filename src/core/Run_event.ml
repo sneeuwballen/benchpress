@@ -59,7 +59,7 @@ let to_db_prover_result (db:Db.t) (self:Prover.name Run_result.t) : _ or_error =
     self.problem.Problem.name
     (self.res |> Res.to_string)
     (self.problem.Problem.expected |> Res.to_string)
-    self.timeout
+    (self.timeout |> Limit.Time.as_int Seconds)
     self.raw.errcode
     self.raw.stdout
     self.raw.stderr
@@ -88,6 +88,7 @@ let of_db_map db ~f : _ list or_error =
            let pb =
              {Problem.name=pb_name; expected=Res.of_string ~tags expected}
            in
+           let timeout = Limit.Time.mk ~s:timeout () in
            let p =
              Run_result.make pname pb ~timeout ~res:(Res.of_string ~tags res)
                {errcode;stderr;stdout;rtime;utime;stime}

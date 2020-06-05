@@ -8,8 +8,7 @@ type path = string
 type job_res = Prover.name Run_result.t
 
 val run :
-  timeout:int ->
-  memory:int ->
+  limits:Limit.All.t ->
   Prover.t ->
   Problem.t ->
   job_res or_error

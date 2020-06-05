@@ -76,7 +76,12 @@ let find_expect ?default_expect ~expect file : Res.t or_error =
       in
       try_ l
     | Dir.E_program {prover} ->
-      let raw = Prover.run ~timeout:1 ~memory:1_000 ~file prover in
+      let raw = Prover.run prover ~file
+          ~limits:(Limit.All.mk
+                     ~time:(Limit.Time.mk ~s:1 ())
+                     ~memory:(Limit.Memory.mk ~m:1 ())
+                     ())
+      in
       match Prover.analyze_p_opt prover raw, default_expect with
       | Some r, _ -> E.return r
       | None, Some r -> E.return r

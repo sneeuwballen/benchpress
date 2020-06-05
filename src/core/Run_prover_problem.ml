@@ -8,12 +8,13 @@ type path = string
 type job_res= Prover.name Run_result.t
 
 (* run one particular test *)
-let run_exn_ ~timeout ~memory prover pb =
+let run_exn_ ~limits prover pb =
+  let timeout = CCOpt.get_exn limits.Limit.All.time in
   Logs.info
-    (fun k->k"running %-15s/%-30s (timeout %d)..."
-        prover.Prover.name pb.Problem.name timeout);
+    (fun k->k"running %-15s/%-30s (timeout %a)..."
+        prover.Prover.name pb.Problem.name Limit.Time.pp timeout);
   (* spawn process *)
-  let raw = Prover.run ~timeout ~memory ~file:pb.Problem.name prover in
+  let raw = Prover.run ~limits ~file:pb.Problem.name prover in
   let result =
     Run_result.make_from_prover prover ~timeout pb raw
   in
@@ -25,8 +26,8 @@ let run_exn_ ~timeout ~memory prover pb =
          raw.stdout raw.stderr raw.errcode);
   result
 
-let run ~timeout ~memory prover pb : _ E.t =
-  try run_exn_ ~timeout ~memory prover pb |> E.return
+let run ~limits prover pb : _ E.t =
+  try run_exn_ ~limits prover pb |> E.return
   with e -> E.of_exn_trace e
 
 let pp_result ~w_prover ~w_pb out (res:Test.result): unit =

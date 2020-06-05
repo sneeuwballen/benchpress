@@ -1180,6 +1180,7 @@ end = struct
                   prover file)
            |> scope.unwrap
            |> (fun (res, file_expect, timeout, errcode, stdout, stderr, rtime, utime, stime) ->
+               (* Still needed ?! *)
                Gc.compact();
                Gc.full_major();
                Logs.info (fun k->k "got results 2");
@@ -1190,6 +1191,7 @@ end = struct
                Logs.debug (fun k->k"got expected %a" Res.pp expected);
                let res = Res.of_string ~tags res in
                Logs.debug (fun k->k"got res %a" Res.pp res);
+               let timeout = Limit.Time.mk ~s:timeout () in
                Run_result.make prover ~timeout ~res
                  {Problem.name=file; expected}
                  { Proc_run_result.errcode;stdout;stderr;rtime;utime;stime})

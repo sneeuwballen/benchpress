@@ -62,7 +62,8 @@ let get_version ?(binary="") (v:Stanza.version_field) : Prover.version =
       Git {branch=Misc.Git.get_branch dir; commit=Misc.Git.get_commit dir}
     | Stanza.Version_cmd {cmd} ->
       begin try
-          Tag (Misc.get_cmd_out @@ Prover.interpolate_cmd ~binary cmd)
+          Tag (Misc.get_cmd_out @@ Prover.interpolate_cmd cmd
+              ~subst:(Prover.subst ~binary ()))
         with Prover.Subst_not_found s ->
           Tag (Printf.sprintf "command `%s` failed: cannot find field %s" cmd s)
       end
@@ -119,18 +120,30 @@ let rec conv_expect self = function
     find_prover self prover >|= fun p -> Dir.E_program {prover=p}
   | Stanza.E_try l -> E.map_l (conv_expect self) l >|= fun l -> Dir.E_try l
 
-let mk_run_provers ?j ?timeout ?memory ?pattern ~paths ~provers (self:t) : _ or_error =
+let mk_limits ?timeout ?memory ?stack () =
+  (* Timeouts are expressed in seconds in the config files *)
+  let time = CCOpt.map (fun s -> Limit.Time.mk ~s ()) timeout in
+  (* Memory limits are expressed in Megabytes in the config files *)
+  let memory = CCOpt.map (fun m -> Limit.Memory.mk ~m ()) memory in
+  (* Stack sizes are also given in Megabytes *)
+  let stack = CCOpt.map (function
+    | Stanza.Unlimited -> Limit.Stack.Unlimited
+    | Stanza.Limited m -> Limit.Stack.Limited (Limit.Memory.mk ~m ())
+    ) stack in
+  Limit.All.mk ?time ?memory ?stack ()
+
+
+let mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~paths ~provers (self:t) : _ or_error =
   E.map_l (find_prover self) provers >>= fun provers ->
   E.map_l (mk_subdir self) paths >>= fun dirs ->
-  let act={
-    Action.j; timeout; memory; dirs; provers; pattern;
-  } in
+  let limits = mk_limits ?timeout ?memory ?stack () in
+  let act = { Action.j; limits; dirs; provers; pattern; } in
   Ok act
 
 let rec mk_action (self:t) (a:Stanza.action) : _ or_error =
   match a with
-  | Stanza.A_run_provers {provers; memory; dirs; timeout; pattern } ->
-    mk_run_provers ?timeout ?memory ?pattern ~paths:dirs ~provers self
+  | Stanza.A_run_provers {provers; memory; dirs; timeout; stack; pattern } ->
+    mk_run_provers ?timeout ?memory ?stack ?pattern ~paths:dirs ~provers self
     >|= fun a -> Action.Act_run_provers a
   | Stanza.A_progn l ->
     E.map_l (mk_action self) l >|= fun l -> Action.Act_progn l
@@ -170,7 +183,7 @@ let add_stanza (st:Stanza.t) self : t or_error =
     Ok (add_dir d self)
   | St_prover {
       name; cmd; sat; unsat; timeout; unknown; memory;
-      version; binary; binary_deps; custom;
+      version; binary; binary_deps; custom; ulimits;
     } ->
     (* add prover *)
     let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
@@ -187,10 +200,16 @@ let add_stanza (st:Stanza.t) self : t or_error =
       | Some v -> v
       | None -> Version_exact (Prover.Tag "<unknown>")
     in
+    let ulimits =
+      match ulimits with
+      | Some l -> l
+      | None -> Ulimit.mk ~time:true ~memory:true ~stack:false
+    in
     let p = {
       Prover.
-      name; cmd; sat; unsat; timeout; unknown; memory; binary; binary_deps;
-      version=get_version ~binary version; custom; defined_in=self.config_file;
+      name; cmd; sat; unsat; timeout; unknown; memory; ulimits;
+      binary; binary_deps; version=get_version ~binary version;
+      custom; defined_in=self.config_file;
     } in
     Ok (add_prover p self)
   | St_task {name; synopsis; action; } ->

@@ -55,14 +55,14 @@ let mk_progress_api ?interrupted ~uuid api_port : _ option =
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action
-    ?api_port ?j ?timestamp ?pp_results ?dyn ?timeout ?memory ~notify ~uuid
+    ?api_port ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid
     (r:Action.run_provers)
   : (_ * T.Compact_result.t) or_error =
   let open E.Infix in
   begin
     let interrupted = CCLock.create false in
     let cb_progress = mk_progress_api ~interrupted ~uuid api_port in
-    Exec_action.Exec_run_provers.expand ?dyn ?j ?timeout ?memory r >>= fun r ->
+    Exec_action.Exec_run_provers.expand ?dyn ?j ?limits r >>= fun r ->
     let len = List.length r.problems in
     Notify.sendf notify "testing with %d provers, %d problems…"
       (List.length r.provers) len;
@@ -129,11 +129,12 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
     | TT_run_provers run_provers_action ->
       let j = CCOpt.Infix.( j <+> Definitions.option_j defs) in
       let progress = CCOpt.Infix.( dyn <+> Definitions.option_progress defs) in
+      let limits = run_provers_action.limits in
       (* run action here! *)
       let uuid = Misc.mk_uuid() in
       execute_run_prover_action
         ~api_port:Api.default_port
-        ~uuid ?pp_results ?dyn:progress ?timeout ?memory ?j ~notify ~timestamp
+        ~uuid ?pp_results ?dyn:progress ~limits ?j ~notify ~timestamp
         run_provers_action
       >>= fun (top_res, (results:T.Compact_result.t)) ->
       if CCOpt.is_some csv then (
