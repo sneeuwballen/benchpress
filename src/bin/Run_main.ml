@@ -32,7 +32,7 @@ let mk_progress_api ?interrupted ~uuid api_port : _ option =
               ~f:(fun () ->
                   let q = Api.Q_task_update tsk in
                   Printf.fprintf oc "%s\n%!" (Api.pb_to_string Api.encode_query q);
-                  close_out oc;
+                  close_out_noerr oc;
                   let r = CCIO.read_all ic in
                   match Api.pb_of_string Api.decode_response r with
                   | Api.R_error e -> failwith e

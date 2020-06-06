@@ -1138,13 +1138,13 @@ end = struct
             | `Interrupted -> Api.R_interrupted
           in
           Printf.fprintf oc "%s%!" (Api.pb_to_string Api.encode_response r);
-          close_out oc;
+          close_out_noerr oc;
       end
     in
     try
       process();
-      close_in ic;
-      close_out oc;
+      close_in_noerr ic;
+      close_out_noerr oc;
     with e ->
       let e = Printexc.to_string e in
       Log.err (fun k->k "api server: error while serving client: %s" e);
