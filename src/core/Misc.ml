@@ -259,3 +259,29 @@ end = struct
     self.last <- now;
     r
 end
+
+module Json = struct
+  type t =
+    [ `String of string
+    | `List of t list
+    | `Assoc of (string * t) list
+    | `Int of int
+    | `Float of float
+    | `Null
+    ]
+
+  let rec pp out (self:t) : unit =
+    match self with
+    | `String s -> Fmt.fprintf out "%S" s
+    | `List l -> Fmt.fprintf out "[@[%a@]]" (Fmt.list ~sep:(Fmt.return ",@ ") pp) l
+    | `Assoc l ->
+      let pp_pair out (s,v) =
+        Fmt.fprintf out "@[<1>%S:@ %a@]" s pp v
+      in
+      Fmt.fprintf out "{@[%a@]}" (Fmt.list ~sep:(Fmt.return ",@ ") pp_pair) l
+    | `Int i -> Fmt.int out i
+    | `Float f -> Fmt.float out f
+    | `Null -> Fmt.string out "null"
+
+  let to_string (self:t) : string = Fmt.asprintf "%a" pp self
+end

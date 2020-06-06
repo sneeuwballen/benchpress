@@ -6,7 +6,7 @@
  (wrapped true)
  (libraries containers containers.unix containers.thread containers.sexp re
    re.perl csv iter printbox logs logs.cli ISO8601 gnuplot
-   decoders uuidm sqlite3 sqlite3_utils yojson cmdliner ocaml-protoc)
+   decoders uuidm sqlite3 sqlite3_utils cmdliner ocaml-protoc)
  (flags :standard -warn-error -3-32-34-50 -safe-string))
 
 (rule

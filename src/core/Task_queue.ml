@@ -164,7 +164,7 @@ let api_task_list self : Api.task_list =
 
 
 module Basic_status = struct
-  module J = Yojson.Safe
+  module J = Misc.Json
   type json = J.t
   type t = Api.task_list
 
