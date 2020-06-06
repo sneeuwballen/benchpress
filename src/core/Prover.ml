@@ -163,16 +163,36 @@ end
 module Map = CCMap.Make(As_key)
 module Set = CCSet.Make(As_key)
 
+let int_of_process_status = function
+  | Unix.WEXITED i
+  | Unix.WSIGNALED i
+  | Unix.WSTOPPED i -> i
+
 let run_proc cmd =
   let start = Unix.gettimeofday () in
   (* call process and block *)
-  let p = try CCUnix.call_full "%s" cmd
+  let p =
+    try
+      let oc, ic, errc = Unix.open_process_full cmd (Unix.environment()) in
+      close_out ic;
+      (* read out and err *)
+      let err = ref "" in
+      let t_err = Thread.create (fun e -> err := CCIO.read_all e) errc in
+      let out = CCIO.read_all oc in
+      Thread.join t_err;
+      let status = Unix.close_process_full (oc, ic, errc) in
+      object
+        method stdout= out
+        method stderr= !err
+        method errcode=int_of_process_status status
+        method status=status
+      end
     with e ->
       object
         method stdout=""
-        method stderr="<process died: " ^ Printexc.to_string e
+        method stderr="process died: " ^ Printexc.to_string e
         method errcode=1
-        method status = Unix.WEXITED 1
+        method status=Unix.WEXITED 1
       end
   in
   let errcode = p#errcode in
