@@ -24,18 +24,7 @@ message TaskList {
  repeated TaskDescr waiting = 2;
 }
 
-// query
-message Query {
- oneof msg {
-  TaskDescr q_task_update = 1;
- }
-}
-
-// Reponse to a query
-message Response {
- oneof msg {
-  string r_error = 1;
-  Void r_ok = 2;
-  Void r_interrupted = 3;
- }
+enum OkOrInterrupted {
+  ok = 0;
+  interrupted = 1;
 }

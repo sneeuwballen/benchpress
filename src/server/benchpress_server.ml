@@ -1127,54 +1127,19 @@ let handle_file self : unit =
 module Api_serve : sig
   val serve : t -> port:int -> unit
 end = struct
-  let process_client (self:t) (ic,oc) : unit =
-    let process() =
-      let s = CCIO.read_all ic in
-      let m = Api.pb_of_string Api.decode_query s in
-      begin match m with
-        | Api.Q_task_update t ->
-          let r = match Task_queue.api_update_external_job self.task_q t with
-            | `Ok -> Api.R_ok
-            | `Interrupted -> Api.R_interrupted
-          in
-          Printf.fprintf oc "%s%!" (Api.pb_to_string Api.encode_response r);
-          close_out_noerr oc;
-      end
-    in
-    try
-      process();
-      close_in_noerr ic;
-      close_out_noerr oc;
-    with e ->
-      let e = Printexc.to_string e in
-      Log.err (fun k->k "api server: error while serving client: %s" e);
-      (try
-        let r = Api.R_error e in
-        Printf.fprintf oc "%s%!" (Api.pb_to_string Api.encode_response r);
-      with _ -> ());
-      close_in_noerr ic;
-      close_out_noerr oc;
-      ()
-
   let serve (self:t) ~port : unit =
     Log.info (fun k->k"serve API on port %d" port);
-    try
-      let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-      Unix.setsockopt sock Unix.SO_REUSEADDR true;
-      Unix.setsockopt_optint sock Unix.SO_LINGER None;
-      Unix.bind sock (Unix.ADDR_INET (Unix.inet_addr_loopback, port));
-      Unix.listen sock 16;
-      while true do
-        let fd, _addr = Unix.accept sock in
-        let ic = Unix.in_channel_of_descr fd in
-        let oc = Unix.out_channel_of_descr fd in
-        Log.debug (fun k->k "api: new connection");
-        let _th = Thread.create (process_client self) (ic,oc) in
-        ()
-      done
-    with e ->
-      Log.err (fun k->k "api server: %s" (Printexc.to_string e));
-      ()
+    let server = Api.Server.create ~port in
+    (* add methods *)
+    Api.Server.add server
+      "task_update"
+      ~dec:Api.decode_task_descr
+      ~enc:Api.encode_ok_or_interrupted
+      (fun task ->
+         match Task_queue.api_update_external_job self.task_q task with
+         | `Ok -> Ok Api.Ok
+         | `Interrupted -> Ok Api.Interrupted);
+    Api.Server.serve server
 end
 
 (** {2 Embedded web server} *)

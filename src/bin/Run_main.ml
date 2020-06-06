@@ -12,40 +12,26 @@ let mk_progress_api ?interrupted ~uuid api_port : _ option =
       t_descr="run provers";
       t_status=Api.T_waiting;
     } in
+    let client = Api.Client.create ~port:p () in
     let period = 0.3 in
-    let bad_tries = ref 0 in (* give up after a while *)
-    let state_and_done = M.create (task,false) in
+    let state_and_done = M.create (task,false) in (* state of the task *)
     (* separate thread to update the server *)
     let rec loop_send() =
       let tsk, is_done = M.get state_and_done in
-      if (period *. float !bad_tries) > 60. then (
-        Logs.info (fun k->k"too many errors, give up on the API");
-      ) else if not is_done then (
+      if not is_done then (
         Logs.debug (fun k->k"send progress api to the server");
-        begin
-          try
-            let ic, oc =
-              Unix.open_connection (Unix.ADDR_INET(Unix.inet_addr_loopback, p))
-            in
-            CCFun.finally
-              ~h:(fun () -> close_in_noerr ic; close_out_noerr oc)
-              ~f:(fun () ->
-                  let q = Api.Q_task_update tsk in
-                  Printf.fprintf oc "%s\n%!" (Api.pb_to_string Api.encode_query q);
-                  close_out_noerr oc;
-                  let r = CCIO.read_all ic in
-                  match Api.pb_of_string Api.decode_response r with
-                  | Api.R_error e -> failwith e
-                  | Api.R_ok -> ()
-                  | Api.R_interrupted ->
-                    Logs.warn (fun k->k"interrupted by API!");
-                    CCOpt.iter (fun m -> CCLock.set m true) interrupted;
-                );
-              bad_tries := 0
-          with e ->
+        begin match
+            Api.Client.call client "task_update" tsk
+            ~enc:Api.encode_task_descr
+            ~dec:Api.decode_ok_or_interrupted
+          with
+          | Ok Api.Ok -> ()
+          | Ok Api.Interrupted ->
+            Logs.warn (fun k->k"task %a interrupted by API!" Api.pp_task_descr tsk);
+            CCOpt.iter (fun m -> CCLock.set m true) interrupted;
+          | Error e ->
             Logs.debug
-              (fun k->k "error when connecting to API: %s" (Printexc.to_string e));
-            incr bad_tries;
+              (fun k->k "error when connecting to API: %s" e);
         end;
         Thread.delay period;
         loop_send()
