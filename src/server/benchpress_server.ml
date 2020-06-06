@@ -1139,6 +1139,10 @@ end = struct
          match Task_queue.api_update_external_job self.task_q task with
          | `Ok -> Ok Api.Ok
          | `Interrupted -> Ok Api.Interrupted);
+    Api.Server.add server
+      "task_list"
+      ~dec:Api.decode_empty ~enc:Api.encode_task_list
+      (fun _e -> Ok (Task_queue.api_task_list self.task_q));
     Api.Server.serve server
 end
 

@@ -2,26 +2,27 @@
 syntax = "proto3";
 
 message Void{}
+message Empty{Void v=1;}
 
 message TaskProgress {
- float time_elapsed = 1; // in seconds
- int32 estimated_completion = 2; // in [0..100]
+  float time_elapsed = 1; // in seconds
+  int32 estimated_completion = 2; // in [0..100]
 }
 
 message TaskDescr {
- string t_id = 1; // UUID
- string t_descr = 2; // description
- oneof t_status {
-  Void t_waiting = 3;
-  TaskProgress t_in_progress = 4;
-  Void t_done = 5;
- }
+  string t_id = 1; // UUID
+  string t_descr = 2; // description
+  oneof t_status {
+    Void t_waiting = 3;
+    TaskProgress t_in_progress = 4;
+    Void t_done = 5;
+  }
 }
 
 // A list of tasks
 message TaskList {
- repeated TaskDescr active = 1;
- repeated TaskDescr waiting = 2;
+  repeated TaskDescr active = 1;
+  repeated TaskDescr waiting = 2;
 }
 
 enum OkOrInterrupted {
