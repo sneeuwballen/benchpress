@@ -94,7 +94,7 @@ function updateTasks() {
                         if (j.estimated_completion) {
                             compl = ", estimated completion: " + j.estimated_completion + "%";
                         }
-                        s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <p>active task: (uuid: " + j.uuid + ", elapsed: " + (j.time_elapsed || 0) / 1000 + "s" + compl + ")</p>\n                <pre>" + j.descr + "</pre>\n                <form id=\"cancel\" action=\"/interrupt/\" method=\"POST\">\n                 <button class=\"btn btn-warning\"> interrupt </button>\n                </form> </li>";
+                        s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <p>active task: (uuid: " + j.uuid + ", elapsed: " + (j.time_elapsed || 0) / 1000 + "s" + compl + ")</p>\n                <pre>" + j.descr + "</pre>\n                <form id=\"cancel\" action=\"/interrupt/" + j.uuid + "/\" method=\"POST\">\n                 <button class=\"btn btn-warning\"> interrupt </button>\n                </form> </li>";
                     }
                     for (_b = 0, _c = st_json.waiting; _b < _c.length; _b++) {
                         j = _c[_b];

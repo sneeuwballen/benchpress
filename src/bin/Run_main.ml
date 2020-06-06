@@ -38,12 +38,12 @@ let mk_progress_api ?interrupted ~uuid api_port : _ option =
                   | Api.R_error e -> failwith e
                   | Api.R_ok -> ()
                   | Api.R_interrupted ->
-                    Logs.warn (fun k->k"interrupted by API");
+                    Logs.warn (fun k->k"interrupted by API!");
                     CCOpt.iter (fun m -> CCLock.set m true) interrupted;
                 );
               bad_tries := 0
           with e ->
-            Logs.warn
+            Logs.debug
               (fun k->k "error when connecting to API: %s" (Printexc.to_string e));
             incr bad_tries;
         end;

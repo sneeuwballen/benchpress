@@ -64,7 +64,7 @@ async function updateTasks() {
                 <div class="spinner-border"></div>
                 <p>active task: (uuid: ${j.uuid}, elapsed: ${(j.time_elapsed||0) / 1000}s${compl})</p>
                 <pre>${j.descr}</pre>
-                <form id="cancel" action="/interrupt/" method="POST">
+                <form id="cancel" action="/interrupt/${j.uuid}/" method="POST">
                  <button class="btn btn-warning"> interrupt </button>
                 </form> </li>`;
         }

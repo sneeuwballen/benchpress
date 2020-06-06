@@ -1061,7 +1061,7 @@ let handle_task_status self =
                     pre [txt @@
                          Format.asprintf "current task: %a" Task_queue.Job.pp j];
                     form ~a:[a_id (uri_of_string "cancel");
-                             a_action (uri_of_string "/interrupt/");
+                             a_action (uri_of_string @@ "/interrupt/"^Task_queue.Job.uuid j);
                              a_method `Post;]
                       [mk_button ~cls:["btn-warning"] [txt "interrupt"]]]
                 ];
