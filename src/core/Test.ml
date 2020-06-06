@@ -1036,6 +1036,7 @@ end = struct
          (* create a temporary in-memory DB *)
          let db = Sqlite3.db_open ":memory:" in
          db_prepare db |> scope.unwrap;
+         Metadata.to_db db meta |> scope.unwrap;
          Db.transact db (fun _ ->
              List.iter
                (fun p ->

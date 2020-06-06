@@ -46,17 +46,29 @@ end
 
 (* TODO: replace the blocking queue with a custom thing with priorities *)
 
+type api_job = {
+  mutable aj_last_seen: float;
+  mutable aj_interrupted: bool;
+  mutable aj_descr: Api.task_descr;
+}
+
 type t = {
   defs: Definitions.t M.t;
   jobs: job CCBlockingQueue.t;
   jobs_tbl: (string, Job.t) Hashtbl.t;
-  api_jobs: (string, float * Api.task_descr) Hashtbl.t; (* last seen+descr *)
+  api_jobs: (string, api_job) Hashtbl.t; (* last seen+descr *)
   cur: job option M.t;
 }
 
 let defs self = self.defs
 let size self = CCBlockingQueue.size self.jobs
 let cur_job self = M.get self.cur
+
+let interrupt self ~uuid : bool =
+  match CCHashtbl.get self.jobs_tbl uuid, CCHashtbl.get self.api_jobs uuid with
+  | Some j, _ -> M.set j.j_interrupted true; true
+  | None, Some aj -> aj.aj_interrupted <- true; true
+  | None, None -> false
 
 let create ?(defs=Definitions.empty) () : t =
   { jobs= CCBlockingQueue.create 64;
@@ -114,9 +126,20 @@ let api_update_external_job self d =
   let uuid = d.Api.t_id in
   match d.Api.t_status with
   | Api.T_in_progress _ | Api.T_waiting ->
-    Hashtbl.replace self.api_jobs uuid (Unix.gettimeofday(), d)
+    Logs.debug (fun k->k"task-queue: update external job `%s`" uuid);
+    let aj =
+      try Hashtbl.find self.api_jobs uuid
+      with Not_found ->
+        let aj = {aj_descr=d; aj_last_seen=0.; aj_interrupted=false} in
+        Hashtbl.add self.api_jobs uuid aj;
+        aj
+    in
+    aj.aj_last_seen <- Unix.gettimeofday();
+    aj.aj_descr <- d;
+    if aj.aj_interrupted then `Interrupted else `Ok
   | Api.T_done ->
-    Hashtbl.remove self.api_jobs uuid
+    Hashtbl.remove self.api_jobs uuid;
+    `Ok
 
 let api_task_list self : Api.task_list =
   let active, waiting =
@@ -127,8 +150,9 @@ let api_task_list self : Api.task_list =
   let active = ref (List.map Job.to_api_descr active) in
   let waiting = ref (List.map Job.to_api_descr waiting) in
   Hashtbl.iter
-    (fun _ (d,t) ->
-       if d +. timeout_api_expire_s < Unix.gettimeofday() then (
+    (fun _ aj ->
+       let t = aj.aj_descr in
+       if aj.aj_last_seen +. timeout_api_expire_s < Unix.gettimeofday() then (
          Hashtbl.remove self.api_jobs t.Api.t_id; (* timeout *)
        ) else (
          match t.Api.t_status with

@@ -898,15 +898,13 @@ let handle_run (self:t) : unit =
 
 let handle_job_interrupt (self:t) : unit =
   H.add_route_handler self.server ~meth:`POST
-    H.Route.(exact "interrupt" @/ return)
-    (fun _r ->
+    H.Route.(exact "interrupt" @/ string @/ return)
+    (fun uuid _r ->
       Log.debug (fun k->k "interrupt current task");
+      let ok = Task_queue.interrupt self.task_q ~uuid in
+      if not ok then Log.err (fun k->k"could not cancel task `%s`" uuid);
       let r =
-        match Task_queue.cur_job self.task_q with
-        | None -> Ok (Html.to_string @@ html_redirect ~href:"/" "no job to interrupt.")
-        | Some j ->
-          Task_queue.Job.interrupt j;
-          Ok (Html.to_string @@ html_redirect ~href:"/" "job interrupted")
+        Ok (Html.to_string @@ html_redirect ~href:"/" "job interrupted")
       in
       H.Response.make_string ~headers:d_headers r
     )
@@ -1135,9 +1133,12 @@ end = struct
       let m = Api.pb_of_string Api.decode_query s in
       begin match m with
         | Api.Q_task_update t ->
-          Task_queue.api_update_external_job self.task_q t;
-          let r = Api.R_ok in
+          let r = match Task_queue.api_update_external_job self.task_q t with
+            | `Ok -> Api.R_ok
+            | `Interrupted -> Api.R_interrupted
+          in
           Printf.fprintf oc "%s%!" (Api.pb_to_string Api.encode_response r);
+          close_out oc;
       end
     in
     try

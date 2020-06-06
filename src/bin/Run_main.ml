@@ -2,42 +2,67 @@ module T = Test
 module E = CCResult
 type 'a or_error = ('a, string) E.t
 
-let mk_progress_api ~uuid api_port : _ option =
+let mk_progress_api ?interrupted ~uuid api_port : _ option =
+  let module M = CCLock in
   match api_port with
   | None -> None
   | Some p ->
     let task = {
       Api.t_id=Uuidm.to_string uuid;
-      t_descr="run";
+      t_descr="run provers";
       t_status=Api.T_waiting;
     } in
-    let send_ q =
-      let ic, oc =
-        Unix.open_connection (Unix.ADDR_INET(Unix.inet_addr_loopback, p))
-      in
-      try
-        CCFun.finally
-          ~h:(fun () -> close_in_noerr ic; close_out_noerr oc)
-          ~f:(fun () ->
-            Printf.fprintf oc "%s\n%!" (Api.pb_to_string Api.encode_query q))
-      with e ->
-        Logs.err (fun k->k "could not connect to API: %s" (Printexc.to_string e))
+    let period = 0.3 in
+    let bad_tries = ref 0 in (* give up after a while *)
+    let state_and_done = M.create (task,false) in
+    (* separate thread to update the server *)
+    let rec loop_send() =
+      let tsk, is_done = M.get state_and_done in
+      if (period *. float !bad_tries) > 60. then (
+        Logs.info (fun k->k"too many errors, give up on the API");
+      ) else if not is_done then (
+        Logs.debug (fun k->k"send progress api to the server");
+        begin
+          try
+            let ic, oc =
+              Unix.open_connection (Unix.ADDR_INET(Unix.inet_addr_loopback, p))
+            in
+            CCFun.finally
+              ~h:(fun () -> close_in_noerr ic; close_out_noerr oc)
+              ~f:(fun () ->
+                  let q = Api.Q_task_update tsk in
+                  Printf.fprintf oc "%s\n%!" (Api.pb_to_string Api.encode_query q);
+                  close_out oc;
+                  let r = CCIO.read_all ic in
+                  match Api.pb_of_string Api.decode_response r with
+                  | Api.R_error e -> failwith e
+                  | Api.R_ok -> ()
+                  | Api.R_interrupted ->
+                    Logs.warn (fun k->k"interrupted by API");
+                    CCOpt.iter (fun m -> CCLock.set m true) interrupted;
+                );
+              bad_tries := 0
+          with e ->
+            Logs.warn
+              (fun k->k "error when connecting to API: %s" (Printexc.to_string e));
+            incr bad_tries;
+        end;
+        Thread.delay period;
+        loop_send()
+      )
     in
+    let _th_sender = Thread.create loop_send () in
     let r = object
       method on_progress ~percent ~elapsed_time:t ~eta:_ =
-        let q =
-          Api.Q_task_update {
-            task with
-            t_status=Api.T_in_progress {
-                Api.estimated_completion=Int32.of_int percent; time_elapsed=t;
-              };
-          }
-        in
-        send_ q
+        M.update state_and_done
+          (fun (task,_) ->
+            {task with
+              t_status=Api.T_in_progress {
+              Api.estimated_completion=Int32.of_int percent; time_elapsed=t;
+            }},false)
 
       method on_done =
-        let q = Api.Q_task_update { task with t_status=Api.T_done } in
-        send_ q
+        M.set state_and_done ({ task with t_status=Api.T_done }, true) ;
     end
     in
     Some r
@@ -49,15 +74,18 @@ let execute_run_prover_action
   : (_ * T.Compact_result.t) or_error =
   let open E.Infix in
   begin
-    let cb_progress = mk_progress_api ~uuid api_port in
+    let interrupted = CCLock.create false in
+    let cb_progress = mk_progress_api ~interrupted ~uuid api_port in
     Exec_action.Exec_run_provers.expand ?dyn ?j ?timeout ?memory r >>= fun r ->
     let len = List.length r.problems in
     Notify.sendf notify "testing with %d provers, %d problems…"
       (List.length r.provers) len;
-    let progress = Exec_action.Progress_run_provers.make ?cb_progress ?pp_results ?dyn r in
+    let progress =
+      Exec_action.Progress_run_provers.make ?cb_progress ?pp_results ?dyn r in
     (* solve *)
     begin
       Exec_action.Exec_run_provers.run ~uuid ?timestamp
+        ~interrupted:(fun () -> CCLock.get interrupted)
         ~on_solve:progress#on_res ~on_done:(fun _ -> progress#on_done) r
       |> E.add_ctxf "running %d tests" len
     end
@@ -134,7 +162,8 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       Bin_utils.printbox_compact_results results;
       (* try to send a desktop notification *)
       (try CCUnix.call "notify-send 'benchmark done (%s)'"
-             (CCOpt.map_or ~default:"?" Misc.human_duration results.T.cr_meta.total_wall_time) |> ignore
+             (CCOpt.map_or ~default:"?" Misc.human_duration
+                results.T.cr_meta.total_wall_time) |> ignore
        with _ -> ());
       r
   end

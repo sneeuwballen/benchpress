@@ -34,7 +34,10 @@ val push : t -> Task.t -> unit
 val loop : t -> unit
 (** Run forever *)
 
-val api_update_external_job : t -> Api.task_descr -> unit
+val interrupt : t -> uuid:string -> bool
+(** Interrupt task. Returns true on success *)
+
+val api_update_external_job : t -> Api.task_descr -> [`Ok | `Interrupted]
 
 val api_task_list : t -> Api.task_list
 

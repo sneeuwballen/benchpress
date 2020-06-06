@@ -36,5 +36,6 @@ message Response {
  oneof msg {
   string r_error = 1;
   Void r_ok = 2;
+  Void r_interrupted = 3;
  }
 }
