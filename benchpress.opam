@@ -18,6 +18,8 @@ depends: [
   "logs"
   "uuidm"
   "base64"
+  "yojson" { >= "1.6" }
+  "ocaml-protoc" { >= "2.0" & < "3.0" }
   "gnuplot" { >= "0.6" & < "0.8" }
   "sqlite3"
   "sqlite3_utils" { >= "0.3" & < "0.4" }

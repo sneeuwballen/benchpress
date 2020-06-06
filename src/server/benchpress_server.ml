@@ -1047,25 +1047,29 @@ let handle_task_status self =
     (fun _req ->
       let open Html in
       let bod =
-        mk_ul @@ List.flatten [
-          [mk_li [
-              txt @@
-              Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)]];
-          begin match Task_queue.cur_job self.task_q with
-            | None -> []
-            | Some j ->
-              (* display current job *)
-              [mk_li [
-                  div ~a:[a_class ["spinner-border"; "spinner-border-sm"]] [span []];
-                  pre [txt @@
-                       Format.asprintf "current task: %a" Task_queue.Job.pp j];
-                  form ~a:[a_id (uri_of_string "cancel");
-                           a_action (uri_of_string "/interrupt/");
-                           a_method `Post;]
-                    [mk_button ~cls:["btn-warning"] [txt "interrupt"]]]
-              ];
-          end
-        ]
+        let tl = Task_queue.api_task_list self.task_q in
+        if tl.Api.waiting=[] && tl.Api.active=[] then div[]
+        else (
+          mk_ul @@ List.flatten [
+            [mk_li [
+                txt @@
+                Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)]];
+            begin match Task_queue.cur_job self.task_q with
+              | None -> []
+              | Some j ->
+                (* display current job *)
+                [mk_li [
+                    div ~a:[a_class ["spinner-border"; "spinner-border-sm"]] [span []];
+                    pre [txt @@
+                         Format.asprintf "current task: %a" Task_queue.Job.pp j];
+                    form ~a:[a_id (uri_of_string "cancel");
+                             a_action (uri_of_string "/interrupt/");
+                             a_method `Post;]
+                      [mk_button ~cls:["btn-warning"] [txt "interrupt"]]]
+                ];
+            end
+          ]
+        )
       in
       let html = mk_page ~title:"tasks_status" [div [bod]] in
       H.Response.make_string ~headers:d_headers (Ok (Html.to_string html))
@@ -1074,8 +1078,8 @@ let handle_task_status self =
     H.Route.(exact "api" @/ exact "tasks_status" @/ return)
     (fun _req ->
       let j =
-        Task_queue.status self.task_q
-        |> Task_queue.status_to_json
+        Task_queue.basic_status self.task_q
+        |> Task_queue.Basic_status.to_json
       in
       H.Response.make_string ~headers:["Content-Type", "text/json"] (Ok j)
     );
@@ -1121,11 +1125,62 @@ let handle_file self : unit =
         ~code:200 bytes
     )
 
+(** {2 Local API} *)
+module Api_serve : sig
+  val serve : t -> port:int -> unit
+end = struct
+  let process_client (self:t) (ic,oc) : unit =
+    let process() =
+      let s = CCIO.read_all ic in
+      let m = Api.pb_of_string Api.decode_query s in
+      begin match m with
+        | Api.Q_task_update t ->
+          Task_queue.api_update_external_job self.task_q t;
+          let r = Api.R_ok in
+          Printf.fprintf oc "%s%!" (Api.pb_to_string Api.encode_response r);
+      end
+    in
+    try
+      process();
+      close_in ic;
+      close_out oc;
+    with e ->
+      let e = Printexc.to_string e in
+      Log.err (fun k->k "api server: error while serving client: %s" e);
+      (try
+        let r = Api.R_error e in
+        Printf.fprintf oc "%s%!" (Api.pb_to_string Api.encode_response r);
+      with _ -> ());
+      close_in_noerr ic;
+      close_out_noerr oc;
+      ()
+
+  let serve (self:t) ~port : unit =
+    Log.info (fun k->k"serve API on port %d" port);
+    try
+      let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+      Unix.setsockopt sock Unix.SO_REUSEADDR true;
+      Unix.setsockopt_optint sock Unix.SO_LINGER None;
+      Unix.bind sock (Unix.ADDR_INET (Unix.inet_addr_loopback, port));
+      Unix.listen sock 16;
+      while true do
+        let fd, _addr = Unix.accept sock in
+        let ic = Unix.in_channel_of_descr fd in
+        let oc = Unix.out_channel_of_descr fd in
+        Log.debug (fun k->k "api: new connection");
+        let _th = Thread.create (process_client self) (ic,oc) in
+        ()
+      done
+    with e ->
+      Log.err (fun k->k "api server: %s" (Printexc.to_string e));
+      ()
+end
+
 (** {2 Embedded web server} *)
 
 module Cmd = struct
   let main
-      ?(local_only=false) ?port ~dyn_status ~allow_delete
+      ?(local_only=false) ?port ~dyn_status ~allow_delete ~api_port
       (defs:Definitions.t) () =
     try
       let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
@@ -1143,6 +1198,8 @@ module Cmd = struct
           H._enable_debug true;
           k "enable http debug"
         );
+      (* maybe serve the API *)
+      ignore @@ Thread.create (fun()->Api_serve.serve self ~port:api_port) ();
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       handle_root self;
       handle_task_status self;
@@ -1180,11 +1237,13 @@ module Cmd = struct
       Arg.(value & opt bool false & info ["allow-delete"] ~doc:"allow deletion of files")
     and defs =
       Bin_utils.definitions_term
+    and api_port =
+      Arg.(value & opt int Api.default_port & info ["api-port"] ~doc:"API port")
     in
     let doc = "serve embedded web UI on given port" in
-    let aux defs port local_only dyn_status allow_delete () =
-      main ?port ~local_only ~dyn_status ~allow_delete defs () in
-    Term.(pure aux $ defs $ port $ local_only $ dyn_status $ allow_delete $ pure () ),
+    let aux defs port local_only dyn_status allow_delete api_port () =
+      main ?port ~local_only ~dyn_status ~allow_delete ~api_port defs () in
+    Term.(pure aux $ defs $ port $ local_only $ dyn_status $ allow_delete $ api_port $ pure () ),
     Term.info ~doc "serve"
 end
 

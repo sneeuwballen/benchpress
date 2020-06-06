@@ -13,17 +13,19 @@ module Run = struct
   (* sub-command for running tests *)
   let cmd =
     let open Cmdliner in
-    let aux j dyn paths dir_file defs task timeout memory
+    let aux j pp_results dyn paths dir_file defs task timeout memory
         meta provers csv summary no_color
       : (unit,string) E.t =
       if no_color then CCFormat.set_color_default false;
       let dyn = if dyn then Some true else None in
-      Run_main.main ?dyn ~j ?timeout ?memory ?csv ~provers
+      Run_main.main ~pp_results ?dyn ~j ?timeout ?memory ?csv ~provers
         ~meta ?task ?summary ?dir_file defs paths ()
     in
     let defs = Bin_utils.definitions_term
     and dyn =
       Arg.(value & flag & info ["progress"] ~doc:"print progress bar")
+    and pp_results =
+      Arg.(value & opt bool true & info ["pp-results"] ~doc:"print results as they are found")
     and dir_file =
       Arg.(value & opt (some string) None & info ["F"] ~doc:"file containing a list of files")
     and task =
@@ -50,7 +52,7 @@ module Run = struct
     and summary =
       Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
     in
-    Term.(pure aux $ j $ dyn $ paths $ dir_file $ defs $ task $ timeout $ memory
+    Term.(pure aux $ j $ pp_results $ dyn $ paths $ dir_file $ defs $ task $ timeout $ memory
           $ meta $ provers $ csv $ summary $ no_color),
     Term.info ~doc "run"
 end

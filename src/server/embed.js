@@ -75,26 +75,33 @@ function lazyLoadAll() {
 // update the 'dyn-status' object
 function updateTasks() {
     return __awaiter(this, void 0, void 0, function () {
-        var targetNode, st, st_json, s, n1;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
+        var targetNode, st, st_json, s, _i, _a, j, compl, _b, _c, j;
+        return __generator(this, function (_d) {
+            switch (_d.label) {
                 case 0:
                     targetNode = document.getElementById('dyn-status');
                     if (!targetNode) return [3 /*break*/, 3];
                     return [4 /*yield*/, fetch('/api/tasks_status/')];
                 case 1:
-                    st = _a.sent();
+                    st = _d.sent();
                     return [4 /*yield*/, st.json()];
                 case 2:
-                    st_json = _a.sent();
+                    st_json = _d.sent();
                     s = '';
-                    n1 = document.getElementById('dyn-status.n-in-q');
-                    s += "<li class=\"list-group-item\">jobs in queue: " + st_json.in_queue + " </li>";
-                    if (st_json.cur_job) {
-                        s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <pre>current task: (" + st_json.cur_job.elapsed + "s)\n                 " + st_json.cur_job.task + "</pre>\n                <form id=\"cancel\" action=\"/interrupt/\" method=\"POST\">\n                 <button class=\"btn btn-warning\"> interrupt </button>\n                </form> </li>";
+                    for (_i = 0, _a = st_json.active; _i < _a.length; _i++) {
+                        j = _a[_i];
+                        compl = "";
+                        if (j.estimated_completion) {
+                            compl = ", estimated completion: " + j.estimated_completion + "%";
+                        }
+                        s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <p>active task: (uuid: " + j.uuid + ", elapsed: " + (j.time_elapsed || 0) / 1000 + "s" + compl + ")</p>\n                <pre>" + j.descr + "</pre>\n                <form id=\"cancel\" action=\"/interrupt/\" method=\"POST\">\n                 <button class=\"btn btn-warning\"> interrupt </button>\n                </form> </li>";
+                    }
+                    for (_b = 0, _c = st_json.waiting; _b < _c.length; _b++) {
+                        j = _c[_b];
+                        s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <p>waiting task (uuid " + j.uuid + ")</p>\n                <pre>" + j.descr + "</pre>\n                </li>";
                     }
                     targetNode.innerHTML = s;
-                    _a.label = 3;
+                    _d.label = 3;
                 case 3: return [2 /*return*/];
             }
         });

@@ -6,16 +6,13 @@ module Fmt = CCFormat
 module Job : sig
   type t
 
+  val uuid : t -> string
   val task : t -> Task.t
   val interrupt : t -> unit
   val pp : t Fmt.printer
   val to_string : t -> string
 
   val time_elapsed: t -> float
-
-  (* TODO: completion, in [0;1]
-     val completion : t -> float
-  *)
 end
 
 type t
@@ -37,11 +34,14 @@ val push : t -> Task.t -> unit
 val loop : t -> unit
 (** Run forever *)
 
-type status = {
-  cur_job: Job.t option;
-  in_queue: int;
-}
+val api_update_external_job : t -> Api.task_descr -> unit
 
-val status : t -> status
+val api_task_list : t -> Api.task_list
 
-val status_to_json : status -> string
+module Basic_status : sig
+  type t
+
+  val to_json : t -> string
+end
+
+val basic_status : t -> Basic_status.t

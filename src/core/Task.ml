@@ -21,4 +21,5 @@ let pp out (self:t) =
     (pp_opt "synopsis" pp_str) synopsis
     (pp_f "action" @@ Action.pp) action
     (pp_opt "defined_in" pp_str) defined_in
+let to_string = Fmt.to_string pp
 

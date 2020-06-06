@@ -6,8 +6,14 @@
  (wrapped true)
  (libraries containers containers.unix containers.thread containers.sexp re
    re.perl csv iter printbox logs logs.cli ISO8601 gnuplot
-   decoders uuidm sqlite3 sqlite3_utils cmdliner)
+   decoders uuidm sqlite3 sqlite3_utils yojson cmdliner ocaml-protoc)
  (flags :standard -warn-error -3-32-34-50 -safe-string))
+
+(rule
+  (targets api_types.ml api_types.mli api_pp.ml api_pp.mli
+           api_pb.ml api_pb.mli)
+  (deps api.proto)
+  (action (run ocaml-protoc -binary -I . -pp %{deps} -ml_out .)))
 
 (rule
   (targets builtin_config.ml)

@@ -1,0 +1,40 @@
+
+syntax = "proto3";
+
+message Void{}
+
+message TaskProgress {
+ float time_elapsed = 1; // in seconds
+ int32 estimated_completion = 2; // in [0..100]
+}
+
+message TaskDescr {
+ string t_id = 1; // UUID
+ string t_descr = 2; // description
+ oneof t_status {
+  Void t_waiting = 3;
+  TaskProgress t_in_progress = 4;
+  Void t_done = 5;
+ }
+}
+
+// A list of tasks
+message TaskList {
+ repeated TaskDescr active = 1;
+ repeated TaskDescr waiting = 2;
+}
+
+// query
+message Query {
+ oneof msg {
+  TaskDescr q_task_update = 1;
+ }
+}
+
+// Reponse to a query
+message Response {
+ oneof msg {
+  string r_error = 1;
+  Void r_ok = 2;
+ }
+}

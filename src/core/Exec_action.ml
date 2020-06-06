@@ -197,28 +197,52 @@ end = struct
     )
 end
 
-module Progress_run_provers : sig
-  type t = Run_prover_problem.job_res -> unit
-  val nil : t
-  val make : ?dyn:bool -> Exec_run_provers.expanded -> t
-end = struct
-  type t = Run_prover_problem.job_res -> unit
+type cb_progress = <
+  on_progress: percent:int -> elapsed_time:float -> eta:float -> unit;
+  on_done: unit;
+>
 
-  let nil _ = ()
+module Progress_run_provers : sig
+  type t = <
+    on_res: Run_prover_problem.job_res -> unit;
+    on_done: unit;
+  >
+  val nil : t
+  val make :
+    ?cb_progress:cb_progress ->
+    ?pp_results:bool ->
+    ?dyn:bool ->
+    Exec_run_provers.expanded -> t
+  (** Make a progress tracker.
+      @param dyn if true, print a progress bar in the terminal
+      @param pp_results if true, print each individual result as it's found
+      @param on_progress callback when progress is made, with a percentage and ETA
+  *)
+end = struct
+  type t = <
+    on_res: Run_prover_problem.job_res -> unit;
+    on_done: unit;
+  >
+
+  let nil = object method on_res _=() method on_done=() end
 
   (* callback that prints a result *)
   let progress_dynamic len =
     let start = Unix.gettimeofday () in
     let count = ref 0 in
-    fun _ ->
+    let tick() = incr count in
+    let get_state() =
       let time_elapsed = Unix.gettimeofday () -. start in
-      incr count;
-      let len_bar = 50 in
-      let bar = String.init len_bar
-          (fun i -> if i * len <= len_bar * !count then '#' else '-') in
       let percent = if len=0 then 100. else (float_of_int !count *. 100.) /. float_of_int len in
       (* elapsed=(percent/100)*total, so total=elapsed*100/percent; eta=total-elapsed *)
       let eta = time_elapsed *. (100. -. percent) /. percent in
+      percent, time_elapsed, eta
+    in
+    let pp_bar _ =
+      let len_bar = 50 in
+      let bar = String.init len_bar
+          (fun i -> if i * len <= len_bar * !count then '#' else '-') in
+      let percent, time_elapsed, eta = get_state() in
       Misc.synchronized
         (fun () ->
            Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?"
@@ -226,26 +250,47 @@ end = struct
       if !count = len then (
         Misc.synchronized (fun() -> Format.printf "@.")
       )
-
-  let progress ~w_prover ~w_pb ?(dyn=false) n : Run_prover_problem.job_res -> unit =
-    let pp_bar = progress_dynamic n in
-    (function res ->
-       if dyn then output_string stdout Misc.reset_line;
-       Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
-       if dyn then pp_bar res;
-       ())
-
-  let make ?dyn (r:Exec_run_provers.expanded) : t =
-    let len = List.length r.problems in
-    let w_prover =
-      List.fold_left (fun m p -> max m (String.length (Prover.name p)+1)) 0
-        r.provers
-      |> min 25
-    and w_pb =
-      List.fold_left (fun m pb -> max m (String.length pb.Problem.name+1)) 0 r.problems
-      |> min 60
     in
-    progress ~w_prover ~w_pb ?dyn (len * List.length r.provers)
+    pp_bar, get_state, tick
+
+  let progress ~w_prover ~w_pb ?cb_progress ~pp_results ~dyn n : t =
+    let pp_bar, get_state, tick = progress_dynamic n in
+    object
+      method on_res res =
+        tick();
+        if pp_results then Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
+        if dyn then (
+          output_string stdout Misc.reset_line;
+          pp_bar res;
+        );
+        CCOpt.iter
+          (fun cb ->
+            let percent, elapsed_time, eta = get_state() in
+            cb#on_progress ~percent:(int_of_float percent) ~elapsed_time ~eta)
+          cb_progress;
+        ()
+      method on_done =
+        match cb_progress with
+        | None -> ()
+        | Some cb -> cb#on_done
+    end
+
+  let make ?cb_progress ?(pp_results=true) ?(dyn=false) (r:Exec_run_provers.expanded) : t =
+    match cb_progress, pp_results, dyn with
+    | None, false, false ->
+      nil
+    | _ ->
+      let len = List.length r.problems in
+      let w_prover =
+        List.fold_left (fun m p -> max m (String.length (Prover.name p)+1)) 0
+          r.provers
+        |> min 25
+      and w_pb =
+        List.fold_left (fun m pb -> max m (String.length pb.Problem.name+1)) 0 r.problems
+        |> min 60
+      in
+      progress ~w_prover ~w_pb ?cb_progress ~pp_results
+        ~dyn (len * List.length r.provers)
 end
 
 let dump_results_sqlite (results:T.top_result) : unit =
@@ -314,7 +359,8 @@ module Git_checkout = struct
 end
 
 (** Run the given action *)
-let rec run ?interrupted (defs:Definitions.t) (a:Action.t) : unit or_error =
+let rec run ?interrupted ?cb_progress
+    (defs:Definitions.t) (a:Action.t) : unit or_error =
   Misc.err_with
     ~map_err:(fun e -> Printf.sprintf "while running action: %s" e)
     (fun scope ->
@@ -326,13 +372,14 @@ let rec run ?interrupted (defs:Definitions.t) (a:Action.t) : unit or_error =
                ?j:(Definitions.option_j defs) r
              |> scope.unwrap
            in
-           let on_solve =
-             if is_dyn then Progress_run_provers.make ~dyn:true r_expanded
-             else Progress_run_provers.nil
+           let progress =
+             Progress_run_provers.make ~pp_results:true ~dyn:is_dyn
+               ?cb_progress r_expanded
            in
            let uuid = Misc.mk_uuid () in
            let res =
-             Exec_run_provers.run ?interrupted ~on_solve
+             Exec_run_provers.run ?interrupted ~on_solve:progress#on_res
+               ~on_done:(fun _ -> progress#on_done)
                ~timestamp:(Unix.gettimeofday()) ~uuid r_expanded
              |> scope.unwrap
            in

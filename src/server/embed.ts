@@ -36,24 +36,45 @@ function lazyLoadAll() {
     });
 }
 
+interface TaskDescr {
+    descr: string;
+    uuid: string;
+    time_elapsed?: number;
+    estimated_completion?: number;
+}
+interface TaskStatus {
+    active: Array<TaskDescr>;
+    waiting: Array<TaskDescr>;
+}
+
 // update the 'dyn-status' object
 async function updateTasks() {
     const targetNode = document.getElementById('dyn-status');
     if (targetNode) {
         const st = await fetch('/api/tasks_status/');
-        const st_json = await st.json();
+        const st_json = <TaskStatus> await st.json();
         var s = '';
-        let n1 = document.getElementById('dyn-status.n-in-q');
-        s += `<li class="list-group-item">jobs in queue: ${st_json.in_queue} </li>`;
 
-        if (st_json.cur_job) {
+        for (let j of st_json.active) {
+            var compl = "";
+            if (j.estimated_completion) {
+                compl = `, estimated completion: ${j.estimated_completion}%`;
+            }
             s += `<li class="list-group-item">
                 <div class="spinner-border"></div>
-                <pre>current task: (${st_json.cur_job.elapsed}s)
-                 ${st_json.cur_job.task}</pre>
+                <p>active task: (uuid: ${j.uuid}, elapsed: ${(j.time_elapsed||0) / 1000}s${compl})</p>
+                <pre>${j.descr}</pre>
                 <form id="cancel" action="/interrupt/" method="POST">
                  <button class="btn btn-warning"> interrupt </button>
                 </form> </li>`;
+        }
+
+        for (let j of st_json.waiting) {
+            s += `<li class="list-group-item">
+                <div class="spinner-border"></div>
+                <p>waiting task (uuid ${j.uuid})</p>
+                <pre>${j.descr}</pre>
+                </li>`;
         }
 
         targetNode.innerHTML = s;
