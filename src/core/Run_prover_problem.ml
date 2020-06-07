@@ -43,8 +43,9 @@ let pp_result ~w_prover ~w_pb out (res:Test.result): unit =
   let prover = res.program in
   let prover_name = Filename.basename prover in
   let pb_name = res.problem.Problem.name in
-  Logs.info (fun k->k "result for `%s` with %s: %s (%.1fs)"
-                prover_name pb_name (Res.to_string res.res) res.raw.rtime);
+  Logs.info (fun k->k "result for `%s` with %s: %s (%.1fs, expected %s)"
+                prover_name pb_name (Res.to_string res.res) res.raw.rtime
+                (Res.to_string res.problem.Problem.expected));
   Fmt.fprintf out
     "%-*s%-*s : %a (%.1fs)@."
     w_prover (Misc.truncate_right w_prover prover_name)
