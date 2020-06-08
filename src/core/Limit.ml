@@ -81,7 +81,7 @@ module Memory = struct
     let n_tera, n = aux n s_t in
     let n_giga, n = aux n s_g in
     let n_mega, n = aux n s_m in
-    let n_kilo, n_bytes = aux n s_k in
+    let n_kilo, _n_bytes = aux n s_k in
     let print_aux s n =
       if n = 0 then ()
       else CCFormat.fprintf out "%d%s" n s
