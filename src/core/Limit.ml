@@ -90,7 +90,7 @@ module Memory = struct
     print_aux "G" n_giga;
     print_aux "M" n_mega;
     print_aux "k" n_kilo;
-    print_aux "" n
+    print_aux "" n_bytes
 
   (* Creation *)
   let mk ?(b=0) ?(k=0) ?(m=0) ?(g=0) ?(t=0) () =

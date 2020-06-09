@@ -267,7 +267,7 @@ let dec_stack_limit : _ Se.D.decoder =
     "int", int >>= (fun s -> succeed (Limited s));
     "unlimited", string >>= function
       | "unlimited" -> succeed Unlimited
-      | s -> fail_sexp_f "expect 'unlimited' of an integer"
+      | _ -> fail_sexp_f "expect 'unlimited' or an integer"
   ]
 
 let dec_action : action Se.D.decoder =

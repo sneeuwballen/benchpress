@@ -27,10 +27,6 @@ let pp out t =
       CCFormat.string (if t.stack then "stack" else "")
   end
 
-(* Creation *)
-let mk ~time ~memory ~stack =
-  { time; memory; stack; }
-
 (* Make a command to enforce a set of limits *)
 let cmd ~conf ~limits =
   if not conf.time && not conf.memory && not conf.stack then
