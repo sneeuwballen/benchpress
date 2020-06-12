@@ -25,15 +25,13 @@ module Exec_run_provers : sig
     j: int;
     problems: Problem.t list;
     provers: Prover.t list;
-    timeout: int;
-    memory: int;
+    limits : Limit.All.t;
   }
 
   val expand :
     ?j:int ->
-    ?timeout:int ->
     ?dyn:bool ->
-    ?memory:int ->
+    ?limits:Limit.All.t ->
     ?interrupted:(unit -> bool) ->
     t -> expanded or_error
 
@@ -62,8 +60,7 @@ end = struct
     j: int;
     problems: Problem.t list;
     provers: Prover.t list;
-    timeout: int;
-    memory: int;
+    limits : Limit.All.t;
   }
 
   let filter_regex_ = function
@@ -109,13 +106,15 @@ end = struct
       E.of_exn_trace e |> E.add_ctxf "expand_subdir of_dir %a" Subdir.pp s
 
   (* Expand options into concrete choices *)
-  let expand ?j ?timeout ?(dyn=false) ?memory ?interrupted (self:t) : expanded or_error =
+  let expand ?j ?(dyn=false) ?limits ?interrupted (self:t) : expanded or_error =
+    let limits = match limits with
+      | None -> self.limits
+      | Some l -> Limit.All.with_defaults l ~defaults:self.limits
+    in
     let j = j >?? self.j >? Misc.guess_cpu_count () in
-    let timeout = timeout >?? self.timeout >? 60 in
-    let memory = memory >?? self.memory >? 1_000 in
     E.map_l (expand_subdir ~dyn ?interrupted) self.dirs >>= fun problems ->
     let problems = CCList.flatten problems in
-    Ok { j; memory; timeout; problems; provers=self.provers; }
+    Ok { j; limits; problems; provers=self.provers; }
 
   let _nop _ = ()
 
@@ -152,8 +151,7 @@ end = struct
            if interrupted() then E.fail "interrupted"
            else (
              begin
-               Run_prover_problem.run
-                 ~timeout:self.timeout ~memory:self.memory
+               Run_prover_problem.run ~limits:self.limits
                  prover pb >>= fun result ->
                (* insert into DB here *)
                CCLock.with_lock db (fun db ->

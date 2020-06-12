@@ -4,7 +4,7 @@ type +'a t = {
   program : 'a;
   problem : Problem.t;
   res : Res.t;
-  timeout : int;
+  timeout : Limit.Time.t;
   raw : Proc_run_result.t;
 }
 
@@ -14,13 +14,16 @@ let raw e = e.raw
 
 let map ~f e = { e with program = f e.program }
 
+let float_timeout self =
+  Limit.Time.as_float Seconds self.timeout
+
 let analyze_self_ (self:Prover.t t) =
   let res =
     match Prover.analyze_p_opt self.program self.raw with
     | Some x -> x
     | None ->
       if self.raw.errcode = 0 then Res.Unknown
-      else if self.raw.rtime > float self.timeout then Res.Timeout
+      else if self.raw.rtime > float_timeout self then Res.Timeout
       else Res.Error
   in
   { self with res }

@@ -20,6 +20,10 @@ type version_field =
   | Version_git of {dir:string} (* compute by calling git *)
   | Version_cmd of {cmd:string}
 
+type stack_limit =
+  | Unlimited
+  | Limited of int
+
 (** A regex in Perl syntax *)
 type regex = string
 
@@ -32,6 +36,7 @@ type action =
       provers: string list;
       timeout: int option;
       memory: int option;
+      stack : stack_limit option;
     }
   | A_git_checkout of {
       dir: string;
@@ -53,6 +58,8 @@ type t =
 
       binary: string option; (** name of the program itself *)
       binary_deps: string list; (** list of binaries this depends on *)
+
+      ulimits : Ulimit.conf option; (** which limits to enforce using ulimit *)
 
       (* Result analysis *)
       unsat   : regex option;  (** regex for "unsat" *)
@@ -96,16 +103,21 @@ let pp_git_fetch out = function
   | GF_fetch -> Fmt.string out "fetch"
   | GF_pull -> Fmt.string out "pull"
 
+let pp_stack_limit out = function
+  | Unlimited -> Fmt.string out "unlimited"
+  | Limited i -> Fmt.int out i
+
 let rec pp_action out =
   let open Misc.Pp in
   function
-  | A_run_provers {dirs;provers;timeout;memory;pattern;} ->
-    Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a@])"
+  | A_run_provers {dirs;provers;timeout;memory;stack;pattern;} ->
+    Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a%a@])"
       (pp_f "dirs" (pp_l pp_str)) dirs
       (pp_f "provers" (pp_l pp_str)) provers
       (pp_opt "pattern" pp_regex) pattern
       (pp_opt "timeout" Fmt.int) timeout
       (pp_opt "memory" Fmt.int) memory
+      (pp_opt "stack" pp_stack_limit) stack
   | A_progn l -> Fmt.fprintf out "(@[progn %a@])" (pp_l pp_action) l
   | A_run_cmd s -> Fmt.fprintf out "(@[run_cmd %a@])" pp_regex s
   | A_git_checkout {dir;ref;fetch_first} ->
@@ -125,14 +137,15 @@ let pp out =
       (pp_opt "pattern" pp_regex) pattern
   | St_prover {
       name; cmd; version; unsat; sat; unknown; timeout; memory;
-      binary=_; binary_deps=_; custom;
+      binary=_; binary_deps=_; custom; ulimits;
     } ->
     let pp_custom out (x,y) =
       Fmt.fprintf out "(@[tag %a@ %a@])" pp_str x pp_regex y in
-    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a@])"
+    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a@])"
       (pp_f "name" pp_str) name
       (pp_f "cmd" pp_str) cmd
       (pp_opt "version" pp_version_field) version
+      (pp_opt "ulimits" Ulimit.pp) ulimits
       (pp_opt "sat" pp_regex) sat
       (pp_opt "unsat" pp_regex) unsat
       (pp_opt "unknown" pp_regex) unknown
@@ -211,6 +224,26 @@ let dec_version : _ Se.D.decoder =
       | s -> fail_sexp_f "invalid `version` constructor: %s" s);
   ]
 
+let dec_ulimits : _ Se.D.decoder =
+  let open Se.D in
+  let no_limits = Ulimit.mk ~time:false ~memory:false ~stack:false in
+  let none =
+    string >>= function
+    | "none" -> succeed no_limits
+    | _ -> fail_sexp_f {|expected "none"|}
+  in
+  let single_limit acc =
+    string >>= function
+    | "time" -> succeed { acc with Ulimit.time = true; }
+    | "memory" -> succeed { acc with Ulimit.memory = true; }
+    | "stack" -> succeed { acc with Ulimit.stack = true; }
+    | s -> fail_sexp_f "expected 'ulimit' stanzas (constructors: time|memory|stack, not %S)" s
+  in
+  one_of [
+    "atom", none;
+    "list", list_fold_left single_limit no_limits;
+  ]
+
 let list_or_singleton d =
   let open Se.D in
   value >>= fun s ->
@@ -228,6 +261,15 @@ let dec_fetch_first =
   | "pull" -> succeed GF_pull
   | _ -> fail_f "expected `fetch` or `pull`"
 
+let dec_stack_limit : _ Se.D.decoder =
+  let open Se.D in
+  one_of [
+    "int", int >>= (fun s -> succeed (Limited s));
+    "unlimited", string >>= function
+      | "unlimited" -> succeed Unlimited
+      | _ -> fail_sexp_f "expect 'unlimited' or an integer"
+  ]
+
 let dec_action : action Se.D.decoder =
   let open Se.D in
   fix (fun self ->
@@ -238,7 +280,8 @@ let dec_action : action Se.D.decoder =
         field_opt "pattern" dec_regex >>= fun pattern ->
         field_opt "timeout" int >>= fun timeout ->
         field_opt "memory" int >>= fun memory ->
-        succeed @@ A_run_provers {dirs;provers;timeout;memory;pattern}
+        field_opt "stack" dec_stack_limit >>= fun stack ->
+        succeed @@ A_run_provers {dirs;provers;timeout;memory;stack;pattern}
       | "progn" -> list_or_singleton self >|= fun l -> A_progn l
       | "run_cmd" -> list1 string >|= fun s -> A_run_cmd s
       | "git_checkout" ->
@@ -277,10 +320,12 @@ let dec tags : (_ list * t) Se.D.decoder =
     field_opt "unknown" dec_regex >>= fun unknown ->
     field_opt "timeout" dec_regex >>= fun timeout ->
     field_opt "memory" dec_regex >>= fun memory ->
+    field_opt "ulimit" dec_ulimits >>= fun ulimits ->
     list_filter tag >>= fun custom ->
     succeed @@
     (tags, St_prover {
-      name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
+        name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
+        ulimits;
       binary=None;
       binary_deps=[]; (* TODO *)
     })

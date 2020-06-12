@@ -32,6 +32,9 @@ type t = {
   cmd: string;          (* the command line to run.
                            possibly contains $binary, $file, $memory and $timeout *)
 
+  (* whether some limits should be enforced/set by ulimit *)
+  ulimits : Ulimit.conf;
+
   (* Result analysis *)
   unsat   : string option;  (* regex for "unsat" *)
   sat     : string option;  (* regex for "sat" *)
@@ -68,31 +71,47 @@ val equal : t -> t -> bool
 (** Equality (by name) *)
 
 exception Subst_not_found of string
+(** Raised during substitution when a pattern to substitute
+    was unknown.
+    TODO: maybe simply leave these patterns as is ? *)
+
+exception Missing_subst_value of string
+(** Raised during substitution when a known pattern was to
+    be substituted, but there was no available value for
+    that parameter (i.e. typically, the optional argument to the
+    subst function was not provided / was [None]). *)
+
+val subst :
+  ?binary:string ->
+  ?file:string ->
+  ?f:(string -> string option) ->
+  unit -> (string -> string)
+(** Return a substitution function adequate for {!interpolate_cmd},
+    that performs the substitutions of the given parameters (binary,
+    memory, timeout, file) or defers to the fallback [?f] argument.
+    @raise Subst_not_found when the fallback function returns [None]
+    @raise Missing_subst_value when a parameter that is know to be
+      substituted (e.g. "$file"), was not given a value (e.g.
+      [?file:None]). *)
 
 val interpolate_cmd :
   ?env:(string * string) array ->
-  ?binary:string ->
-  ?timeout:int -> ?memory:int -> ?file:string ->
-  ?f:(string -> string option) ->
+  subst:(string -> string) ->
   string -> string
-(** Interpolate the given parameters (env, timeout, memory, etc.)
-    in the given string.
-    @param f called for other interpolations
+(** Interpolate a command using the given substitution function.
     @raise Subst_not_found if a variable is found, that is not substituted
     into any of the parameters nor by [f] *)
 
 val make_command :
   ?env:(string * string) array ->
+  limits:Limit.All.t ->
   t ->
-  timeout:int ->
-  memory:int ->
   file:string ->
   string
 
 val run :
   ?env:(string * string) array ->
-  timeout:int ->
-  memory:int ->
+  limits:Limit.All.t ->
   file:string ->
   t ->
   Proc_run_result.t

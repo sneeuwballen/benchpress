@@ -29,6 +29,9 @@ type t = {
   cmd: string;
   (* the command line to run. Possibly contains $binary, $file, $memory and $timeout *)
 
+  (* whether some limits should be enforced/set by ulimit *)
+  ulimits : Ulimit.conf;
+
   (* Result analysis *)
   unsat   : string option;  (* regex for "unsat" *)
   sat     : string option;  (* regex for "sat" *)
@@ -93,14 +96,15 @@ end
 
 let pp out self =
   let open Misc.Pp in
-  let {name; version; cmd; unsat; sat; timeout; unknown; memory;
+  let {name; version; cmd; ulimits; unsat; sat; timeout; unknown; memory;
        binary; custom; binary_deps=_; defined_in} = self in
   Fmt.fprintf out
-    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a@])"
+    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a%a@])"
     (pp_f "name" pp_str) name
     (pp_f "version" Version.pp) version
     (pp_f "cmd" pp_str) cmd
     (pp_f "binary" pp_str) binary
+    (pp_f "ulimit" Ulimit.pp) ulimits
     (pp_opt "sat" pp_regex) sat
     (pp_opt "unsat" pp_regex) unsat
     (pp_opt "memory" pp_regex) memory
@@ -110,39 +114,38 @@ let pp out self =
     (pp_l1 (pp_pair pp_str pp_regex)) custom
 
 exception Subst_not_found of string
+exception Missing_subst_value of string
 
-let interpolate_cmd
-    ?(env=[||])
-    ?(binary="")
-    ?(timeout=1)
-    ?(memory=5_000_000)
-    ?(file="")
-    ?(f=fun _->None)
-    cmd =
+let subst_aux name = function
+    | Some v -> v
+    | None -> raise (Missing_subst_value name)
+
+let subst ?binary ?file ?(f=fun _ -> None) () = function
+  | "file" as s -> subst_aux s file
+  | "binary" as s -> subst_aux s binary
+  | s -> begin match f s with
+      | Some res -> res
+      | None -> raise (Subst_not_found s)
+    end
+
+let interpolate_cmd ?(env=[||]) ~subst cmd =
   let buf = Buffer.create 32 in
-  let add_str s =
-    Buffer.add_substitute buf
-      (function
-        | "memory" -> string_of_int memory
-        | "timeout" | "time" -> string_of_int timeout
-        | "file" -> file
-        | "binary" -> binary
-        | s ->
-          match f s with
-          | Some u -> u
-          | None -> raise (Subst_not_found s))
-      s
-  in
-  add_str "ulimit -t \\$(( 1 + $time)) -v \\$(( 1200 * $memory )); ";
+  let add_str s = Buffer.add_substitute buf subst s in
   Array.iter
     (fun (key,value) -> add_str (key ^ "=" ^ value ^ " "))
     env;
   add_str cmd;
   Buffer.contents buf
 
-let make_command ?env prover ~timeout ~memory ~file =
+let make_command ?env ~limits prover ~file =
   let binary = prover.binary in
-  try interpolate_cmd ?env ~binary ~timeout ~memory ~file prover.cmd
+  let limit_subst = Limit.All.substitute limits
+      ~time_as:Seconds
+      ~memory_as:Megabytes
+      ~stack_as:Megabytes
+  in
+  try interpolate_cmd ?env prover.cmd
+        ~subst:(subst ~binary ~file ~f:limit_subst ())
   with Subst_not_found s ->
     failwith (Printf.sprintf
                 "cannot make command for prover %s: cannot find field %s" prover.name s)
@@ -208,17 +211,16 @@ let run_proc cmd =
     (fun k->k "stdout:\n%s\nstderr:\n%s" stdout stderr);
   { Proc_run_result. stdout; stderr; errcode; rtime; utime; stime; }
 
-let run ?env ~timeout ~memory ~file (self:t) : Proc_run_result.t =
+let run ?env ~limits ~file (self:t) : Proc_run_result.t =
   Logs.debug ~src:src_log
-    (fun k->k "(@[Prover.run %s timeout: %d, memory: %d@])" self.name timeout memory);
-  (* limit time and memory ('v' is virtual memory, needed because 'm' ignored on linux) *)
-  let memory' = memory * 1000 in
-  let memory_v = memory * 1000 * 8 in (* give 8 times more virtual mem, for JVM *)
-  let prefix =
-    Printf.sprintf "ulimit -t %d -m %d -Sv %d; " timeout memory' memory_v
-  in
-  let cmd = make_command ?env self ~timeout ~memory ~file in
-  let cmd = prefix ^ cmd in
+    (fun k->k "(@[Prover.run %s %a@])" self.name Limit.All.pp limits);
+  let cmd = make_command ?env ~limits self ~file in
+  (* Give one more second to the ulimit timeout to account for the startup
+     time and the time elasped between starting ulimit and starting the prover *)
+  let prefix = Ulimit.cmd ~conf:self.ulimits ~limits:(
+      Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits
+    ) in
+  let cmd = Ulimit.prefix_cmd ?prefix ~cmd in
   run_proc cmd
 
 let analyze_p_opt (self:t) (r:Proc_run_result.t) : Res.t option =
@@ -254,7 +256,10 @@ let db_prepare (db:Db.t) : unit or_error =
       sat text not null,
       unknown text not null,
       timeout text not null,
-      memory text not null
+      memory text not null,
+      ulimit_time text not null,
+      ulimit_mem text not null,
+      ulimit_stack text not null
     );
 
   create table if not exists
@@ -271,9 +276,10 @@ let to_db db (self:t) : unit or_error =
   let str_or = CCOpt.get_or ~default:"" in
   Misc.err_with (fun scope ->
     Db.exec_no_cursor db
-      {|insert into prover values (?,?,?,?,?,?,?,?) on conflict do nothing;
+      {|insert into prover values (?,?,?,?,?,?,?,?,?,?,?) on conflict do nothing;
       |}
-      ~ty:Db.Ty.(p3 text text blob @>> text @> p4 text text text text)
+      ~ty:Db.Ty.(p3 text text blob @>> text @>
+                 p4 text text text text @>> p3 text text text)
       self.name
       (Version.ser_sexp self.version)
       self.binary
@@ -282,7 +288,10 @@ let to_db db (self:t) : unit or_error =
       (self.unknown |> str_or)
       (self.timeout |> str_or)
       (self.memory |> str_or)
-      |> Misc.db_err ~ctx:"prover.to-db" |> scope.unwrap;
+      (self.ulimits.time |> string_of_bool)
+      (self.ulimits.memory |> string_of_bool)
+      (self.ulimits.stack |> string_of_bool)
+    |> Misc.db_err ~ctx:"prover.to-db" |> scope.unwrap;
     if self.custom <> [] then (
       List.iter
         (fun (tag,re) ->
@@ -321,6 +330,25 @@ let of_db db name : t or_error =
              (fun k->k "prover.of_db: could not find tags: %s"(Printexc.to_string e));
            []
        in
+       let ulimits =
+         try
+           Db.exec_exn db
+             {| select ulimit_time, ulimit_mem, ulimit_stack
+                from prover where name=? ; |} name
+             ~f:Db.Cursor.get_one_exn
+             ~ty:Db.Ty.(p1 text, p3 any_str any_str any_str,
+                        fun time memory stack ->
+                          let time = bool_of_string time in
+                          let memory = bool_of_string memory in
+                          let stack = bool_of_string stack in
+                          Ulimit.mk ~time ~memory ~stack)
+         with _ ->
+           Logs.debug (fun k -> k
+                          "prover.of_db: not ulimit_* fields, assuming defaults");
+           { time = true;
+             memory = true;
+             stack = false; }
+       in
        Db.exec db
          {|select
             version, binary, unsat, sat, unknown, timeout, memory
@@ -341,7 +369,7 @@ let of_db db name : t or_error =
                       let timeout = nonnull timeout in
                       let memory = nonnull memory in
                       { name; cmd; binary_deps=[]; defined_in=None; custom;
-                        version; binary;unsat;sat;unknown;timeout;memory})
+                        version; binary; ulimits; unsat;sat;unknown;timeout;memory})
        |> scope.unwrap_with Db.Rc.to_string
        |> CCOpt.to_result "expected a result"
        |> scope.unwrap
