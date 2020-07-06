@@ -20,18 +20,18 @@ let equal x y = compare x y = 0
 let pp out t =
   if not t.time && not t.memory && not t.stack then
     CCFormat.fprintf out "none"
-  else begin
+  else (
     CCFormat.fprintf out "(%a%a%a)"
       CCFormat.string (if t.time then "time " else "")
       CCFormat.string (if t.memory then "memory " else "")
       CCFormat.string (if t.stack then "stack" else "")
-  end
+  )
 
 (* Make a command to enforce a set of limits *)
 let cmd ~conf ~limits =
-  if not conf.time && not conf.memory && not conf.stack then
+  if not conf.time && not conf.memory && not conf.stack then (
     None
-  else begin
+  ) else (
     let buf = Buffer.create 32 in
     let subst s =
       (* this should be safe as we only use pattern recognized
@@ -46,11 +46,11 @@ let cmd ~conf ~limits =
     in
     let add_str s = Buffer.add_substitute buf subst s in
     Buffer.add_string buf "ulimit ";
-    if conf.time then add_str "-t $timeout";
-    if conf.memory then add_str "-Sv $memory";
-    if conf.stack then add_str "-s $stack";
+    if conf.time && CCOpt.is_some limits.time then add_str "-t $timeout";
+    if conf.memory && CCOpt.is_some limits.memory then add_str "-Sv $memory";
+    if conf.stack && CCOpt.is_some limits.stack then add_str "-s $stack";
     Some (Buffer.contents buf)
-  end
+  )
 
 let prefix_cmd ?prefix ~cmd =
   match prefix with

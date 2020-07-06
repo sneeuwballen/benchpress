@@ -122,7 +122,7 @@ module All : sig
   val with_defaults : defaults:t -> t -> t
   (** [with_defaults ~defaults t] is the same as t, except for limits
       of [t] which were [None], in which case the value from [defaults]
-      is used (which can itself alos be [None]). *)
+      is used (which can itself also be [None]). *)
 
   exception Limit_missing of string
   (** Exception raised by {!substitute} when trying to substitute a
@@ -135,8 +135,8 @@ module All : sig
     t -> (string -> string option)
   (** Given a set of limits, and a view for each of these limits,
       return a substitution function adequate for use with
-      {!Buffer.ass_substitute}.
-      @raise Limit_missing if a limit is neede for substitution
+      {!Buffer.add_substitute}.
+      @raise Limit_missing if a limit is needed for substitution
         but not present in the argument. *)
 
 end
