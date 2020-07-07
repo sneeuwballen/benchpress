@@ -39,7 +39,7 @@ function lazyLoadAll() {
 interface TaskDescr {
     descr: string;
     uuid: string;
-    time_elapsed?: number;
+    time_elapsed?: string;
     estimated_completion?: number;
 }
 interface TaskStatus {
@@ -62,7 +62,7 @@ async function updateTasks() {
             }
             s += `<li class="list-group-item">
                 <div class="spinner-border"></div>
-                <p>active task: (uuid: ${j.uuid}, elapsed: ${(j.time_elapsed||0) / 1000}s${compl})</p>
+                <p>active task: (uuid: ${j.uuid}, elapsed: ${j.time_elapsed}${compl})</p>
                 <pre>${j.descr}</pre>
                 <form id="cancel" action="/interrupt/${j.uuid}/" method="POST">
                  <button class="btn btn-warning"> interrupt </button>

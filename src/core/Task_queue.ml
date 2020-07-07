@@ -178,7 +178,7 @@ module Basic_status = struct
          | Api.T_done -> ["status", `String "done"]
          | Api.T_in_progress {time_elapsed=t; estimated_completion=c} ->
            ["status", `String "done";
-            "time_elapsed", `Int (int_of_float (t *. 1000.));
+            "time_elapsed", `String (Misc.human_duration t);
             "estimated_completion", `Int (Int32.to_int c)
            ])
       ]
