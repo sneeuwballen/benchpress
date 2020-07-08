@@ -91,7 +91,7 @@ function updateTasks() {
                     for (_i = 0, _a = st_json.active; _i < _a.length; _i++) {
                         j = _a[_i];
                         compl = "";
-                        if (j.estimated_completion) {
+                        if (j.estimated_completion !== undefined) {
                             compl = ", estimated completion: " + j.estimated_completion + "%";
                         }
                         s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <p>active task: (uuid: " + j.uuid + ", elapsed: " + j.time_elapsed + compl + ")</p>\n                <pre>" + j.descr + "</pre>\n                <form id=\"cancel\" action=\"/interrupt/" + j.uuid + "/\" method=\"POST\">\n                 <button class=\"btn btn-warning\"> interrupt </button>\n                </form> </li>";
