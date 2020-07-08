@@ -38,7 +38,10 @@ module Job = struct
     let t_id = self.j_uuid in
     let t_descr = Task.to_string self.j_task in
     let t_status = if started self then (
-        Api.T_in_progress {Api.time_elapsed=time_elapsed self; estimated_completion=0l}
+        Api.T_in_progress {
+          Api.time_elapsed=time_elapsed self;
+          estimated_completion=Int32.of_int self.j_percent_completion;
+        }
       ) else Api.T_waiting
     in
     {Api.t_id; t_descr; t_status }

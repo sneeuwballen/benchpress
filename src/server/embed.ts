@@ -57,7 +57,7 @@ async function updateTasks() {
 
         for (let j of st_json.active) {
             var compl = "";
-            if (j.estimated_completion) {
+            if (j.estimated_completion !== undefined) {
                 compl = `, estimated completion: ${j.estimated_completion}%`;
             }
             s += `<li class="list-group-item">
