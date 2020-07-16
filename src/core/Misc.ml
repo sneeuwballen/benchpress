@@ -44,11 +44,27 @@ module Log_report = struct
       Format.fprintf fmt "@[<2>[%a|t%d] %a@ "
         ISO8601.Permissive.pp_datetime now Thread.(id @@ self()) pp_h header
     in
+    let out, err =
+      match Sys.getenv "LOGS_FILE" with
+      | "" -> stdout, stderr
+      | file ->
+        begin
+          try
+            let oc = open_out file in
+            at_exit (fun () -> close_out_noerr oc);
+            oc, oc
+          with e ->
+            Printf.eprintf "error: cannot open log file '%s': %s\n%!"
+              file (Printexc.to_string e);
+            stdout,stderr
+          end
+      | exception Not_found -> stdout, stderr
+    in
     let report src level ~over k msgf =
       let k _ =
         begin match level with
-          | Logs.App -> output_string stdout (app_flush ()); flush stdout
-          | _ -> output_string stderr (dst_flush ()); flush stderr
+          | Logs.App -> output_string out (app_flush ()); flush out
+          | _ -> output_string err (dst_flush ()); flush err
         end;
         over ();
         k ()
