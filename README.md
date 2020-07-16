@@ -32,6 +32,7 @@ Logitest relies on a bunch of utilities, besides OCaml libraries:
 
 ## Options
 
+
 Most of the commands accept `-c <config file>` to specify which config files to use.
 
 - `benchpress --help` to list options
@@ -48,7 +49,14 @@ Most of the commands accept `-c <config file>` to specify which config files to 
 - `benchpress prover-show <prover>` to show the definition of a prover
 - `benchpress list-files` to list the results
 - `benchpress show <result>` to show the content of the result file
-- `benchpress serve` to open a HTTP server on a port (default `8080`),
+
+- `-v` and `-vv` can be used to get more verbose output.
+- if the environment variable `LOGS_FILE` is set to a filename, logs will be
+  written to that file.
+
+### Web interface
+
+- `benchpress-server` is a daemon listening on a local port (default `8080`),
   which provides a basic web UI.
 
 ## Config File
