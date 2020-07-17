@@ -521,9 +521,9 @@ let handle_show_detailed (self:t) : unit =
     (fun db_file req ->
       let params = H.Request.query req in
       let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
-      let filter_res = try List.assoc "res" params |> U.percent_encode with Not_found -> "" in
-      let filter_prover = try List.assoc "prover" params |> U.percent_encode with Not_found -> "" in
-      let filter_pb = try List.assoc "pb" params |> U.percent_encode with Not_found -> "" in
+      let filter_res = try List.assoc "res" params with Not_found -> "" in
+      let filter_prover = try List.assoc "prover" params with Not_found -> "" in
+      let filter_pb = try List.assoc "pb" params with Not_found -> "" in
       let page_size = 25 in
       Log.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
                      db_file offset filter_pb filter_res filter_prover);
