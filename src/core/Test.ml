@@ -652,6 +652,13 @@ end = struct
          s)
 end
 
+(** {2 Utils} *)
+
+(** Cleanup a wildcard query for sqlite filtering *)
+let clean_s wildcard s =
+  let s = String.trim s in
+  if s="" then "%" else if wildcard then "%"^s^"%" else s
+
 (** {2 Top Result}
 
     Main result of testing: a snapshot of the work done, + the analysis
@@ -665,6 +672,12 @@ type top_result = {
   analyze: (Prover.name * Analyze.t) list;
   db: Db.t; (* in-memory database *)
 }
+
+(** Filter on the list of all results *)
+type tr_filter =
+  | TRF_all
+  | TRF_different (** different results *)
+  | TRF_bad (** inconsistent results *)
 
 module Top_result : sig
   type t = top_result
@@ -730,10 +743,14 @@ module Top_result : sig
 
   val db_to_table :
     ?offset:int -> ?page_size:int ->
-    ?provers:string list -> Db.t -> table
+    ?provers:string list ->
+    ?filter_pb:string ->
+    ?filter_res:tr_filter ->
+    Db.t -> table
   val to_table :
     ?offset:int -> ?page_size:int ->
-    ?provers:string list -> t -> table
+    ?provers:string list ->
+    t -> table
 
   val table_to_csv : table -> Csv.t
 
@@ -752,6 +769,8 @@ module Top_result : sig
   val db_to_printbox_table :
     ?offset:int -> ?page_size:int ->
     ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
+    ?filter_pb:string ->
+    ?filter_res:tr_filter ->
     Db.t -> PrintBox.t
 
   val to_printbox_bad : t -> (string * PrintBox.t) list
@@ -825,10 +844,12 @@ end = struct
     t_provers: string list;
   }
 
-  let db_to_table ?(offset=0) ?(page_size=max_int) ?provers (db:Db.t): table =
+  let db_to_table ?(offset=0) ?(page_size=max_int) ?provers
+      ?(filter_pb="") ?(filter_res=TRF_all)
+      (db:Db.t): table =
     let c = Misc.Chrono.start() in
     Misc.err_with
-      ~map_err:(Printf.sprintf "while converting to CSV table: %s")
+      ~map_err:(Printf.sprintf "while converting to table: %s")
       (fun scope ->
          Db.transact db @@ fun _ ->
          let meta = Metadata.of_db db |> scope.unwrap in
@@ -842,11 +863,28 @@ end = struct
            | Some l -> l
            | None -> list_provers db |> scope.unwrap
          in
-         let files = Db.exec db
-             {| select distinct file from prover_res
-                limit ? offset ?
-             ; |} page_size offset
-             ~ty:Db.Ty.(p2 int int, p1 text, id) ~f:Db.Cursor.to_list_rev
+         let filter_pb = clean_s true filter_pb in
+         let filter_res_clause = match filter_res with
+           | TRF_all -> ""
+           | TRF_different ->
+             " and exists (select p1.prover, p2.prover \
+              from prover_res p1, prover_res p2 \
+              where p1.prover != p2.prover and p1.res != p2.res \
+              and p1.file = r.file and p2.file = r.file)"
+           | TRF_bad ->
+             " and exists (select p1.prover, p2.prover \
+              from prover_res p1, prover_res p2 \
+              where p1.prover != p2.prover and p1.res != p2.res \
+              and p1.res in ('sat','unsat') and p2.res in ('sat','unsat') \
+              and p1.file = r.file and p2.file = r.file)"
+         in
+         let files =
+           Db.exec db
+             (Printf.sprintf {| select distinct file from prover_res r
+               where file like ? %s limit ? offset ?
+             ; |} filter_res_clause)
+             filter_pb page_size offset
+             ~ty:Db.Ty.(p3 text int int, p1 text, id) ~f:Db.Cursor.to_list_rev
                      |> scope.unwrap_with Db.Rc.to_string
          in
          Logs.info (fun k->k"to_table: found %d files in %.3fs" (List.length files)
@@ -940,8 +978,10 @@ end = struct
     let a = analyze self in
     Analyze.to_printbox_l a
 
-  let db_to_printbox_table ?offset ?page_size ?link_pb ?link_res db =
-    table_to_printbox ?link_pb ?link_res @@ db_to_table ?offset ?page_size db
+  let db_to_printbox_table ?offset ?page_size ?link_pb
+      ?link_res ?filter_pb ?filter_res db =
+    table_to_printbox ?link_pb ?link_res @@
+    db_to_table ?offset ?page_size ?filter_pb ?filter_res db
 
   let to_printbox_table ?offset ?page_size ?link_pb ?link_res self =
     table_to_printbox ?link_pb ?link_res @@ to_table ?offset ?page_size self
@@ -1110,10 +1150,6 @@ end = struct
   let list_keys ?(offset=0) ?(page_size=500)
       ?(filter_prover="") ?(filter_pb="") ?(filter_res="")
       db : (key list*_*_) or_error =
-    let clean_s wildcard s =
-      let s = String.trim s in
-      if s="" then "%" else if wildcard then "%"^s^"%" else s
-    in
     let filter_prover = clean_s true filter_prover in
     let filter_pb = clean_s true filter_pb in
     (* no wildcard here, as "sat" would match "unsat"… *)

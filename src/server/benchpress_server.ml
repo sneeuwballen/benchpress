@@ -439,6 +439,19 @@ let handle_show_errors (self:t) : unit =
         H.Response.make_string (Ok (Html.to_string_elt h))
     )
 
+let trf_of_string = function
+  | "bad" -> Some Test.TRF_bad
+  | "different" -> Some Test.TRF_different
+  | "all" -> Some Test.TRF_all
+  | s ->
+    Log.warn (fun k->k "unknown table filter: %S" s);
+    None
+
+let string_of_trf = function
+  | Test.TRF_bad -> "bad"
+  | Test.TRF_different -> "different"
+  | Test.TRF_all -> "all"
+
 (* show full table for a file *)
 let handle_show_as_table (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
@@ -447,13 +460,19 @@ let handle_show_as_table (self:t) : unit =
       let chrono = Misc.Chrono.start() in
       let params = H.Request.query req in
       let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
+      let filter_pb = try List.assoc "pb" params with Not_found -> "" in
+      let filter_res =
+        try trf_of_string @@ List.assoc "res" params
+        with Not_found -> None
+      in
       let page_size = 25 in
       Bin_utils.with_file_as_db file (fun _scope db ->
         let full_table =
           let link_res prover pb ~res =
             PB.link ~uri:(uri_show_single file prover pb) (PB.text res)
           in
-          Test.Top_result.db_to_printbox_table ~offset ~link_pb:link_get_file
+          Test.Top_result.db_to_printbox_table
+            ?filter_res ~filter_pb ~offset ~link_pb:link_get_file
             ~page_size ~link_res db
         in
         Log.info (fun k->k "loaded table[offset=%d] in %.3fs"
@@ -484,6 +503,31 @@ let handle_show_as_table (self:t) : unit =
                 true;
               ];
              dyn_status self];
+            [div ~a:[a_class ["container-fluid"]] @@
+             [form ~a:[a_action (uri_show_table file);
+                       a_method `Get;
+                       a_class ["form-row"; "form-inline"]]
+                [
+                  input ~a:[a_name "pb";
+                            a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                            a_value filter_pb;
+                            a_placeholder "problem";
+                            a_input_type `Text] ();
+                  select ~a:[a_name "res";
+                             a_class ["form-control"; "select"; "m-3"];
+                            ] @@
+                  List.map
+                    (fun trf ->
+                       let sel = if Some trf = filter_res then [a_selected()] else [] in
+                       let s = string_of_trf trf in
+                       option ~a:(sel @[a_value s]) (txt s))
+                    [Test.TRF_all; Test.TRF_bad; Test.TRF_different];
+                  mk_button
+                    ~cls:["btn-info"; "btn-sm"; "btn-success"; "m-3";]
+                    [txt "filter"];
+                ]
+             ]
+            ];
             [h3 [txt "full results"];
              div [pb_html full_table]];
           ]
