@@ -1083,10 +1083,11 @@ module Detailed_res : sig
     ?filter_prover:string ->
     ?filter_pb:string ->
     ?filter_res:string ->
-    Db.t -> (key list * bool) or_error
+    Db.t -> (key list * int * bool) or_error
   (** List available results.
-      @returns pair [l, is_done], where [is_done] is true if there are
-      no more results *)
+      @returns tuple [l, n, is_done], where [is_done] is true if there are
+      no more results, and [n] is the total number of results (not just
+      those in [l]). *)
 
   type t = Prover.t Run_result.t
   (** Detailed result *)
@@ -1108,7 +1109,7 @@ end = struct
 
   let list_keys ?(offset=0) ?(page_size=500)
       ?(filter_prover="") ?(filter_pb="") ?(filter_res="")
-      db : (key list*_) or_error =
+      db : (key list*_*_) or_error =
     let clean_s wildcard s =
       let s = String.trim s in
       if s="" then "%" else if wildcard then "%"^s^"%" else s
@@ -1121,6 +1122,18 @@ end = struct
       ~map_err:(Printf.sprintf "when listing detailed results: %s")
       (fun scope ->
          let tags = Prover.tags_of_db db in
+         (* count total number of results *)
+         let n =
+           Db.exec db
+             {|select count(*)
+               from prover_res
+               where prover like ? and res like ? and file like ?|}
+             ~ty:Db.Ty.(p3 text text text, p1 int, id) ~f:Db.Cursor.get_one_exn
+             filter_prover filter_res filter_pb
+           |> E.map_err
+             (fun e -> Printf.sprintf "sqlite error: %s" (Db.Rc.to_string e))
+           |> scope.unwrap
+         in
          (* ask for [limit+1] entries *)
          let l =
            Db.exec db
@@ -1144,9 +1157,9 @@ end = struct
          in
          if List.length l > page_size then (
            (* there are more result, cut the last one *)
-           CCList.take page_size l, false
+           CCList.take page_size l, n, false
          ) else (
-           l, true
+           l, n, true
          )
       )
 

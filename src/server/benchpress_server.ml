@@ -529,7 +529,7 @@ let handle_show_detailed (self:t) : unit =
                      db_file offset filter_pb filter_res filter_prover);
       Bin_utils.with_file_as_db db_file
         (fun scope db ->
-           let l, complete =
+           let l, n, complete =
              Test.Detailed_res.list_keys
                ~page_size ~offset ~filter_prover ~filter_res ~filter_pb db
              |> scope.unwrap in
@@ -560,7 +560,7 @@ let handle_show_detailed (self:t) : unit =
                ];
               dyn_status self;
               div ~a:[a_class ["container"]] [
-                h2 [txt "detailed results"];
+                h2 [txt (spf "detailed results (%d total)" n)];
                 div ~a:[a_class ["navbar"; "navbar-expand-lg"]] @@
                 [div ~a:[a_class ["container-fluid"]] @@
                  [form ~a:[a_action (uri_show_detailed db_file);
