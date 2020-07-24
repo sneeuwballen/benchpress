@@ -159,6 +159,7 @@ end = struct
     port: int;
     mutable bad_tries: int;
     mutable conn: conn option;
+    mutable gaveup_at: float; (* timestamp for last time we gave up *)
   }
 
   let cl_id_ = ref 0
@@ -167,12 +168,17 @@ end = struct
     let cl_id = !cl_id_ in
     incr cl_id_;
     Log.debug (fun k->k"create client cl_id=%d host=%S port=%d" cl_id host port);
-    { host; port; conn=None; bad_tries=0; cl_id; }
+    { host; port; conn=None; bad_tries=0; cl_id; gaveup_at=0.; }
 
+  (* cool off before we try again *)
+  let cool_off = 30.
+
+  (* maximum number of failed connections before giving up *)
   let max_bad_tries = 5
 
   let rec mk_conn_ (self:t) : conn =
     if self.bad_tries > max_bad_tries then (
+      self.gaveup_at <- Unix.gettimeofday();
       failwith "maximum number of bad tries exceeded, give up"
     ) else (
       match
@@ -185,8 +191,9 @@ end = struct
       | exception e ->
         Logs.debug
           (fun k->k "error when trying to connect to API: %s" (Printexc.to_string e));
-        (* try again *)
+        (* try again, after 1s *)
         self.bad_tries <- 1 + self.bad_tries;
+        Thread.delay 1.;
         mk_conn_ self
     )
 
@@ -194,6 +201,10 @@ end = struct
     match self.conn with
     | Some c -> c
     | None ->
+      if Unix.gettimeofday () -. self.gaveup_at > cool_off then (
+        (* we can try again *)
+        self.bad_tries <- 0;
+      );
       let c = mk_conn_ self in
       self.conn <- Some c;
       c
@@ -202,11 +213,17 @@ end = struct
     Printf.fprintf oc "%d %s\r\n%s%!" (String.length body) name body
 
   let call (self:t) name ~enc ~dec (x:'a) : _ result =
+    Log.debug (fun k->k "make API call %s" name);
     try
       (* I do not like sigpipe, no I don't *)
       ignore (Unix.sigprocmask Unix.SIG_BLOCK [Sys.sigpipe] : _ list);
       (* get connection *)
-      let conn = get_or_create_conn_ self in
+      let conn =
+        try get_or_create_conn_ self
+        with e ->
+          self.conn <- None;
+          raise e
+      in
       Log.debug (fun k->k "client.call meth=%S cl_id=%d" name self.cl_id);
       let body = pb_to_string enc x in
       write_call_ conn.oc name body;

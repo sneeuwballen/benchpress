@@ -312,7 +312,8 @@ end
 (** {2 List Active Tasks} *)
 
 module Task_run_list = struct
-  let run port =
+  let run debug port =
+    Misc.setup_logs debug;
     let client = Api.Client.create ~port () in
     match Api.Client.call client "task_list"
             ~enc:Api.encode_empty {Api.v=()}
@@ -329,8 +330,10 @@ module Task_run_list = struct
     let port =
       Arg.(value & opt int Api.default_port &
            info ["p";"--port"] ~doc:"port to connect to")
+    and debug =
+      Logs_cli.level ()
     in
-    Term.(pure run $ port), Term.info ~doc "task-running"
+    Term.(pure run $ debug $ port), Term.info ~doc "task-running"
 end
 
 (** {2 Convert results to Sql} *)

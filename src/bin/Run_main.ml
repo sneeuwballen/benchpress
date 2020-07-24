@@ -30,7 +30,7 @@ let mk_progress_api ?interrupted ~uuid api_port : _ option =
             Logs.warn (fun k->k"task %a interrupted by API!" Api.pp_task_descr tsk);
             CCOpt.iter (fun m -> CCLock.set m true) interrupted;
           | Error e ->
-            Logs.debug
+            Logs.err
               (fun k->k "error when connecting to API: %s" e);
         end;
         Thread.delay period;
