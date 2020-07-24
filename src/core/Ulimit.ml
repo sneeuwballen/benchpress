@@ -46,9 +46,9 @@ let cmd ~conf ~limits =
     in
     let add_str s = Buffer.add_substitute buf subst s in
     Buffer.add_string buf "ulimit ";
-    if conf.time && CCOpt.is_some limits.time then add_str "-t $timeout";
-    if conf.memory && CCOpt.is_some limits.memory then add_str "-Sv $memory";
-    if conf.stack && CCOpt.is_some limits.stack then add_str "-s $stack";
+    if conf.time && CCOpt.is_some limits.time then add_str "-t $timeout ";
+    if conf.memory && CCOpt.is_some limits.memory then add_str "-Sv $memory ";
+    if conf.stack && CCOpt.is_some limits.stack then add_str "-s $stack ";
     Some (Buffer.contents buf)
   )
 
