@@ -128,7 +128,11 @@ end = struct
     (* prepare DB *)
     let db_file = db_file_for_uuid ~timestamp uuid in
     let db = Sqlite3.db_open ~mutex:`FULL db_file in
-    Db.setup_timeout db ~ms:500;
+    let ms = match Sys.getenv "BENCHPRESS_BUSY_TIMEOUT" with
+      | n -> int_of_string n
+      | exception Not_found -> 3000
+    in
+    Db.setup_timeout db ~ms;
     T.Top_result.db_prepare db >>= fun () ->
     T.Metadata.to_db db
       {T.timestamp=Some timestamp; uuid; total_wall_time=None;

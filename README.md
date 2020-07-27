@@ -32,6 +32,7 @@ Logitest relies on a bunch of utilities, besides OCaml libraries:
 
 ## Options
 
+### CLI options
 
 Most of the commands accept `-c <config file>` to specify which config files to use.
 
@@ -53,6 +54,15 @@ Most of the commands accept `-c <config file>` to specify which config files to 
 - `-v` and `-vv` can be used to get more verbose output.
 - if the environment variable `LOGS_FILE` is set to a filename, logs will be
   written to that file.
+
+### ENV var options
+
+Some internal parameters of benchpress can be set using environment variables:
+
+- "BENCHPRESS_BUSY_TIMEOUT" controls the busy timeout of the sql database used
+  by benchpress, in miliseconds. Default is 3000.
+
+
 
 ### Web interface
 
