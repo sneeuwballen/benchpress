@@ -226,9 +226,11 @@ module Par_map = struct
     let module P = CCPool.Make(struct
         let max_size = j
       end) in
-    let res =
-      P.Fut.map_l (fun x -> P.Fut.make1 f_with_sem x) l
-      |> P.Fut.get
+    let res = match l with
+      | [] -> []
+      | _ ->
+        P.Fut.map_l (fun x -> P.Fut.make1 f_with_sem x) l
+        |> P.Fut.get
     in
     Logs.debug (fun k->k "par-map: stop pool");
     P.stop();
