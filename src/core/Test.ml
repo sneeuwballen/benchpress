@@ -150,6 +150,8 @@ end
 
 (** {2 Basic analysis of results} *)
 
+type string_linker = string -> string
+type prover_string_linker = Prover.name -> string_linker
 type path_linker = Problem.path -> PrintBox.t
 type prover_path_linker = Prover.name -> Problem.path -> PrintBox.t
 type prover_path_res_linker = Prover.name -> Problem.path -> res:string -> PrintBox.t
@@ -173,8 +175,9 @@ module Analyze : sig
   val of_db_for : ?full:bool -> Db.t -> prover:Prover.name -> t or_error
   val of_db : ?full:bool -> Db.t -> (Prover.name * t) list or_error
 
-  val to_printbox : t -> PrintBox.t
-  val to_printbox_l : (Prover.name * t) list -> (string*PrintBox.t) list
+  val to_printbox : ?link:string_linker -> t -> PrintBox.t
+  val to_printbox_l : ?link:prover_string_linker ->
+    (Prover.name * t) list -> (string*PrintBox.t) list
   val to_printbox_bad : ?link:path_linker -> t -> PrintBox.t
   val to_printbox_bad_l :
     ?link:prover_path_linker ->
@@ -291,21 +294,32 @@ end = struct
   let is_ok r = r.bad = 0
   let num_failed r = r.bad
 
-  let to_printbox (r:t) : PrintBox.t =
+  let to_printbox ?link:to_link (r:t) : PrintBox.t =
     let open PB in
+    let mk_row ?ex lbl n mk_box =
+      match to_link with
+      | Some f when n>0 ->
+        let uri =
+          let ex = CCOpt.get_or ~default:lbl ex in
+          f ex in
+        lbl, PB.link ~uri (mk_box n)
+      | _ -> lbl, mk_box n
+    in
     let {improved; disappoint; ok; bad; total; errors; errors_full=_; bad_full=_} = r in
     let fields = [
-      "improved", pb_int_color Style.(fg_color Green) improved;
-      "ok", pb_int_color Style.(fg_color Green) ok;
-      "disappoint", pb_int_color Style.(fg_color Blue) disappoint;
-      "bad", pb_int_color Style.(fg_color Red) bad;
-      "errors", pb_int_color Style.(fg_color Cyan) errors;
+      mk_row "improved" improved @@ pb_int_color Style.(fg_color Green);
+      mk_row "ok" ok @@ pb_int_color Style.(fg_color Green);
+      mk_row "disappoint" disappoint @@ pb_int_color Style.(fg_color Blue);
+      mk_row "bad" bad @@ pb_int_color Style.(fg_color Red);
+      mk_row ~ex:"error" "errors" errors @@ pb_int_color Style.(fg_color Cyan);
       "total", int total;
     ] in
     pb_v_record ~bars:true fields
 
-  let to_printbox_l =
-    CCList.map (fun (p, a) -> p, to_printbox a)
+  let to_printbox_l ?link =
+    CCList.map (fun (p, a) ->
+        let link = CCOpt.map (fun f -> f p) link in
+        p, to_printbox ?link a)
 
   let to_printbox_bad ?link:(mk_link=default_linker) r : PrintBox.t =
     let open PB in
@@ -1108,6 +1122,14 @@ end = struct
          make ~meta ~provers events |> scope.unwrap)
 end
 
+(** Filter on detailed results *)
+type expect_filter =
+  | TD_expect_improved
+  | TD_expect_ok
+  | TD_expect_disappoint
+  | TD_expect_bad
+  | TD_expect_error
+
 module Detailed_res : sig
   type key = {
     prover: Prover.name;
@@ -1123,6 +1145,7 @@ module Detailed_res : sig
     ?filter_prover:string ->
     ?filter_pb:string ->
     ?filter_res:string ->
+    ?filter_expect:expect_filter ->
     Db.t -> (key list * int * bool) or_error
   (** List available results.
       @returns tuple [l, n, is_done], where [is_done] is true if there are
@@ -1148,12 +1171,26 @@ end = struct
   type t = Prover.t Run_result.t
 
   let list_keys ?(offset=0) ?(page_size=500)
-      ?(filter_prover="") ?(filter_pb="") ?(filter_res="")
+      ?(filter_prover="") ?(filter_pb="") ?(filter_res="") ?filter_expect
       db : (key list*_*_) or_error =
     let filter_prover = clean_s true filter_prover in
     let filter_pb = clean_s true filter_pb in
     (* no wildcard here, as "sat" would match "unsat"… *)
     let filter_res = clean_s false filter_res in
+    let filter_expect = match filter_expect with
+      | None -> ""
+      | Some TD_expect_error -> " and res = 'error'"
+      | Some TD_expect_ok ->
+        " and res = file_expect and file_expect in ('sat','unsat')"
+      | Some TD_expect_disappoint ->
+        " and not (res in ('sat','unsat')) and file_expect in ('sat','unsat')"
+      | Some TD_expect_bad ->
+        " and res in ('sat','unsat') \
+        and res != file_expect
+        and file_expect in ('sat','unsat')"
+      | Some TD_expect_improved ->
+        " and res in ('sat', 'unsat') and not (file_expect in ('sat','unsat'))"
+    in
     Misc.err_with
       ~map_err:(Printf.sprintf "when listing detailed results: %s")
       (fun scope ->
@@ -1161,9 +1198,10 @@ end = struct
          (* count total number of results *)
          let n =
            Db.exec db
-             {|select count(*)
+             (Printf.sprintf {|select count(*)
                from prover_res
-               where prover like ? and res like ? and file like ?|}
+               where prover like ? and res like ? %s and file like ?|}
+                filter_expect)
              ~ty:Db.Ty.(p3 text text text, p1 int, id) ~f:Db.Cursor.get_one_exn
              filter_prover filter_res filter_pb
            |> E.map_err
@@ -1173,12 +1211,12 @@ end = struct
          (* ask for [limit+1] entries *)
          let l =
            Db.exec db
-             {|select distinct prover, file, res, file_expect, rtime
+             (Printf.sprintf {|select distinct prover, file, res, file_expect, rtime
                from prover_res
-               where prover like ? and res like ? and file like ?
+               where prover like ? and res like ? %s and file like ?
                order by file, prover desc
                 limit ? offset ?
-              ; |}
+              ; |} filter_expect)
              ~ty:Db.Ty.(p5 text text text int int,
                         p5 text any_str text text float,
                         fun prover file res file_expect rtime ->

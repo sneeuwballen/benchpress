@@ -197,13 +197,17 @@ let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
 let uri_gnuplot pb = spf "/show-gp/%s" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s" (U.percent_encode pb)
 let uri_show_detailed
-    ?(offset=0) ?(filter_prover="") ?(filter_pb="") ?(filter_res="") pb =
-  spf "/show_detailed/%s/?%s%s%soffset=%d"
+    ?(offset=0) ?(filter_prover="") ?(filter_pb="")
+    ?(filter_res="") ?(filter_expect="") pb =
+  spf "/show_detailed/%s/?%s%s%s%soffset=%d"
     (U.percent_encode pb)
     (if filter_prover="" then "" else spf "prover=%s&" @@ U.percent_encode filter_prover)
     (if filter_pb="" then "" else spf "pb=%s&" @@ U.percent_encode filter_pb)
     (if filter_res="" then "" else spf "res=%s&" @@ U.percent_encode filter_res)
+    (if filter_expect="" then ""
+     else spf "expect=%s&" @@ U.percent_encode filter_expect)
     offset
+
 let uri_prover_in file prover =
   spf "/prover-in/%s/%s/" (U.percent_encode file) (U.percent_encode prover)
 let uri_show_table ?(offset=0) file =
@@ -262,14 +266,21 @@ let handle_show (self:t) : unit =
     let link prover = PB.link (PB.text prover) ~uri:(uri_prover_in file prover) in
     Test.Metadata.to_printbox ~link cr.T.cr_meta
   in
-  let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
+  let box_summary =
+    Test.Analyze.to_printbox_l
+      ~link:(fun p r ->
+          uri_show_detailed ~filter_prover:p ~filter_expect:r file)
+      cr.T.cr_analyze in
   let box_stat =
     let to_link prover tag =
       uri_show_detailed ~filter_prover:prover ~filter_res:tag file
     in
     Test.Stat.to_printbox_l ~to_link cr.T.cr_stat
   in
-  let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
+  (* TODO: make one table instead? with links to detailed comparison
+     (i.e. as-table with proper filters) *)
+  let box_compare_l =
+    Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
   let uri_plot = uri_gnuplot file in
   let uri_err = uri_error_bad file in
   Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
@@ -335,9 +346,9 @@ let handle_show (self:t) : unit =
          box_compare_l);
     ]
   in
-  Log.info (fun k->k "show:turned into html in %.3fs"
+  Log.info (fun k->k "show: turned into html in %.3fs"
                (Misc.Chrono.since_last chrono));
-  Log.debug (fun k->k "successful reply for %S" file);
+  Log.debug (fun k->k "show: successful reply for %S" file);
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
 (* prover in a given file *)
@@ -544,7 +555,7 @@ let handle_show_as_table (self:t) : unit =
             mk_button
               ~cls:["btn-info"; "btn-sm"; "btn-success"; "m-3";]
               [txt "filter"];
-          ]
+          ];
        ]
       ];
       [h3 [txt "full results"];
@@ -570,6 +581,16 @@ let mk_file_summary filename m : _ Html.elt =
   in
   mk_a ~a:(a_href url_show :: title) [txt entry_descr]
 
+let l_all_expect = ["improved"; "ok"; "disappoint"; "bad"; "error"]
+
+let expect_of_string = function
+  | "improved" -> Ok (Some Test.TD_expect_improved)
+  | "ok" -> Ok (Some Test.TD_expect_ok)
+  | "disappoint" -> Ok (Some Test.TD_expect_disappoint)
+  | "bad" -> Ok (Some Test.TD_expect_bad)
+  | "error" -> Ok (Some Test.TD_expect_error)
+  | e -> Error (spf "unknown 'expect' filter: %S" e)
+
 (* show list of individual results with URLs to single results for a file *)
 let handle_show_detailed (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
@@ -580,6 +601,11 @@ let handle_show_detailed (self:t) : unit =
   let params = H.Request.query req in
   let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
   let filter_res = try List.assoc "res" params with Not_found -> "" in
+  let filter_expect =
+    try scope.unwrap_with (add_err_code 400) @@
+      expect_of_string @@ List.assoc "expect" params
+    with Not_found -> None
+  in
   let filter_prover = try List.assoc "prover" params with Not_found -> "" in
   let filter_pb = try List.assoc "pb" params with Not_found -> "" in
   let page_size = 25 in
@@ -589,7 +615,7 @@ let handle_show_detailed (self:t) : unit =
   @@ fun scope db ->
   let l, n, complete =
     Test.Detailed_res.list_keys
-      ~page_size ~offset ~filter_prover ~filter_res ~filter_pb db
+      ~page_size ~offset ~filter_prover ~filter_res ?filter_expect ~filter_pb db
     |> scope.unwrap_with (add_err_code 500) in
   Log.debug (fun k->k "got %d results in %.3fs, complete=%B"
                 (List.length l) (Misc.Chrono.elapsed chrono) complete);
@@ -627,25 +653,33 @@ let handle_show_detailed (self:t) : unit =
                   a_class ["form-row"; "form-inline"]]
            [
              input ~a:[a_name "prover";
-                       a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                       a_class ["form-control"; "form-control-sm"; "m-1"; "p-1"];
                        a_value filter_prover;
                        a_placeholder "prover";
                        a_input_type `Text] ();
              input ~a:[a_name "pb";
-                       a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                       a_class ["form-control"; "form-control-sm"; "m-1"; "p-1"];
                        a_value filter_pb;
                        a_placeholder "problem";
                        a_input_type `Text] ();
              input ~a:[a_name "res";
-                       a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                       a_class ["form-control"; "form-control-sm"; "m-1"; "p-1"];
                        a_value filter_res;
                        a_placeholder "result";
                        a_input_type `Text] ();
+             input ~a:[a_name "expect";
+                       a_class ["form-control-sm"; "m-1"; "p-1"];
+                       a_value (try List.assoc "expect" params with _ -> "");
+                       a_list "expect_l"] ();
              mk_button
                ~cls:["btn-info"; "btn-sm"; "btn-success";
-                     "m-3";]
+                     "m-1"; "p-1"]
                [txt "filter"];
            ];
+         datalist ~a:[a_id "expect_l"; a_class ["datalist"; "m-1"]; ]
+           ~children:(`Options (
+               List.map (fun v -> option ~a:[a_value v] @@ txt v) l_all_expect))
+          ();
         ];
        ]];
      let rows =
@@ -782,6 +816,7 @@ let handle_compare self : unit =
               Log.err (fun k->k"cannot compare %s and %s: %s" f1 f2 e);
               H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1 f2
           in
+          (* TODO: graph *)
           vlist ~bars:false [
             text f1; text f2;
             Test.pb_v_record @@
