@@ -212,231 +212,249 @@ let uri_show_csv file = "/show_csv/"^U.percent_encode file
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
+(* wrap the query to turn results into failed queries
+   @param f takes a chrono and a [scope] for failing *)
+let query_wrap mkctx
+    (f:Misc.Chrono.t -> (string*int) Misc.try_scope -> _) =
+  let chrono = Misc.Chrono.start () in
+  let f' scope =
+    try f chrono scope
+    with Sqlite3_utils.Type_error d ->
+      scope.unwrap @@
+      Error (spf "db type error on %s" (Sqlite3_utils.Data.to_string_debug d), 500)
+  in
+  Misc.err_with f'
+    ~map_err:(fun (e,code) -> spf "in %s:\n%s" (mkctx()) e, code)
+  |> E.catch
+    ~ok:(fun h ->
+        let code = h.H.Response.code in
+        let succ = code >= 200 && code < 300 in
+        let duration = Misc.Chrono.elapsed chrono in
+        Log.debug
+          (fun k->k
+              "%s (code %d) after %.3fs for %s"
+              (if succ then "successful reply" else "failure") code duration
+              (mkctx())
+            );
+        h)
+    ~err:(fun (e,code) ->
+        let duration = Misc.Chrono.elapsed chrono in
+        Log.err (fun k->k "error after %.3fs in %s (code %d):\n%s"
+                    duration (mkctx()) code e);
+        H.Response.fail ~code "internal error for %s:\n%s" (mkctx()) e)
+
+let add_err_code i x = x,i
+
 (* show individual files *)
 let handle_show (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show" @/ string_urlencoded @/ return)
-    (fun file _req ->
-      Log.info (fun k->k "----- start show %s -----" file);
-      let chrono = Misc.Chrono.start () in
-      match Bin_utils.load_file_summary ~full:false file with
-      | Error e ->
-        Log.err (fun k->k "cannot load %S:\n%s" file e);
-        H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok (_file_full, cr) ->
-        Log.info (fun k->k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
-        let box_meta =
-          let link prover =
-            (* link to the prover locally *)
-            PB.link (PB.text prover) ~uri:(uri_prover_in file prover)
-          in
-          Test.Metadata.to_printbox ~link cr.T.cr_meta
-        in
-        let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
-        let box_stat =
-          let to_link prover tag =
-            uri_show_detailed ~filter_prover:prover ~filter_res:tag file
-          in
-          Test.Stat.to_printbox_l ~to_link cr.T.cr_stat
-        in
-        let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
-        let uri_plot = uri_gnuplot file in
-        let uri_err = uri_error_bad file in
-        Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
-        let h =
-          let open Html in
-          mk_page ~title:"show" @@
-          List.flatten [
-            [mk_navigation [uri_show file, "show", true];
-             dyn_status self;
-             h3 [txt file];
-             mk_row @@
-             CCList.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@
-             List.flatten [
-               [ mk_a ~cls:["btn-info";"btn-sm"]
-                   ~a:[a_href (uri_show_detailed file)]
-                   [txt "show individual results"];
-                 mk_a ~cls:["btn-info";"btn-sm"]
-                   ~a:[a_href (uri_show_csv file)]
-                   [txt "download as csv"];
-                 mk_a ~cls:["btn-info";"btn-sm"]
-                   ~a:[a_href (uri_show_table file)]
-                   [txt "show table of results"];
-               ];
-               if self.allow_delete then [
-                 form ~a:[a_method `Post] [
-                   mk_button ~cls:["btn-danger";"btn-sm"]
-                     ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/"); ]
-                     [txt "delete"];
-                 ]] else [];
-               ]
-            ];
-            [h3 [txt "Summary"]; div [pb_html box_meta]];
-            (CCList.flat_map
-               (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
-               box_stat);
-            (* TODO: use lazy load for this? *)
-            (CCList.flat_map
-               (fun (n,pb) ->
-                  [h3 [txt ("summary for " ^ n)];
-                   mk_a ~cls:["btn-link"; "btn-sm"; "h-50"]
-                     ~a:[a_href (Printf.sprintf "/show_csv/%s?provers=%s"
-                                   (U.percent_encode file) (U.percent_encode n))]
-                     [txt "download as csv"];
-                   mk_a ~cls:["btn-link"; "btn-sm"]
-                     ~a:[a_href (uri_show_detailed ~filter_prover:n file)]
-                     [txt "see detailed results"];
-                   div [pb_html pb];
-                  ])
-               box_summary);
-            (* lazy loading *)
-            [div ~a:[a_class ["lazy-load"];
-                     Unsafe.string_attrib "x_src" uri_err ] []];
-            [img
-               ~src:uri_plot
-               ~a:[a_class ["img-fluid"];
-                   Unsafe.string_attrib "loading" "lazy";
-                  ]
-               ~alt:"cactus plot of provers" ()];
-            (CCList.flat_map
-               (fun (n1,n2,p) ->
-                  [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)];
-                   div [pb_html p]])
-               box_compare_l);
-          ]
-        in
-        Log.info (fun k->k "show:turned into html in %.3fs"
-                           (Misc.Chrono.since_last chrono));
-        Log.debug (fun k->k "successful reply for %S" file);
-        H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
-    )
+  @@ fun file _req ->
+  query_wrap (fun()-> spf "/show/%s" file)
+  @@ fun chrono scope ->
+  Log.info (fun k->k "----- start show %s -----" file);
+  let _file_full, cr =
+    Bin_utils.load_file_summary ~full:false file
+    |> scope.unwrap_with (add_err_code 404) in
+  Log.info (fun k->k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
+  let box_meta =
+    (* link to the prover locally *)
+    let link prover = PB.link (PB.text prover) ~uri:(uri_prover_in file prover) in
+    Test.Metadata.to_printbox ~link cr.T.cr_meta
+  in
+  let box_summary = Test.Analyze.to_printbox_l cr.T.cr_analyze in
+  let box_stat =
+    let to_link prover tag =
+      uri_show_detailed ~filter_prover:prover ~filter_res:tag file
+    in
+    Test.Stat.to_printbox_l ~to_link cr.T.cr_stat
+  in
+  let box_compare_l = Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
+  let uri_plot = uri_gnuplot file in
+  let uri_err = uri_error_bad file in
+  Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
+  let h =
+    let open Html in
+    mk_page ~title:"show" @@
+    List.flatten [
+      [mk_navigation [uri_show file, "show", true];
+       dyn_status self;
+       h3 [txt file];
+       mk_row @@
+       CCList.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@
+       List.flatten [
+         [ mk_a ~cls:["btn-info";"btn-sm"]
+             ~a:[a_href (uri_show_detailed file)]
+             [txt "show individual results"];
+           mk_a ~cls:["btn-info";"btn-sm"]
+             ~a:[a_href (uri_show_csv file)]
+             [txt "download as csv"];
+           mk_a ~cls:["btn-info";"btn-sm"]
+             ~a:[a_href (uri_show_table file)]
+             [txt "show table of results"];
+         ];
+         if self.allow_delete then [
+           form ~a:[a_method `Post] [
+             mk_button ~cls:["btn-danger";"btn-sm"]
+               ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/"); ]
+               [txt "delete"];
+           ]] else [];
+       ]
+      ];
+      [h3 [txt "Summary"]; div [pb_html box_meta]];
+      (CCList.flat_map
+         (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
+         box_stat);
+      (* TODO: use lazy load for this? *)
+      (CCList.flat_map
+         (fun (n,pb) ->
+            [h3 [txt ("summary for " ^ n)];
+             mk_a ~cls:["btn-link"; "btn-sm"; "h-50"]
+               ~a:[a_href (Printf.sprintf "/show_csv/%s?provers=%s"
+                             (U.percent_encode file) (U.percent_encode n))]
+               [txt "download as csv"];
+             mk_a ~cls:["btn-link"; "btn-sm"]
+               ~a:[a_href (uri_show_detailed ~filter_prover:n file)]
+               [txt "see detailed results"];
+             div [pb_html pb];
+            ])
+         box_summary);
+      (* lazy loading *)
+      [div ~a:[a_class ["lazy-load"];
+               Unsafe.string_attrib "x_src" uri_err ] []];
+      [img
+         ~src:uri_plot
+         ~a:[a_class ["img-fluid"];
+             Unsafe.string_attrib "loading" "lazy";
+            ]
+         ~alt:"cactus plot of provers" ()];
+      (CCList.flat_map
+         (fun (n1,n2,p) ->
+            [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)];
+             div [pb_html p]])
+         box_compare_l);
+    ]
+  in
+  Log.info (fun k->k "show:turned into html in %.3fs"
+               (Misc.Chrono.since_last chrono));
+  Log.debug (fun k->k "successful reply for %S" file);
+  H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
 (* prover in a given file *)
 let handle_prover_in (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "prover-in" @/ string_urlencoded @/ string_urlencoded @/ return)
-    (fun file p_name _req ->
-      Log.info (fun k->k "----- start prover-in %s %s -----" file p_name);
-      let r = Bin_utils.with_file_as_db file (fun scope db ->
-          let prover = Prover.of_db db p_name |> scope.unwrap in
-          let open Html in
-          mk_page ~title:"prover"
-            [
-              mk_navigation [
-                uri_show file, "file", false;
-                uri_prover_in file p_name, "prover", true;
-              ];
-              dyn_status self;
-              div [
-                pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
-                begin match prover.Prover.defined_in with
-                  | None -> span[]
-                  | Some f ->
-                    div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
-                end;
-              ]
-            ]
-        ) in
-      match r with
-      | Ok h ->
-        Log.debug (fun k->k "successful reply for prover-in/%S/%s" file p_name);
-        H.Response.make_string (Ok (Html.to_string h))
-      | Error e ->
-        Log.err (fun k->k "error in prover-in/%S/%s:\n%s" file p_name e);
-        H.Response.fail ~code:500 "could not show prover %s for %S:\n%s" file p_name e
+  @@ fun file p_name _req ->
+  query_wrap (fun() -> spf "prover-in-file/%s/%s" file p_name)
+  @@ fun _chrono scope ->
+  Log.info (fun k->k "----- start prover-in %s %s -----" file p_name);
+  Bin_utils.with_file_as_db file
+    (fun scope db ->
+       let prover =
+         Prover.of_db db p_name |> scope.unwrap_with (add_err_code 500) in
+       let open Html in
+       let h = mk_page ~title:"prover"
+           [
+             mk_navigation [
+               uri_show file, "file", false;
+               uri_prover_in file p_name, "prover", true;
+             ];
+             dyn_status self;
+             div [
+               pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
+               begin match prover.Prover.defined_in with
+                 | None -> span[]
+                 | Some f ->
+                   div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+               end;
+             ]
+           ]
+       in
+       H.Response.make_string (Ok (Html.to_string h))
     )
+  |> scope.unwrap
 
 (* gnuplot for a file *)
 let handle_show_gp (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-gp" @/ string_urlencoded @/ return)
-    (fun file _req ->
-      Log.info (fun k->k "----- start show-gp %s -----" file);
-      match Bin_utils.mk_file_full file with
-      | Error e ->
-        Log.err (fun k->k "cannot load %S:\n%s" file e);
-        H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok file_full ->
-        let chrono = Misc.Chrono.start() in
-        let cactus_plot =
-          let open E.Infix in
-          try
-            Test.Cactus_plot.of_file file_full >|= fun plot ->
-            Test.Cactus_plot.to_png plot
-          with e ->
-            let e = Printexc.to_string e in
-            Log.err (fun k->k "failure to build a cactus plot: %s" e);
-            Error e
-        in
-        Log.info (fun k->k "rendered to gplot in %.3fs" (Misc.Chrono.since_last chrono));
-        begin match cactus_plot with
-         | Error e ->
-           Log.err (fun k->k "successful reply for show-gp/%S" file);
-           H.Response.make_string
-             (Error (500, Printf.sprintf "<failed to load cactus plot: %s>" e))
-         | Ok plot ->
-           Log.debug (fun k->k "encode png file of %d bytes" (String.length plot));
-           Log.debug (fun k->k "successful reply for show-gp/%S" file);
-           H.Response.make_string
-             ~headers:H.Headers.([] |> set "content-type" "image/png")
-             (Ok plot)
-        end
-    )
+  @@ fun file _req ->
+  query_wrap (fun() -> spf "show-gp/%s" file)
+  @@ fun chrono scope ->
+  Log.info (fun k->k "----- start show-gp %s -----" file);
+  let file_full =
+    Bin_utils.mk_file_full file
+    |> scope.unwrap_with (add_err_code 404) in
+  let cactus_plot =
+    let open E.Infix in
+    try
+      Test.Cactus_plot.of_file file_full >|= fun plot ->
+      Test.Cactus_plot.to_png plot
+    with e ->
+      let e = Printexc.to_string e in
+      Log.err (fun k->k "failure to build a cactus plot: %s" e);
+      Error e
+  in
+  Log.info (fun k->k "rendered to gplot in %.3fs" (Misc.Chrono.since_last chrono));
+  let plot = cactus_plot |> scope.unwrap_with (add_err_code 500) in
+  Log.debug (fun k->k "encode png file of %d bytes" (String.length plot));
+  Log.debug (fun k->k "successful reply for show-gp/%S" file);
+  H.Response.make_string
+    ~headers:H.Headers.([] |> set "content-type" "image/png")
+    (Ok plot)
 
 let handle_show_errors (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-err" @/ string_urlencoded @/ return)
-    (fun file _req ->
-      Log.info (fun k->k "----- start show-err %s -----" file);
-      let chrono = Misc.Chrono.start() in
-      match Bin_utils.load_file_summary ~full:true file with
-      | Error e ->
-        Log.err (fun k->k "cannot find %S:\n%s" file e);
-        H.Response.fail ~code:500 "could not load %S:\n%s" file e
-      | Ok (_file_full, cr) ->
-        Log.info (fun k->k "show-err: loaded full summary in %.3fs"
-                     (Misc.Chrono.since_last chrono));
-        let link_file = link_show_single file in
-        let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
-        let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
-        Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
-        let mk_dl_file l =
-          let open Html in
-          let data =
-            "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
-          in
-          mk_a ~cls:["btn"; "btn-link";"btn-sm"]
-            ~a:[a_download (Some "problems.txt"); a_href data]
-          [txt "download list"]
-        in
-        let h =
-          let open Html in
-          (* FIXME: only optional? *)
-          div @@
-          (*           mk_page ~title:"show-err" @@ *)
-          List.flatten [
-            CCList.flat_map
-              (fun (n,l,p) ->
-                 [h3 [txt ("bad for " ^ n)];
-                  details ~a:[a_open()]
-                    (summary ~a:[a_class ["alert";"alert-danger"]]
-                       [txt "list of bad results"])
-                    [div [mk_dl_file l; pb_html p]]])
-              bad;
-            CCList.flat_map
-              (fun (n,l,p) ->
-                 [h3 [txt ("errors for " ^ n)];
-                  details (summary ~a:[a_class ["alert"; "alert-warning"]]
-                             [txt "list of errors"; ])
-                    [div [mk_dl_file l; pb_html p]]])
-              errors;
-          ]
-        in
-        Log.info (fun k->k "show:turned into html in %.3fs"
-                           (Misc.Chrono.since_last chrono));
-        Log.debug (fun k->k "successful reply for %S" file);
-        H.Response.make_string (Ok (Html.to_string_elt h))
-    )
+  @@ fun file _req ->
+  query_wrap (fun () -> spf "show-err/%s" file)
+  @@ fun chrono scope ->
+  Log.info (fun k->k "----- start show-err %s -----" file);
+  let _file_full, cr =
+    Bin_utils.load_file_summary ~full:true file
+    |> scope.unwrap_with (add_err_code 404) in
+  Log.info (fun k->k "show-err: loaded full summary in %.3fs"
+               (Misc.Chrono.since_last chrono));
+  let link_file = link_show_single file in
+  let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
+  let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
+  Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
+  let mk_dl_file l =
+    let open Html in
+    let data =
+      "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
+    in
+    mk_a ~cls:["btn"; "btn-link";"btn-sm"]
+      ~a:[a_download (Some "problems.txt"); a_href data]
+      [txt "download list"]
+  in
+  let h =
+    let open Html in
+    (* FIXME: only optional? *)
+    div @@
+    (*           mk_page ~title:"show-err" @@ *)
+    List.flatten [
+      CCList.flat_map
+        (fun (n,l,p) ->
+           [h3 [txt ("bad for " ^ n)];
+            details ~a:[a_open()]
+              (summary ~a:[a_class ["alert";"alert-danger"]]
+                 [txt "list of bad results"])
+              [div [mk_dl_file l; pb_html p]]])
+        bad;
+      CCList.flat_map
+        (fun (n,l,p) ->
+           [h3 [txt ("errors for " ^ n)];
+            details (summary ~a:[a_class ["alert"; "alert-warning"]]
+                       [txt "list of errors"; ])
+              [div [mk_dl_file l; pb_html p]]])
+        errors;
+    ]
+  in
+  Log.info (fun k->k "show:turned into html in %.3fs"
+               (Misc.Chrono.since_last chrono));
+  Log.debug (fun k->k "successful reply for %S" file);
+  H.Response.make_string (Ok (Html.to_string_elt h))
 
 let trf_of_string = function
   | "bad" -> Some Test.TRF_bad
@@ -455,91 +473,86 @@ let string_of_trf = function
 let handle_show_as_table (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_table" @/ string_urlencoded @/ return)
-    (fun file req ->
-      let chrono = Misc.Chrono.start() in
-      let params = H.Request.query req in
-      let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
-      let filter_pb = try List.assoc "pb" params with Not_found -> "" in
-      let filter_res =
-        try trf_of_string @@ List.assoc "res" params
-        with Not_found -> None
-      in
-      let page_size = 25 in
-      Bin_utils.with_file_as_db file (fun _scope db ->
-        let full_table =
-          let link_res prover pb ~res =
-            PB.link ~uri:(uri_show_single file prover pb) (PB.text res)
-          in
-          Test.Top_result.db_to_printbox_table
-            ?filter_res ~filter_pb ~offset ~link_pb:link_get_file
-            ~page_size ~link_res db
-        in
-        Log.info (fun k->k "loaded table[offset=%d] in %.3fs"
-                     offset (Misc.Chrono.since_last chrono));
-        let h =
-          let open Html in
-           (* pagination buttons *)
-           (* FIXME: only display next if not complete *)
-           let btns = [
-             mk_a
-               ~cls:((if offset>0 then [] else ["disabled"]) @
-                     ["page-link";"link-sm";"my-1"; "p-1"])
-               ~a:[a_href
-                     (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
-               [txt "prev"];
-             mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
-               ~a:[a_href
-                     (uri_show_table ~offset:(offset+page_size) file)]
-               [txt "next"];
-           ]
-          in
-          mk_page ~title:"show full table" @@
-          List.flatten [
-            [mk_navigation ~btns [
-                uri_show file, "file", false;
-                uri_show_table file,
-                (if offset=0 then "full" else spf "full[%d..]" offset),
-                true;
-              ];
-             dyn_status self];
-            [div ~a:[a_class ["container-fluid"]] @@
-             [form ~a:[a_action (uri_show_table file);
-                       a_method `Get;
-                       a_class ["form-row"; "form-inline"]]
-                [
-                  input ~a:[a_name "pb";
-                            a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
-                            a_value filter_pb;
-                            a_placeholder "problem";
-                            a_input_type `Text] ();
-                  select ~a:[a_name "res";
-                             a_class ["form-control"; "select"; "m-3"];
-                            ] @@
-                  List.map
-                    (fun trf ->
-                       let sel = if Some trf = filter_res then [a_selected()] else [] in
-                       let s = string_of_trf trf in
-                       option ~a:(sel @[a_value s]) (txt s))
-                    [Test.TRF_all; Test.TRF_bad; Test.TRF_different];
-                  mk_button
-                    ~cls:["btn-info"; "btn-sm"; "btn-success"; "m-3";]
-                    [txt "filter"];
-                ]
-             ]
-            ];
-            [h3 [txt "full results"];
-             div [pb_html full_table]];
+  @@ fun file req ->
+  query_wrap (fun() -> spf "show-table/%s" file)
+  @@ fun chrono scope ->
+  let params = H.Request.query req in
+  let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
+  let filter_pb = try List.assoc "pb" params with Not_found -> "" in
+  let filter_res =
+    try trf_of_string @@ List.assoc "res" params
+    with Not_found -> None
+  in
+  let page_size = 25 in
+  scope.unwrap @@ Bin_utils.with_file_as_db file
+  @@ fun _scope db ->
+  let full_table =
+    let link_res prover pb ~res =
+      PB.link ~uri:(uri_show_single file prover pb) (PB.text res)
+    in
+    Test.Top_result.db_to_printbox_table
+      ?filter_res ~filter_pb ~offset ~link_pb:link_get_file
+      ~page_size ~link_res db
+  in
+  Log.info (fun k->k "loaded table[offset=%d] in %.3fs"
+               offset (Misc.Chrono.since_last chrono));
+  let h =
+    let open Html in
+    (* pagination buttons *)
+    (* FIXME: only display next if not complete *)
+    let btns = [
+      mk_a
+        ~cls:((if offset>0 then [] else ["disabled"]) @
+              ["page-link";"link-sm";"my-1"; "p-1"])
+        ~a:[a_href
+              (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
+        [txt "prev"];
+      mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
+        ~a:[a_href
+              (uri_show_table ~offset:(offset+page_size) file)]
+        [txt "next"];
+    ]
+    in
+    mk_page ~title:"show full table" @@
+    List.flatten [
+      [mk_navigation ~btns [
+          uri_show file, "file", false;
+          uri_show_table file,
+          (if offset=0 then "full" else spf "full[%d..]" offset),
+          true;
+        ];
+       dyn_status self];
+      [div ~a:[a_class ["container-fluid"]] @@
+       [form ~a:[a_action (uri_show_table file);
+                 a_method `Get;
+                 a_class ["form-row"; "form-inline"]]
+          [
+            input ~a:[a_name "pb";
+                      a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                      a_value filter_pb;
+                      a_placeholder "problem";
+                      a_input_type `Text] ();
+            select ~a:[a_name "res";
+                       a_class ["form-control"; "select"; "m-3"];
+                      ] @@
+            List.map
+              (fun trf ->
+                 let sel = if Some trf = filter_res then [a_selected()] else [] in
+                 let s = string_of_trf trf in
+                 option ~a:(sel @[a_value s]) (txt s))
+              [Test.TRF_all; Test.TRF_bad; Test.TRF_different];
+            mk_button
+              ~cls:["btn-info"; "btn-sm"; "btn-success"; "m-3";]
+              [txt "filter"];
           ]
-        in
-        Log.debug (fun k->k "successful reply for %S" file);
-        H.Response.make_string (Ok (Html.to_string h))
-        )
-      |> E.catch
-        ~ok:(fun r -> r)
-        ~err:(fun e ->
-          Log.err (fun k->k"exn: %s" e);
-          H.Response.make (Error (500, "failure: " ^ e)))
-    )
+       ]
+      ];
+      [h3 [txt "full results"];
+       div [pb_html full_table]];
+    ]
+  in
+  Log.debug (fun k->k "successful reply for %S" file);
+  H.Response.make_string (Ok (Html.to_string h))
 
 (* html for the summary of [file] with metadata [m] *)
 let mk_file_summary filename m : _ Html.elt =
@@ -561,242 +574,236 @@ let mk_file_summary filename m : _ Html.elt =
 let handle_show_detailed (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_detailed" @/ string_urlencoded @/ return)
-    (fun db_file req ->
-      let params = H.Request.query req in
-      let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
-      let filter_res = try List.assoc "res" params with Not_found -> "" in
-      let filter_prover = try List.assoc "prover" params with Not_found -> "" in
-      let filter_pb = try List.assoc "pb" params with Not_found -> "" in
-      let page_size = 25 in
-      Log.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
-                     db_file offset filter_pb filter_res filter_prover);
-      Bin_utils.with_file_as_db db_file
-        (fun scope db ->
-           let l, n, complete =
-             Test.Detailed_res.list_keys
-               ~page_size ~offset ~filter_prover ~filter_res ~filter_pb db
-             |> scope.unwrap in
-           Log.debug (fun k->k "got %d results, complete=%B" (List.length l) complete);
-           let open Html in
-           (* pagination buttons *)
-           let btns = [
-             mk_a
-               ~cls:((if offset>0 then [] else ["disabled"]) @
-                     ["page-link";"link-sm";"my-1";"p-1"])
-               ~a:[a_href
-                     (uri_show_detailed ~offset:(max 0 (offset-page_size))
-                        ~filter_res ~filter_pb ~filter_prover db_file)]
-               [txt "prev"];
-             mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
-               ~a:[a_href
-                     (uri_show_detailed ~offset:(offset+page_size)
-                        ~filter_res ~filter_pb ~filter_prover db_file)]
-               [txt "next"];
-           ]
-           in
-           mk_page ~title:"detailed results" @@ List.flatten [
-             [mk_navigation ~btns [
-                 uri_show db_file, "file", false;
-                 uri_show_detailed db_file,
-                 (if offset=0 then "detailed" else spf "detailed [%d..%d]" offset (offset+List.length l-1)),
-                 true;
-               ];
-              dyn_status self;
-              div ~a:[a_class ["container"]] [
-                h2 [txt (spf "detailed results (%d total)" n)];
-                div ~a:[a_class ["navbar"; "navbar-expand-lg"]] @@
-                [div ~a:[a_class ["container-fluid"]] @@
-                 [form ~a:[a_action (uri_show_detailed db_file);
-                           a_method `Get;
-                           a_class ["form-row"; "form-inline"]]
-                    [
-                      input ~a:[a_name "prover";
-                                a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
-                                a_value filter_prover;
-                                a_placeholder "prover";
-                                a_input_type `Text] ();
-                      input ~a:[a_name "pb";
-                                a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
-                                a_value filter_pb;
-                                a_placeholder "problem";
-                                a_input_type `Text] ();
-                      input ~a:[a_name "res";
-                                a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
-                                a_value filter_res;
-                                a_placeholder "result";
-                                a_input_type `Text] ();
-                      mk_button
-                        ~cls:["btn-info"; "btn-sm"; "btn-success";
-                              "m-3";]
-                        [txt "filter"];
-                    ];
-                ];
-                ]];
-              let rows =
-                CCList.map
-                  (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
-                     let url_file_res = uri_show_single db_file prover pb_file in
-                     let url_file = uri_get_file pb_file in
-                     tr [
-                       td [txt prover];
-                       td [
-                         mk_a ~a:[a_href url_file_res; a_title pb_file] [txt pb_file];
-                         mk_a ~a:[a_href url_file; a_title pb_file] [txt "(content)"];
-                       ];
-                       td [txt (Res.to_string res)];
-                       td [txt (Res.to_string file_expect)];
-                       td [txt (Misc.human_duration rtime)]
-                     ])
-                  l
-              in
-              let thead =
-                CCList.map (fun x->th [txt x])
-                  ["prover"; "file"; "res"; "expected"; "time"]
-                |> tr |> CCList.return |> thead
-              in
-              table ~a:[a_class ["framed"; "table"; "table-striped"]] ~thead rows;
-             ];
-           ]
-        )
-      |> E.catch
-        ~ok:(fun h ->
-            Log.debug (fun k->k "successful reply for %S" db_file);
-            H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h)))
-        ~err:(fun e ->
-            Log.err (fun k->k "error in show-detailed %S:\n%s" db_file e);
-            H.Response.fail ~code:500 "could not show detailed res for %S:\n%s" db_file e)
-    )
+  @@ fun db_file req ->
+  query_wrap (fun() -> spf "show_detailed/%s" db_file)
+  @@ fun chrono scope ->
+  let params = H.Request.query req in
+  let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
+  let filter_res = try List.assoc "res" params with Not_found -> "" in
+  let filter_prover = try List.assoc "prover" params with Not_found -> "" in
+  let filter_pb = try List.assoc "pb" params with Not_found -> "" in
+  let page_size = 25 in
+  Log.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
+                db_file offset filter_pb filter_res filter_prover);
+  scope.unwrap @@ Bin_utils.with_file_as_db db_file
+  @@ fun scope db ->
+  let l, n, complete =
+    Test.Detailed_res.list_keys
+      ~page_size ~offset ~filter_prover ~filter_res ~filter_pb db
+    |> scope.unwrap_with (add_err_code 500) in
+  Log.debug (fun k->k "got %d results in %.3fs, complete=%B"
+                (List.length l) (Misc.Chrono.elapsed chrono) complete);
+  let open Html in
+  (* pagination buttons *)
+  let btns = [
+    mk_a
+      ~cls:((if offset>0 then [] else ["disabled"]) @
+            ["page-link";"link-sm";"my-1";"p-1"])
+      ~a:[a_href
+            (uri_show_detailed ~offset:(max 0 (offset-page_size))
+               ~filter_res ~filter_pb ~filter_prover db_file)]
+      [txt "prev"];
+    mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
+      ~a:[a_href
+            (uri_show_detailed ~offset:(offset+page_size)
+               ~filter_res ~filter_pb ~filter_prover db_file)]
+      [txt "next"];
+  ]
+  in
+  mk_page ~title:"detailed results" @@ List.flatten [
+    [mk_navigation ~btns [
+        uri_show db_file, "file", false;
+        uri_show_detailed db_file,
+        (if offset=0 then "detailed" else spf "detailed [%d..%d]" offset (offset+List.length l-1)),
+        true;
+      ];
+     dyn_status self;
+     div ~a:[a_class ["container"]] [
+       h2 [txt (spf "detailed results (%d total)" n)];
+       div ~a:[a_class ["navbar"; "navbar-expand-lg"]] @@
+       [div ~a:[a_class ["container-fluid"]] @@
+        [form ~a:[a_action (uri_show_detailed db_file);
+                  a_method `Get;
+                  a_class ["form-row"; "form-inline"]]
+           [
+             input ~a:[a_name "prover";
+                       a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                       a_value filter_prover;
+                       a_placeholder "prover";
+                       a_input_type `Text] ();
+             input ~a:[a_name "pb";
+                       a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                       a_value filter_pb;
+                       a_placeholder "problem";
+                       a_input_type `Text] ();
+             input ~a:[a_name "res";
+                       a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
+                       a_value filter_res;
+                       a_placeholder "result";
+                       a_input_type `Text] ();
+             mk_button
+               ~cls:["btn-info"; "btn-sm"; "btn-success";
+                     "m-3";]
+               [txt "filter"];
+           ];
+        ];
+       ]];
+     let rows =
+       CCList.map
+         (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
+            let url_file_res = uri_show_single db_file prover pb_file in
+            let url_file = uri_get_file pb_file in
+            tr [
+              td [txt prover];
+              td [
+                mk_a ~a:[a_href url_file_res; a_title pb_file] [txt pb_file];
+                mk_a ~a:[a_href url_file; a_title pb_file] [txt "(content)"];
+              ];
+              td [txt (Res.to_string res)];
+              td [txt (Res.to_string file_expect)];
+              td [txt (Misc.human_duration rtime)]
+            ])
+         l
+     in
+     let thead =
+       CCList.map (fun x->th [txt x])
+         ["prover"; "file"; "res"; "expected"; "time"]
+       |> tr |> CCList.return |> thead
+     in
+     table ~a:[a_class ["framed"; "table"; "table-striped"]] ~thead rows;
+    ];
+  ]
+  |> Html.to_string
+  |> E.return
+  |> H.Response.make_string ~headers:default_html_headers
 
 (* show invidual result *)
 let handle_show_single (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_single" @/ string_urlencoded @/
              string_urlencoded @/ string_urlencoded @/ return)
-    (fun db_file prover pb_file _req ->
-      Log.debug (fun k->k "show single called with prover=%s, pb_file=%s" prover pb_file);
-      Bin_utils.with_file_as_db db_file
-        (fun scope db ->
-           let r = Test.Detailed_res.get_res db prover pb_file |> scope.unwrap in
-           let pb, pb_prover, stdout, stderr =
-             Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
-           in
-           let open Html in
-           mk_page ~title:"single result" [
-             mk_navigation [
-               uri_show db_file, "file", false;
-               uri_show_detailed db_file, "detailed", false;
-               uri_show_single db_file prover pb_file, "single", true;
-             ];
-             dyn_status self;
-             h2 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
-             div [pb_html pb];
-             details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stdout"])
-               [pre [txt stdout]];
-             details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stderr"])
-               [pre [txt stderr]];
-             details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "prover config"])
-               [pb_html pb_prover];
-           ]
-        )
-      |> E.catch
-        ~ok:(fun h ->
-            Log.debug (fun k->k "successful reply for %S" db_file);
-            H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h)))
-        ~err:(fun e ->
-            Log.err (fun k->k "error in show-single %S:\n%s" db_file e);
-            H.Response.fail ~code:500 "could not show single res for %S:\n%s" db_file e)
-    )
+  @@ fun db_file prover pb_file _req ->
+  query_wrap (fun() -> spf "show_single db=%s prover=%s file=%s"
+                 db_file prover pb_file)
+  @@ fun chrono scope ->
+  Log.debug (fun k->k "show single called with prover=%s, pb_file=%s" prover pb_file);
+  H.Response.make_string ~headers:default_html_headers
+  @@ scope.unwrap @@ Bin_utils.with_file_as_db db_file
+  @@ fun scope db ->
+  let r = Test.Detailed_res.get_res db prover pb_file
+          |> scope.unwrap_with (add_err_code 500) in
+  let pb, pb_prover, stdout, stderr =
+    Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
+  in
+  let open Html in
+  let h = mk_page ~title:"single result" [
+    mk_navigation [
+      uri_show db_file, "file", false;
+      uri_show_detailed db_file, "detailed", false;
+      uri_show_single db_file prover pb_file, "single", true;
+    ];
+    dyn_status self;
+    h2 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
+    div [pb_html pb];
+    details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stdout"])
+      [pre [txt stdout]];
+    details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stderr"])
+      [pre [txt stderr]];
+    details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "prover config"])
+      [pb_html pb_prover];
+  ] in
+  Log.debug (fun k->k"render page in %.3fs" (Misc.Chrono.elapsed chrono));
+  Ok (Html.to_string h)
 
 (* export as CSV *)
 let handle_show_csv (self:t): unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_csv" @/ string_urlencoded @/ return)
-    (fun db_file req ->
-      Bin_utils.with_file_as_db db_file
-        (fun _scope db ->
-          let query = H.Request.query req in
-          Log.debug
-            (fun k->k  "query: [%s]"
-                (String.concat ";"  @@
-                 CCList.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query));
-          let provers =
-            try Some (List.assoc "provers" query |> CCString.split_on_char ',')
-            with _ -> None
-          in
-          let csv = Test.Top_result.db_to_csv_string ?provers db in
-          Log.debug (fun k->k "successful reply for /show_csv/%S" db_file);
-          H.Response.make_string
-            ~headers:["Content-Type", "plain/csv";
-                      "Content-Disposition", "attachment; filename=\"results.csv\""]
-            (Ok csv))
-      |> E.catch
-        ~ok:(fun h ->
-            Log.debug (fun k->k "successful reply for %S" db_file);
-            h)
-        ~err:(fun e ->
-            Log.err (fun k->k "error in show-single %S:\n%s" db_file e);
-            H.Response.fail ~code:500 "could not show single res for %S:\n%s" db_file e)
-    )
+  @@ fun db_file req ->
+  query_wrap (fun() -> spf "show_csv/%s" db_file)
+  @@ fun chrono scope ->
+  scope.unwrap @@ Bin_utils.with_file_as_db db_file
+  @@ fun scope db ->
+  let query = H.Request.query req in
+  Log.debug
+    (fun k->k  "query: [%s]"
+        (String.concat ";"  @@
+         CCList.map (fun (x,y) -> Printf.sprintf "%S=%S" x y) query));
+  let provers =
+    try Some (List.assoc "provers" query |> CCString.split_on_char ',')
+    with _ -> None
+  in
+  let csv =
+    try Test.Top_result.db_to_csv_string ?provers db
+    with e -> scope.unwrap_with (fun e->Printexc.to_string e,500) (Error e)
+  in
+  Log.debug (fun k->k "successful reply in %.3fs for /show_csv/%S"
+                (Misc.Chrono.elapsed chrono) db_file);
+  H.Response.make_string
+    ~headers:["Content-Type", "plain/csv";
+              "Content-Disposition", "attachment; filename=\"results.csv\""]
+    (Ok csv)
 
 (* compare files *)
 let handle_compare self : unit =
   let server = self.server in
   H.add_route_handler server ~meth:`POST
     H.Route.(exact "compare" @/ return)
-    (fun req ->
-      let body = H.Request.body req |> String.trim in
-      Log.debug (fun k->k "/compare: body is %s" body);
-      let body = U.parse_query body |> E.get_or_failwith in
-      let names =
-        CCList.filter_map
-          (fun (k,v) -> if v="on" then Some k else None)
-          body
-      in
-      Log.debug (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
-      if List.length names>=2 then (
-        let files =
-          names
-          |> CCList.map
-            (fun s -> match Bin_utils.mk_file_full s with
-               | Error e ->
-                 Log.err (fun k->k "cannot load file %S" s);
-                 H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
-               | Ok x -> x)
-        in
-        let box_compare_l =
-          let open PrintBox in
-          CCList.diagonal files
-          |> CCList.map (fun (f1,f2) ->
-              let c =
-                match Test_compare.Short.make f1 f2 with
-                | Ok x -> x
-                | Error e ->
-                  Log.err (fun k->k"cannot compare %s and %s: %s" f1 f2 e);
-                  H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1 f2
-              in
-              vlist ~bars:false [
-                text f1; text f2;
-                Test.pb_v_record @@
-                CCList.map (fun (pr,c) -> pr, Test_compare.Short.to_printbox c)
-                  c
-              ])
-          |> vlist
-        in
-        let h =
-          let open Html in
-          mk_page ~title:"compare"
-            [
-              mk_navigation [];
-              dyn_status self;
-              h3 [txt "comparison"];
-              div [pb_html box_compare_l];
-            ]
-        in
-        H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
-      ) else (
-        H.Response.fail ~code:412 "precondition failed: select at least 2 files"
-      )
-    )
+  @@ fun req ->
+  let body = H.Request.body req |> String.trim in
+  query_wrap (fun() -> spf "compare (post) body=%s" body)
+  @@ fun _chrono scope ->
+  Log.debug (fun k->k "/compare: body is %s" body);
+  let body = U.parse_query body |> scope.unwrap_with (add_err_code 400) in
+  let names =
+    CCList.filter_map
+      (fun (k,v) -> if v="on" then Some k else None)
+      body
+  in
+  Log.debug (fun k->k "/compare: names is [%s]" @@ String.concat ";" names);
+  if List.length names>=2 then (
+    let files =
+      names
+      |> CCList.map
+        (fun s -> match Bin_utils.mk_file_full s with
+           | Error e ->
+             Log.err (fun k->k "cannot load file %S" s);
+             H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
+           | Ok x -> x)
+    in
+    let box_compare_l =
+      let open PrintBox in
+      CCList.diagonal files
+      |> CCList.map (fun (f1,f2) ->
+          let c =
+            match Test_compare.Short.make f1 f2 with
+            | Ok x -> x
+            | Error e ->
+              Log.err (fun k->k"cannot compare %s and %s: %s" f1 f2 e);
+              H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1 f2
+          in
+          vlist ~bars:false [
+            text f1; text f2;
+            Test.pb_v_record @@
+            CCList.map (fun (pr,c) -> pr, Test_compare.Short.to_printbox c)
+              c
+          ])
+      |> vlist
+    in
+    let h =
+      let open Html in
+      mk_page ~title:"compare"
+        [
+          mk_navigation [];
+          dyn_status self;
+          h3 [txt "comparison"];
+          div [pb_html box_compare_l];
+        ]
+    in
+    H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
+  ) else (
+    H.Response.fail ~code:412 "precondition failed: select at least 2 files"
+  )
 
 (* delete files *)
 let handle_delete self : unit =
@@ -816,7 +823,7 @@ let handle_delete self : unit =
         Log.info (fun k->k  "delete file %s" @@ Filename.quote file);
         Sys.remove file)
       files;
-    let h = html_redirect ~href:"/" @@ Format.asprintf "deleted %d files" (List.length files) in
+    let h = html_redirect ~href:"/" @@ spf "deleted %d files" (List.length files) in
     H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
   in
   H.add_route_handler self.server ~meth:`POST
@@ -844,113 +851,116 @@ let handle_delete self : unit =
 let handle_provers (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "provers" @/ return)
-    (fun req ->
-      let name =
-        try Some (List.assoc "name" @@ H.Request.query req)
-        with _ -> None
-      in
-      let provers = match name with
-        | Some name ->
-          begin match Definitions.find_prover self.defs name with
-            | Ok p -> [p]
-            | Error e -> H.Response.fail_raise ~code:404 "no such prover: %s" e
-          end
-        | None -> Definitions.all_provers self.defs
-      in
-      let h =
-        let open Html in
-        let mk_prover p =
-          mk_li [
-            pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p];
-            begin match p.Prover.defined_in with
-              | None -> span[]
-              | Some f ->
-                div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
-            end;
-          ]
-        in
-        let l = CCList.map mk_prover provers in
-        mk_page ~title:"provers"
-          [
-            mk_navigation ["/provers/", "provers", true];
-            dyn_status self;
-            h3 [txt "list of provers"];
-            mk_ul l
-          ]
-      in
-      H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
-    )
+  @@ fun req ->
+  query_wrap (fun() -> "provers")
+  @@ fun _chrono _scope ->
+  let name =
+    try Some (List.assoc "name" @@ H.Request.query req)
+    with _ -> None
+  in
+  let provers = match name with
+    | Some name ->
+      begin match Definitions.find_prover self.defs name with
+        | Ok p -> [p]
+        | Error e -> H.Response.fail_raise ~code:404 "no such prover: %s" e
+      end
+    | None -> Definitions.all_provers self.defs
+  in
+  let h =
+    let open Html in
+    let mk_prover p =
+      mk_li [
+        pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p];
+        begin match p.Prover.defined_in with
+          | None -> span[]
+          | Some f ->
+            div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+        end;
+      ]
+    in
+    let l = CCList.map mk_prover provers in
+    mk_page ~title:"provers"
+      [
+        mk_navigation ["/provers/", "provers", true];
+        dyn_status self;
+        h3 [txt "list of provers"];
+        mk_ul l
+      ]
+  in
+  H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
 let handle_tasks (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "tasks" @/ return)
-    (fun _r ->
-      let tasks = Definitions.all_tasks self.defs in
-      let h =
-        let open Html in
-        let l =
-          CCList.map
-            (fun t ->
-               let s = t.Task.name in
-               mk_li [
-                 mk_row [
-                   mk_col ~cls:["col-1"] [
-                     form ~a:[a_id (uri_of_string @@ "launch_task"^s);
-                            a_action (uri_of_string @@ "/run/" ^ U.percent_encode s);
-                            a_method `Post;]
-                       [mk_button ~cls:["btn-primary";"btn-sm"] [txt "run"]];
-                   ];
-                   mk_col ~cls:["col-auto"] [pre [txt @@Format.asprintf "%a@?" Task.pp t]];
-                   begin match t.Task.defined_in with
-                     | None -> span[]
-                     | Some f ->
-                       div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
-                   end;
-                 ]])
-            tasks
-        in
-        mk_page ~title:"tasks"
-          [
-            mk_navigation ["/tasks/", "tasks", true];
-            dyn_status self;
-            h3 [txt "list of tasks"];
-            mk_ul l;
-          ]
-      in
-      H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
-    )
+  @@ fun _req ->
+  query_wrap (fun()->"tasks")
+  @@ fun _chrono _scopes ->
+  let tasks = Definitions.all_tasks self.defs in
+  let h =
+    let open Html in
+    let l =
+      CCList.map
+        (fun t ->
+           let s = t.Task.name in
+           mk_li [
+             mk_row [
+               mk_col ~cls:["col-1"] [
+                 form ~a:[a_id (uri_of_string @@ "launch_task"^s);
+                          a_action (uri_of_string @@ "/run/" ^ U.percent_encode s);
+                          a_method `Post;]
+                   [mk_button ~cls:["btn-primary";"btn-sm"] [txt "run"]];
+               ];
+               mk_col ~cls:["col-auto"] [pre [txt @@Format.asprintf "%a@?" Task.pp t]];
+               begin match t.Task.defined_in with
+                 | None -> span[]
+                 | Some f ->
+                   div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+               end;
+             ]])
+        tasks
+    in
+    mk_page ~title:"tasks"
+      [
+        mk_navigation ["/tasks/", "tasks", true];
+        dyn_status self;
+        h3 [txt "list of tasks"];
+        mk_ul l;
+      ]
+  in
+  H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
 let handle_run (self:t) : unit =
   H.add_route_handler self.server ~meth:`POST
     H.Route.(exact "run" @/ string_urlencoded @/ return)
-    (fun name _r ->
-      Log.debug (fun k->k "run task %S" name);
-      let task =
-        match Definitions.find_task self.defs name with
-        | Ok t -> t
-        | Error e -> H.Response.fail_raise ~code:404 "cannot find task %s: %s" name e
-      in
-      Log.debug (fun k->k "found task %s, run it" name);
-      Task_queue.push self.task_q task;
-      let msg =
-        Format.asprintf "task queued (%d in queue)!" (Task_queue.size self.task_q)
-      in
-      H.Response.make_string ~headers:default_html_headers @@
-      Ok (Html.to_string @@ html_redirect ~href:"/" msg)
-    )
+  @@ fun name _r ->
+  query_wrap (fun()->spf "run/%s" name)
+  @@ fun _chrono scope ->
+  Log.debug (fun k->k "run task %S" name);
+  let task =
+    match Definitions.find_task self.defs name with
+    | Ok t -> t
+    | Error e ->
+      scope.unwrap (Error (spf "cannot find task %s: %s" name e, 404))
+  in
+  Log.debug (fun k->k "found task %s, run it" name);
+  Task_queue.push self.task_q task;
+  let msg =
+    Format.asprintf "task queued (%d in queue)!" (Task_queue.size self.task_q)
+  in
+  H.Response.make_string ~headers:default_html_headers @@
+  Ok (Html.to_string @@ html_redirect ~href:"/" msg)
 
 let handle_job_interrupt (self:t) : unit =
   H.add_route_handler self.server ~meth:`POST
     H.Route.(exact "interrupt" @/ string @/ return)
-    (fun uuid _r ->
-      Log.debug (fun k->k "interrupt current task");
-      let ok = Task_queue.interrupt self.task_q ~uuid in
-      if not ok then Log.err (fun k->k"could not cancel task `%s`" uuid);
-      let r =
-        Ok (Html.to_string @@ html_redirect ~href:"/" "job interrupted")
-      in
-      H.Response.make_string ~headers:default_html_headers r
-    )
+  @@ fun uuid _r ->
+  Log.debug (fun k->k "interrupt current task");
+  let ok = Task_queue.interrupt self.task_q ~uuid in
+  if not ok then Log.err (fun k->k"could not cancel task `%s`" uuid);
+  let r =
+    Ok (Html.to_string @@ html_redirect ~href:"/" "job interrupted")
+  in
+  H.Response.make_string ~headers:default_html_headers r
 
 (* get metadata for the file *)
 let get_meta (self:t) (p:string) : _ result =
@@ -977,152 +987,151 @@ let get_meta (self:t) (p:string) : _ result =
 let handle_root (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(return)
-    (fun _req ->
-      let entries = Bin_utils.list_entries self.data_dir in
-      let chrono = Misc.Chrono.start() in
-      let h =
-        let open Html in
-        mk_page ~title:"benchpress"
-          [
-            h1 [txt "Benchpress"];
-            dyn_status self;
-            div ~a:[a_class ["container"]] [
-              h2 [txt "configuration"];
-              ul ~a:[a_class ["list-group"]] @@ List.flatten [
-                [li ~a:[a_class ["list-group-item"]]
-                   [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
-                 li ~a:[a_class ["list-group-item"]]
-                   [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+  @@ fun _req ->
+  query_wrap (fun()->"handle /")
+  @@ fun chrono _scope ->
+  let entries = Bin_utils.list_entries self.data_dir in
+  let h =
+    let open Html in
+    mk_page ~title:"benchpress"
+      [
+        h1 [txt "Benchpress"];
+        dyn_status self;
+        div ~a:[a_class ["container"]] [
+          h2 [txt "configuration"];
+          ul ~a:[a_class ["list-group"]] @@ List.flatten [
+            [li ~a:[a_class ["list-group-item"]]
+               [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
+             li ~a:[a_class ["list-group-item"]]
+               [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+          ];
+        ];
+        let l =
+          CCList.map
+            (fun (s0,size) ->
+               let s = Filename.basename s0 in
+               let meta = CCHashtbl.get self.meta_cache s0 in
+               let url_show =
+                 Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
+               and url_meta =
+                 Printf.sprintf "/file-sum/%s" (U.percent_encode s)
+               in
+               li ~a:[a_class ["list-group-item"]]
+                 [div ~a:[a_class ["row"]]
+                    [
+                      (* lazy loading of status *)
+                      div ~a:[a_class ["col-md-9"; "justify-self-left"]]
+                        (match meta with
+                         | Some meta ->
+                           (* metadata cached, just display it *)
+                           [mk_file_summary s meta]
+                         | None ->
+                           (* lazy loading *)
+                           [mk_a ~cls:["disabled"; "lazy-load"]
+                              ~a:[a_href url_show;
+                                  Unsafe.string_attrib "x_src" url_meta]
+                              [txt s0]]
+                        );
+                      h4 ~a:[a_class ["col-md-2"]] [
+                        span ~a:[a_class ["badge"; "text-secondary"]]
+                          [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
+                      ];
+                      div ~a:[a_class ["col-1"]]
+                        [input ~a:[a_input_type `Checkbox; a_name s] ()];
+                    ]])
+            entries
+        in
+        Log.info (fun k->k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
+        div ~a:[a_class ["container"]] [
+          h2 [txt "list of results"];
+          form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
+            mk_row ~cls:["m-2"] @@
+            List.flatten [
+              [mk_col ~cls:["col-auto";"p-1"] [
+                  mk_button ~cls:["btn-primary";"btn-sm"]
+                    ~a:[a_formaction "/compare/"]
+                    [txt "compare selected"]];
               ];
-            ];
-            let l =
-              CCList.map
-                (fun (s0,size) ->
-                   let s = Filename.basename s0 in
-                   let meta = CCHashtbl.get self.meta_cache s0 in
-                   let url_show =
-                     Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
-                   and url_meta =
-                     Printf.sprintf "/file-sum/%s" (U.percent_encode s)
-                   in
-                   li ~a:[a_class ["list-group-item"]]
-                     [div ~a:[a_class ["row"]]
-                        [
-                          (* lazy loading of status *)
-                          div ~a:[a_class ["col-md-9"; "justify-self-left"]]
-                            (match meta with
-                             | Some meta ->
-                               (* metadata cached, just display it *)
-                               [mk_file_summary s meta]
-                             | None ->
-                               (* lazy loading *)
-                               [mk_a ~cls:["disabled"; "lazy-load"]
-                                  ~a:[a_href url_show;
-                                      Unsafe.string_attrib "x_src" url_meta]
-                                  [txt s0]]
-                            );
-                          h4 ~a:[a_class ["col-md-2"]] [
-                            span ~a:[a_class ["badge"; "text-secondary"]]
-                              [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
-                          ];
-                          div ~a:[a_class ["col-1"]]
-                            [input ~a:[a_input_type `Checkbox; a_name s] ()];
-                        ]])
-                entries
-            in
-            Log.info (fun k->k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
-            div ~a:[a_class ["container"]] [
-              h2 [txt "list of results"];
-              form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
-                mk_row ~cls:["m-2"] @@
-                List.flatten [
-                  [mk_col ~cls:["col-auto";"p-1"] [
-                      mk_button ~cls:["btn-primary";"btn-sm"]
-                     ~a:[a_formaction "/compare/"]
-                     [txt "compare selected"]];
-                  ];
-                  if self.allow_delete then [
-                    mk_col ~cls:["col-auto";"p-1"] [
-                      mk_button ~cls:["btn-danger";"btn-sm"]
-                        ~a:[a_formaction "/delete/"]
-                        [txt "delete selected"]]
-                  ]
-                  else [];
-                ];
-                mk_ul l
+              if self.allow_delete then [
+                mk_col ~cls:["col-auto";"p-1"] [
+                  mk_button ~cls:["btn-danger";"btn-sm"]
+                    ~a:[a_formaction "/delete/"]
+                    [txt "delete selected"]]
               ]
+              else [];
             ];
+            mk_ul l
           ]
-      in
-      H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
-    )
+        ];
+      ]
+  in
+  H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
 let handle_file_summary (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "file-sum" @/ string_urlencoded @/ return)
-    (fun file _req ->
-      let chrono = Misc.Chrono.start() in
-      match Bin_utils.mk_file_full file with
-      | Error _e ->
-        H.Response.fail_raise ~code:404 "file %s not found" file
-      | Ok file_full ->
-        let s = Filename.basename file_full in
-        let h =
-          let open Html in
-          get_meta self file_full
-          |> E.catch
-            ~err:(fun e ->
-                let title = [a_title @@ "<no metadata>: "  ^ e] in
-                mk_a ~a:(a_href (uri_show s) :: title) [txt s]
-              )
-            ~ok:(fun m -> mk_file_summary s m)
-        in
-        Log.debug (fun k->k "reply to handle-file-summary %s in %.3fs"
-                     file (Misc.Chrono.since_last chrono));
-        H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string_elt h))
-    )
+  @@ fun file _req ->
+  query_wrap (fun()->spf "file-summary/%s" file)
+  @@ fun _chrono scope ->
+  let file_full =
+    Bin_utils.mk_file_full file |> scope.unwrap_with (add_err_code 404)
+  in
+  let s = Filename.basename file_full in
+  let h =
+    let open Html in
+    get_meta self file_full
+    |> E.catch
+      ~err:(fun e ->
+          let title = [a_title @@ "<no metadata>: "  ^ e] in
+          mk_a ~a:(a_href (uri_show s) :: title) [txt s]
+        )
+      ~ok:(fun m -> mk_file_summary s m)
+  in
+  H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string_elt h))
 
 let handle_task_status self =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "tasks_status" @/ return)
     (fun _req ->
-      let open Html in
-      let bod =
-        let tl = Task_queue.api_task_list self.task_q in
-        if tl.Api.waiting=[] && tl.Api.active=[] then div[]
-        else (
-          mk_ul @@ List.flatten [
-            [mk_li [
-                txt @@
-                Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)]];
-            begin match Task_queue.cur_job self.task_q with
-              | None -> []
-              | Some j ->
-                (* display current job *)
-                [mk_li [
-                    div ~a:[a_class ["spinner-border"; "spinner-border-sm"]] [span []];
-                    pre [txt @@
-                         Format.asprintf "current task: %a" Task_queue.Job.pp j];
-                    form ~a:[a_id (uri_of_string "cancel");
-                             a_action (uri_of_string @@ "/interrupt/"^Task_queue.Job.uuid j);
-                             a_method `Post;]
-                      [mk_button ~cls:["btn-warning"] [txt "interrupt"]]]
-                ];
-            end
-          ]
-        )
-      in
-      let html = mk_page ~title:"tasks_status" [div [bod]] in
-      H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string html))
+       query_wrap (fun() -> "tasks_status")
+       @@ fun _chrono _scope ->
+       let open Html in
+       let bod =
+         let tl = Task_queue.api_task_list self.task_q in
+         if tl.Api.waiting=[] && tl.Api.active=[] then div[]
+         else (
+           mk_ul @@ List.flatten [
+             [mk_li [
+                 txt @@
+                 Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)]];
+             begin match Task_queue.cur_job self.task_q with
+               | None -> []
+               | Some j ->
+                 (* display current job *)
+                 [mk_li [
+                     div ~a:[a_class ["spinner-border"; "spinner-border-sm"]] [span []];
+                     pre [txt @@
+                          Format.asprintf "current task: %a" Task_queue.Job.pp j];
+                     form ~a:[a_id (uri_of_string "cancel");
+                              a_action (uri_of_string @@ "/interrupt/"^Task_queue.Job.uuid j);
+                              a_method `Post;]
+                       [mk_button ~cls:["btn-warning"] [txt "interrupt"]]]
+                 ];
+             end
+           ]
+         )
+       in
+       let html = mk_page ~title:"tasks_status" [div [bod]] in
+       H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string html))
     );
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "api" @/ exact "tasks_status" @/ return)
     (fun _req ->
-      let j =
-        Task_queue.basic_status self.task_q
-        |> Task_queue.Basic_status.to_json
-      in
-      H.Response.make_string ~headers:["Content-Type", "text/json"] (Ok j)
+       let j =
+         Task_queue.basic_status self.task_q
+         |> Task_queue.Basic_status.to_json
+       in
+       H.Response.make_string ~headers:["Content-Type", "text/json"] (Ok j)
     );
   ()
 

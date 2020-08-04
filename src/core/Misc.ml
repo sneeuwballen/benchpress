@@ -192,8 +192,8 @@ type 'a try_scope = {
 }
 
 (** Open a local block with an [unwrap] to unwrap results *)
-let err_with ?(map_err=fun e -> e) f : (_,string) result =
-  let module E = struct exception Local of string end in
+let err_with (type err) ?(map_err=fun e -> e) f : (_,err) result =
+  let module E = struct exception Local of err end in
   let scope = {
     unwrap=(function Ok x -> x | Error e -> raise (E.Local e));
     unwrap_with=(fun ferr -> function Ok x -> x | Error e -> raise (E.Local (ferr e)));
@@ -203,8 +203,6 @@ let err_with ?(map_err=fun e -> e) f : (_,string) result =
     Ok res
   with
   | E.Local e -> Error (map_err e)
-  | Db.Type_error d ->
-    Error (map_err @@ Printf.sprintf "db type error on %s" (Db.Data.to_string_debug d))
 
 (** Turn the DB error into a normal string error *)
 let db_err ~ctx (x:(_,Db.Rc.t) result) : _ result =
