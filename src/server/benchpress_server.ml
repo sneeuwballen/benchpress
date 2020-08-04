@@ -19,7 +19,6 @@ type t = {
   allow_delete: bool;
 }
 
-(* TODO: use printbox 0.5 and use custom classes with its tyxml printer *)
 (** {2 printbox -> html} *)
 module PB_html : sig
   open Tyxml
@@ -159,18 +158,6 @@ let html_redirect ~href (s:string) =
     ~title:s
     [txt s]
 
-let uri_show file =
-  Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') file)
-
-let uri_show_single db_file prover path =
-  spf "/show_single/%s/%s/%s/"
-    (U.percent_encode db_file)
-    (U.percent_encode prover)
-    (U.percent_encode path)
-
-let link_show_single db_file prover path =
-  PB.link (PB.text path) ~uri:(uri_show_single db_file prover path)
-
 (* navigation bar *)
 let mk_navigation ?(btns=[]) path =
   let open Html in
@@ -191,6 +178,21 @@ let mk_navigation ?(btns=[]) path =
                btns]);
   ]
 
+(* default reply headers *)
+let default_html_headers = H.Headers.([] |> set "content-type" "text/html; charset=utf-8")
+
+let uri_show file =
+  Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') file)
+
+let uri_show_single db_file prover path =
+  spf "/show_single/%s/%s/%s/"
+    (U.percent_encode db_file)
+    (U.percent_encode prover)
+    (U.percent_encode path)
+
+let link_show_single db_file prover path =
+  PB.link (PB.text path) ~uri:(uri_show_single db_file prover path)
+
 let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
 let uri_gnuplot pb = spf "/show-gp/%s" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s" (U.percent_encode pb)
@@ -209,9 +211,6 @@ let uri_show_table ?(offset=0) file =
 let uri_show_csv file = "/show_csv/"^U.percent_encode file
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
-
-(* default reply headers *)
-let d_headers = H.Headers.([] |> set "content-type" "text/html; charset=utf-8")
 
 (* show individual files *)
 let handle_show (self:t) : unit =
@@ -309,7 +308,7 @@ let handle_show (self:t) : unit =
         Log.info (fun k->k "show:turned into html in %.3fs"
                            (Misc.Chrono.since_last chrono));
         Log.debug (fun k->k "successful reply for %S" file);
-        H.Response.make_string ~headers:d_headers (Ok (Html.to_string h))
+        H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
     )
 
 (* prover in a given file *)
@@ -662,7 +661,7 @@ let handle_show_detailed (self:t) : unit =
       |> E.catch
         ~ok:(fun h ->
             Log.debug (fun k->k "successful reply for %S" db_file);
-            H.Response.make_string ~headers:d_headers (Ok (Html.to_string h)))
+            H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h)))
         ~err:(fun e ->
             Log.err (fun k->k "error in show-detailed %S:\n%s" db_file e);
             H.Response.fail ~code:500 "could not show detailed res for %S:\n%s" db_file e)
@@ -702,7 +701,7 @@ let handle_show_single (self:t) : unit =
       |> E.catch
         ~ok:(fun h ->
             Log.debug (fun k->k "successful reply for %S" db_file);
-            H.Response.make_string ~headers:d_headers (Ok (Html.to_string h)))
+            H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h)))
         ~err:(fun e ->
             Log.err (fun k->k "error in show-single %S:\n%s" db_file e);
             H.Response.fail ~code:500 "could not show single res for %S:\n%s" db_file e)
@@ -793,7 +792,7 @@ let handle_compare self : unit =
               div [pb_html box_compare_l];
             ]
         in
-        H.Response.make_string ~headers:d_headers (Ok (Html.to_string h))
+        H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
       ) else (
         H.Response.fail ~code:412 "precondition failed: select at least 2 files"
       )
@@ -818,7 +817,7 @@ let handle_delete self : unit =
         Sys.remove file)
       files;
     let h = html_redirect ~href:"/" @@ Format.asprintf "deleted %d files" (List.length files) in
-    H.Response.make_string ~headers:d_headers (Ok (Html.to_string h))
+    H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
   in
   H.add_route_handler self.server ~meth:`POST
     H.Route.(exact "delete1" @/ string_urlencoded @/ return)
@@ -879,7 +878,7 @@ let handle_provers (self:t) : unit =
             mk_ul l
           ]
       in
-      H.Response.make_string ~headers:d_headers (Ok (Html.to_string h))
+      H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
     )
 
 let handle_tasks (self:t) : unit =
@@ -918,7 +917,7 @@ let handle_tasks (self:t) : unit =
             mk_ul l;
           ]
       in
-      H.Response.make_string ~headers:d_headers (Ok (Html.to_string h))
+      H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
     )
 
 let handle_run (self:t) : unit =
@@ -936,7 +935,7 @@ let handle_run (self:t) : unit =
       let msg =
         Format.asprintf "task queued (%d in queue)!" (Task_queue.size self.task_q)
       in
-      H.Response.make_string ~headers:d_headers @@
+      H.Response.make_string ~headers:default_html_headers @@
       Ok (Html.to_string @@ html_redirect ~href:"/" msg)
     )
 
@@ -950,7 +949,7 @@ let handle_job_interrupt (self:t) : unit =
       let r =
         Ok (Html.to_string @@ html_redirect ~href:"/" "job interrupted")
       in
-      H.Response.make_string ~headers:d_headers r
+      H.Response.make_string ~headers:default_html_headers r
     )
 
 (* get metadata for the file *)
@@ -1055,7 +1054,7 @@ let handle_root (self:t) : unit =
             ];
           ]
       in
-      H.Response.make_string ~headers:d_headers (Ok (Html.to_string h))
+      H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
     )
 
 let handle_file_summary (self:t) : unit =
@@ -1080,7 +1079,7 @@ let handle_file_summary (self:t) : unit =
         in
         Log.debug (fun k->k "reply to handle-file-summary %s in %.3fs"
                      file (Misc.Chrono.since_last chrono));
-        H.Response.make_string ~headers:d_headers (Ok (Html.to_string_elt h))
+        H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string_elt h))
     )
 
 let handle_task_status self =
@@ -1114,7 +1113,7 @@ let handle_task_status self =
         )
       in
       let html = mk_page ~title:"tasks_status" [div [bod]] in
-      H.Response.make_string ~headers:d_headers (Ok (Html.to_string html))
+      H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string html))
     );
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "api" @/ exact "tasks_status" @/ return)

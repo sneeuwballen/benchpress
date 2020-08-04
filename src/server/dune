@@ -5,7 +5,7 @@
  (modes native)
  (promote (into ../../) (until-clean))
  (libraries benchpress containers cmdliner result uuidm logs logs.cli
-            tiny_httpd tyxml sqlite3_utils base64)
+            tiny_httpd tyxml sqlite3_utils base64 printbox)
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress))
 
 (rule
