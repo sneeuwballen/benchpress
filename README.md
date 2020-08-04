@@ -1,6 +1,6 @@
 # Benchpress
 
-[![build status](https://travis-ci.org/sneeuwballen/benchpress.svg?branch=master "build status")](https://travis-ci.org/sneeuwballen/benchpress)
+[![build status](https://travis-ci.org/sneeuwballen/benchpress.svg?branch=master "build status")](https://travis-ci.org/sneeuwballen/benchpress) ![build (gh)](https://github.com/sneeuwballen/benchpress/workflows/build/badge.svg)
 
 Tool to run one or more logic programs, on a set of files, and collect the
 results.
