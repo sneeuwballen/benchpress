@@ -313,23 +313,18 @@ let handle_show (self:t) : unit =
        ]
       ];
       [h3 [txt "Summary"]; div [pb_html box_meta]];
-      (CCList.flat_map
-         (fun (n,p) -> [h3 [txt ("stats for " ^ n)]; div [pb_html p]])
-         box_stat);
-      (* TODO: use lazy load for this? *)
-      (CCList.flat_map
-         (fun (n,pb) ->
-            [h3 [txt ("summary for " ^ n)];
-             mk_a ~cls:["btn-link"; "btn-sm"; "h-50"]
-               ~a:[a_href (Printf.sprintf "/show_csv/%s?provers=%s"
-                             (U.percent_encode file) (U.percent_encode n))]
-               [txt "download as csv"];
-             mk_a ~cls:["btn-link"; "btn-sm"]
-               ~a:[a_href (uri_show_detailed ~filter_prover:n file)]
-               [txt "see detailed results"];
-             div [pb_html pb];
-            ])
-         box_summary);
+      [h3 [txt "stats"]; div [pb_html box_stat]];
+      [
+        h3 [txt "summary"];
+        mk_a ~cls:["btn-link"; "btn-sm"; "h-50"]
+          ~a:[a_href (Printf.sprintf "/show_csv/%s"
+                        (U.percent_encode file))]
+          [txt "download as csv"];
+        mk_a ~cls:["btn-link"; "btn-sm"]
+          ~a:[a_href (uri_show_detailed file)]
+          [txt "see detailed results"];
+        div [pb_html box_summary];
+      ];
       (* lazy loading *)
       [div ~a:[a_class ["lazy-load"];
                Unsafe.string_attrib "x_src" uri_err ] []];
@@ -339,11 +334,11 @@ let handle_show (self:t) : unit =
              Unsafe.string_attrib "loading" "lazy";
             ]
          ~alt:"cactus plot of provers" ()];
-      (CCList.flat_map
-         (fun (n1,n2,p) ->
-            [h3 [txt (Printf.sprintf "comparison %s/%s" n1 n2)];
-             div [pb_html p]])
-         box_compare_l);
+      (if box_compare_l=PB.empty then []
+       else [
+         h3 [txt "comparisons"];
+         div [pb_html box_compare_l];
+       ]);
     ]
   in
   Log.info (fun k->k "show: turned into html in %.3fs"

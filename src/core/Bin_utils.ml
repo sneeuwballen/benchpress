@@ -91,28 +91,12 @@ let check_res notify (results:T.top_result) : unit or_error =
   check_res_an notify a
 
 let printbox_stat st : unit =
-  let open PrintBox in
-  let box_st =
-    st
-    |> List.map
-      (fun (p,r) -> frame @@ hlist [
-           center_hv @@ pad @@ text p;
-           T.Stat.to_printbox r])
-    |> hlist ~bars:false ~pad:(hpad 1)
-  in
+  let box_st = T.Stat.to_printbox_l st in
   Printf.printf "STAT:\n%s\n%!" (PrintBox_text.to_string box_st);
   ()
 
 let printbox_analyze a =
-  let open PrintBox in
-  let box_a =
-    a
-    |> List.map
-      (fun (p,r) -> frame @@ hlist [
-           center_hv @@ pad @@ text p;
-           T.Analyze.to_printbox r])
-    |> hlist ~bars:false ~pad:(hpad 1)
-  in
+  let box_a = T.Analyze.to_printbox_l a in
   Printf.printf "ANALYSIS:\n%s\n%!" (PrintBox_text.to_string box_a);
   ()
 

@@ -45,9 +45,21 @@ let list_provers db : string list or_error =
     ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
   |> Misc.db_err ~ctx:"listing provers"
 
+(** URL providers *)
+
+type string_linker = string -> string
+type prover_string_linker = Prover.name -> string_linker
+type path_linker = Problem.path -> PrintBox.t
+type prover_path_linker = Prover.name -> Problem.path -> PrintBox.t
+type prover_path_res_linker = Prover.name -> Problem.path -> res:string -> PrintBox.t
+
+let default_linker path = PB.text path
+let default_pp_linker _ path = default_linker path
+let default_ppr_linker _ _ ~res = default_linker res
+
 (** {2 Basic stats on results} *)
 
-module Stat = struct
+module Stat : sig
   type t = {
     unsat: int;
     sat: int;
@@ -60,41 +72,87 @@ module Stat = struct
     total_time: float; (* for sat+unsat *)
   }
 
-  let as_printbox_record ?to_link s : _ list =
-    let open PB in
-    let mk_row ?res lbl n mk_box =
+  val to_printbox_l :
+    ?to_link:prover_string_linker ->
+    (string*t) list ->
+    PB.t
+
+  val of_db_for : prover:Prover.name -> Db.t -> t or_error
+  val of_db : Db.t -> (Prover.name * t) list or_error
+
+  val pp : t Fmt.printer
+end = struct
+  type t = {
+    unsat: int;
+    sat: int;
+    errors: int;
+    unknown: int;
+    timeout: int;
+    memory: int;
+    custom: (string * int) list;
+    total: int;
+    total_time: float; (* for sat+unsat *)
+  }
+
+  let get_unsat r = r.unsat
+  let get_sat r = r.sat
+  let get_errors r = r.errors
+  let get_unknown r = r.unknown
+  let get_timeout r = r.timeout
+  let get_memory r = r.memory
+  let get_custom s r = try List.assoc s r.custom with Not_found -> 0
+  let get_total r = r.total
+  let get_total_time r = r.total_time
+
+  let to_printbox_l ?to_link l : PB.t =
+    let mk_row ?res lbl get_r mk_box : PB.t list =
       match to_link with
-      | Some f when n>0 ->
-        let uri =
+      | Some f ->
+        let uri p =
           let res = CCOpt.get_or ~default:lbl res in
-          f res in
-        lbl, PB.link ~uri (mk_box n)
-      | _ -> lbl, mk_box n
+          f p res
+        in
+        PB.text lbl ::
+        List.map (fun (p,r) ->
+            let n = get_r r in
+            if n > 0 then (
+              PB.link ~uri:(uri p) (mk_box n)
+            ) else (
+              mk_box n
+            ))
+          l
+      | _ ->
+        PB.text lbl :: List.map (fun (_p,r) -> mk_box (get_r r)) l
+    and mk_row1 lbl get_r mk_box =
+      PB.text lbl :: List.map (fun (_,r) -> mk_box @@ get_r r) l;
     in
-    List.flatten @@ [
-      [mk_row "sat" s.sat @@ pb_int_color Style.(fg_color Green);
-       mk_row "unsat" s.unsat @@ pb_int_color Style.(fg_color Green);
-       "sat+unsat", pb_int_color Style.(fg_color Green) (s.sat+s.unsat);
-       mk_row ~res:"error" "errors" s.errors @@ pb_int_color Style.(fg_color Cyan);
-       mk_row "unknown" s.unknown int;
-       mk_row "timeout" s.timeout int;
-      ];
-      CCList.map (fun (tag,i) -> mk_row ~res:tag ("tag." ^ tag) i int) s.custom;
-      ["memory", int s.memory;
-       "total", int s.total;
-       "total_time", line (Misc.human_duration s.total_time);
-      ];
-    ]
-
-  let to_printbox ?to_link (s:t) : PrintBox.t =
-    pb_v_record @@ as_printbox_record ?to_link s
-
-  let to_printbox_l ?to_link l =
-    CCList.map
-      (fun ((p:string), a) ->
-         let to_link = CCOpt.map (fun f x -> f p x) to_link in
-         p, to_printbox ?to_link a)
-      l
+    let r1 =
+      [mk_row "sat" get_sat @@ pb_int_color PB.Style.(fg_color Green);
+       mk_row "unsat" get_unsat @@ pb_int_color PB.Style.(fg_color Green);
+       mk_row1 "sat+unsat" (fun r->r.sat+r.unsat) @@
+       pb_int_color PB.Style.(fg_color Green);
+       mk_row ~res:"error" "errors" get_errors @@ pb_int_color PB.Style.(fg_color Cyan);
+       mk_row "unknown" get_unknown PB.int;
+       mk_row "timeout" get_timeout PB.int;
+      ]
+    and r2 =
+      let all_custom =
+        CCList.flat_map (fun (_,s) -> List.map fst s.custom) l
+        |> CCList.sort_uniq ~cmp:String.compare
+      in
+      CCList.map
+        (fun tag -> mk_row ~res:tag ("tag." ^ tag) (get_custom tag) PB.int)
+        all_custom
+    and r3 =
+      [mk_row1 "memory" get_memory PB.int;
+       mk_row1 "total" get_total PB.int;
+       mk_row1 "total_time" get_total_time
+         (fun s -> PB.line (Misc.human_duration s));
+      ]
+    in
+    let header = List.map PB.text @@ "provers" :: List.map fst l in
+    let rows = r1 @ r2 @ r3 in
+    PB.grid_l ~bars:true (header::rows)
 
   (* obtain stats for this prover *)
   let of_db_for ~(prover:Prover.name) (db:Db.t) : t or_error =
@@ -150,16 +208,6 @@ end
 
 (** {2 Basic analysis of results} *)
 
-type string_linker = string -> string
-type prover_string_linker = Prover.name -> string_linker
-type path_linker = Problem.path -> PrintBox.t
-type prover_path_linker = Prover.name -> Problem.path -> PrintBox.t
-type prover_path_res_linker = Prover.name -> Problem.path -> res:string -> PrintBox.t
-
-let default_linker path = PB.text path
-let default_pp_linker _ path = default_linker path
-let default_ppr_linker _ _ ~res = default_linker res
-
 module Analyze : sig
   type t = {
     improved  : int;
@@ -175,9 +223,8 @@ module Analyze : sig
   val of_db_for : ?full:bool -> Db.t -> prover:Prover.name -> t or_error
   val of_db : ?full:bool -> Db.t -> (Prover.name * t) list or_error
 
-  val to_printbox : ?link:string_linker -> t -> PrintBox.t
   val to_printbox_l : ?link:prover_string_linker ->
-    (Prover.name * t) list -> (string*PrintBox.t) list
+    (Prover.name * t) list -> PrintBox.t
   val to_printbox_bad : ?link:path_linker -> t -> PrintBox.t
   val to_printbox_bad_l :
     ?link:prover_path_linker ->
@@ -222,7 +269,7 @@ end = struct
            get1_int ~ctx:"get ok results"
              ~ty:Db.Ty.(p1 text, p1 int, id)
              {| select count(*) from prover_res where prover=?
-                and res=file_expect and file_expect in ('sat','unsat'); |}
+                and res=file_expect; |}
              prover
          and disappoint =
            get1_int ~ctx:"get disappoint results"
@@ -263,6 +310,12 @@ end = struct
                            Res.of_string ~tags res, t))
              ~f:Db.Cursor.to_list_rev
            |> scope.unwrap_with Db.Rc.to_string
+         and errors =
+           get1_int ~ctx:"get errors results"
+             ~ty:Db.Ty.(p1 text, p1 int, id)
+             {| select count(*) from prover_res where prover=?
+                and res = 'error' ; |}
+             prover
          and errors_full =
            if not full then []
            else Db.exec db
@@ -271,11 +324,10 @@ end = struct
                            Problem.make file (Res.of_string ~tags expected),
                            Res.of_string ~tags res, t))
              {| select file, res, file_expect, rtime from prover_res where prover=?
-                and res in ('error') ; |}
+                and res = 'error' ; |}
              prover ~f:Db.Cursor.to_list_rev
            |> scope.unwrap_with Db.Rc.to_string
          in
-         let errors = List.length errors_full in
          { ok; disappoint; improved; bad; bad_full; errors; errors_full; total; })
 
   (* TODO: create a function for "better"
@@ -294,32 +346,46 @@ end = struct
   let is_ok r = r.bad = 0
   let num_failed r = r.bad
 
-  let to_printbox ?link:to_link (r:t) : PrintBox.t =
-    let open PB in
-    let mk_row ?ex lbl n mk_box =
-      match to_link with
-      | Some f when n>0 ->
-        let uri =
-          let ex = CCOpt.get_or ~default:lbl ex in
-          f ex in
-        lbl, PB.link ~uri (mk_box n)
-      | _ -> lbl, mk_box n
-    in
-    let {improved; disappoint; ok; bad; total; errors; errors_full=_; bad_full=_} = r in
-    let fields = [
-      mk_row "improved" improved @@ pb_int_color Style.(fg_color Green);
-      mk_row "ok" ok @@ pb_int_color Style.(fg_color Green);
-      mk_row "disappoint" disappoint @@ pb_int_color Style.(fg_color Blue);
-      mk_row "bad" bad @@ pb_int_color Style.(fg_color Red);
-      mk_row ~ex:"error" "errors" errors @@ pb_int_color Style.(fg_color Cyan);
-      "total", int total;
-    ] in
-    pb_v_record ~bars:true fields
+  let get_improved r = r.improved
+  let get_ok r = r.ok
+  let get_disappoint r = r.disappoint
+  let get_bad r = r.bad
+  let get_errors r = r.errors
 
-  let to_printbox_l ?link =
-    CCList.map (fun (p, a) ->
-        let link = CCOpt.map (fun f -> f p) link in
-        p, to_printbox ?link a)
+  let to_printbox_ ~header ?link:to_link (l:(Prover.name * t) list) : PrintBox.t =
+    let open PB in
+    let mk_row ?ex lbl get_r mk_box : PB.t list =
+      match to_link with
+      | Some f ->
+        let uri p : string =
+          let ex = CCOpt.get_or ~default:lbl ex in
+          f p ex
+        in
+        PB.text lbl ::
+        List.map (fun (p,r) ->
+            let n = get_r r in
+            if n > 0 then (
+              PB.link ~uri:(uri p) (mk_box n)
+            ) else (
+              mk_box n
+            ))
+          l
+      | _ ->
+        PB.text lbl :: List.map (fun (_p,r) -> mk_box (get_r r)) l
+    in
+    let rows = [
+      mk_row "improved" get_improved @@ pb_int_color Style.(fg_color Blue);
+      mk_row "ok" get_ok @@ pb_int_color Style.(fg_color Green);
+      mk_row "disappoint" get_disappoint @@ pb_int_color Style.(fg_color Yellow);
+      mk_row "bad" get_bad @@ pb_int_color Style.(fg_color Red);
+      mk_row ~ex:"error" "errors" get_errors @@ pb_int_color Style.(fg_color Cyan);
+      PB.text "total" :: List.map (fun (_,r) -> int r.total) l;
+    ] in
+    PB.grid_l ~bars:true (header :: rows)
+
+  let to_printbox_l ?link l =
+    let header = List.map PB.text @@ ("provers" :: List.map fst l) in
+    to_printbox_ ~header ?link l
 
   let to_printbox_bad ?link:(mk_link=default_linker) r : PrintBox.t =
     let open PB in
@@ -395,26 +461,33 @@ end
 (** {2 Lightweight Comparison between bench runs} *)
 
 module Comparison_short : sig
-  type t = {
+  type single = {
     better: int;
     worse: int;
     same: int;
   }
 
-  val of_db : Db.t -> (Prover.name * Prover.name * t) list or_error
+  type t = {
+    provers: Prover.name list;
+    tbl: (Prover.name * Prover.name * single) list;
+  }
 
-  val to_printbox : Prover.name -> Prover.name -> t -> PrintBox.t
-  val to_printbox_l : (Prover.name * Prover.name * t) list -> (string*string*PrintBox.t) list
+  val of_db : Db.t -> t or_error
 
-  (* TODO: a grid like display (pv1\pv2) *)
+  val to_printbox_l : t -> PrintBox.t
 end = struct
-  type t = {
+  type single = {
     better: int;
     worse: int;
     same: int;
   }
 
-  let of_db db : _ or_error =
+  type t = {
+    provers: Prover.name list;
+    tbl: (Prover.name * Prover.name * single) list;
+  }
+
+  let of_db db : t or_error =
     (* get a single integer *)
     let db_get db s x1 x2 =
       Db.exec db s x1 x2 ~ty:Db.Ty.(p2 text text, p1 int, id) ~f:Db.Cursor.to_list_rev
@@ -423,49 +496,83 @@ end = struct
     in
     Misc.err_with
       ~map_err:(Printf.sprintf "comparison-short.of_db %s")
-      (fun scope ->
-         let provers = list_provers db |> scope.unwrap in
-         (* TODO: make a single query and group-by? *)
-         CCList.diagonal provers
-         |> List.rev_map
-           (fun (p1,p2) ->
-              assert (p1 <> p2);
-              let better =
-                db_get db
-                  {|select count(r1.file) from prover_res r1, prover_res r2
+    @@ fun scope ->
+    let provers = list_provers db |> scope.unwrap in
+    (* TODO: make a single query and group-by? *)
+    let tbl =
+      CCList.diagonal provers
+      |> List.rev_map
+        (fun (p1,p2) ->
+           assert (p1 <> p2);
+           let better =
+             db_get db
+               {|select count(r1.file) from prover_res r1, prover_res r2
                     where r1.prover=? and r2.prover=? and r1.file=r2.file
                     and r1.res in ('sat','unsat') and not (r2.res in ('sat','unsat')); |}
-                  p1 p2 |> scope.unwrap
-              and worse =
-                db_get db
-                  {|select count(r1.file) from prover_res r1, prover_res r2
+               p1 p2 |> scope.unwrap
+           and worse =
+             db_get db
+               {|select count(r1.file) from prover_res r1, prover_res r2
                     where r1.prover=? and r2.prover=? and r1.file=r2.file
                     and not (r1.res in ('sat','unsat')) and (r2.res in ('sat','unsat')); |}
-                  p1 p2 |> scope.unwrap
-              and same =
-                db_get db
-                  {|select count(r1.file) from prover_res r1, prover_res r2
+               p1 p2 |> scope.unwrap
+           and same =
+             db_get db
+               {|select count(r1.file) from prover_res r1, prover_res r2
                     where r1.prover=? and r2.prover=? and r1.file=r2.file
                     and r1.res in ('sat','unsat') and (r2.res in ('sat','unsat')); |}
-                  p1 p2 |> scope.unwrap
-              in
-              p1, p2, {better; worse; same}
-           )
-      )
+               p1 p2 |> scope.unwrap
+           in
+           p1, p2, {better; worse; same}
+        )
+    in
+    {provers; tbl}
 
-  let to_printbox p1 p2 (self:t) : PB.t =
-    let open PB in
-    pb_v_record [
-      "better for " ^ p1, int self.better;
-      "better for " ^ p2, int self.worse;
-      "same", int self.same;
-    ]
+  exception Find_int of (int * int * int)
 
-  let to_printbox_l l = CCList.map (fun (p1,p2,r) -> p1, p2, to_printbox p1 p2 r) l
-
+  let to_printbox_l_ (self:t) =
+    let get_pair p1 p2 =
+      try
+        List.iter (fun (p1',p2',r) ->
+            if p1=p1' && p2=p2' then raise (Find_int (r.better, r.worse, r.same))
+            else if p1=p2' && p2=p1' then raise (Find_int (r.worse, r.better, r.same))
+          ) self.tbl;
+        assert false
+      with Find_int x -> x
+    in
+    let headers =
+      PB.text "better:" ::
+      List.map (PB.text_with_style PB.Style.bold) self.provers in
+    let tbl =
+      List.map
+        (fun p2 ->
+           PB.text p2 ::
+           List.map
+             (fun p1 ->
+                if p1=p2 then (
+                  PB.center_hv @@ PB.text "×"
+                ) else (
+                 let bet, worse, same = get_pair p1 p2 in
+                 (* TODO: URL for detailed comparison p1 vs p2 *)
+                 let tsf s x = PB.text @@ Printf.sprintf s x in
+                 PB.center_hv @@ PB.vlist ~bars:false [
+                   tsf "same: %d" same;
+                   tsf "better: %d" bet;
+                   tsf "worse: %d" worse;
+                 ]
+               ))
+             self.provers)
+        self.provers
+    in
+    PB.grid_l ~bars:true (headers :: tbl)
   (* TODO: grid display (-> to array, then by index + reverse when i<j?)
      let to_printbox_grid l : PB.t =
   *)
+
+  let to_printbox_l self =
+    if List.length self.provers >= 2 then (
+      to_printbox_l_ self
+    ) else PB.empty (* nothing interesting *)
 end
 
 type metadata = {
@@ -561,7 +668,7 @@ type compact_result = {
   cr_meta: metadata;
   cr_stat: (Prover.name * Stat.t) list;
   cr_analyze: (Prover.name * Analyze.t) list;
-  cr_comparison: (Prover.name * Prover.name * Comparison_short.t) list;
+  cr_comparison: Comparison_short.t;
 }
 
 module Compact_result = struct
@@ -772,8 +879,8 @@ module Top_result : sig
     ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
     table -> PrintBox.t
 
-  val to_printbox_summary : t -> (string * PrintBox.t) list
-  val to_printbox_stat : t -> (string * PrintBox.t) list
+  val to_printbox_summary : t -> PrintBox.t
+  val to_printbox_stat : t -> PrintBox.t
 
   val to_printbox_table :
     ?offset:int -> ?page_size:int ->
@@ -984,11 +1091,11 @@ end = struct
     in
     PB.grid_l (header_line::lines)
 
-  let to_printbox_stat (self:t) : (_ * PB.t) list =
+  let to_printbox_stat (self:t) : PB.t =
     let a = stat self in
-    CCList.map (fun (p, st) -> p, Stat.to_printbox st) a
+    Stat.to_printbox_l a
 
-  let to_printbox_summary (self:t) : (_ * PB.t) list =
+  let to_printbox_summary (self:t) : PB.t =
     let a = analyze self in
     Analyze.to_printbox_l a
 
@@ -1181,7 +1288,7 @@ end = struct
       | None -> ""
       | Some TD_expect_error -> " and res = 'error'"
       | Some TD_expect_ok ->
-        " and res = file_expect and file_expect in ('sat','unsat')"
+        " and res = file_expect "
       | Some TD_expect_disappoint ->
         " and not (res in ('sat','unsat')) and file_expect in ('sat','unsat')"
       | Some TD_expect_bad ->
