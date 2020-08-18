@@ -226,9 +226,17 @@ end = struct
       in
       Log.debug (fun k->k "client.call meth=%S cl_id=%d" name self.cl_id);
       let body = pb_to_string enc x in
-      write_call_ conn.oc name body;
+      begin
+        try write_call_ conn.oc name body
+        with e ->
+          self.conn <- None; (* will have to retry *)
+          raise e
+      end;
       Log.debug (fun k->k "client.read_res cl_id=%d" self.cl_id);
-      let line = input_line conn.ic in
+      let line =
+        try input_line conn.ic
+        with e -> self.conn <- None; raise e
+      in
       let len, success =
         try
           let i = String.index line ' ' in
@@ -243,7 +251,10 @@ end = struct
         with e ->
           failwith @@ "invalid status line: " ^ Printexc.to_string e
       in
-      let body = really_input_string conn.ic len in
+      let body =
+        try really_input_string conn.ic len
+        with e -> self.conn <- None; raise e
+      in
       if success then (
         try
           let x = pb_of_string dec body in
