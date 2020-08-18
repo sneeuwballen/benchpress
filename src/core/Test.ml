@@ -747,13 +747,13 @@ end = struct
                  CCList.mapi
                    (fun i rtime ->
                       sum := !sum +. rtime;
-                      (float i, !sum))
+                      (!sum, float i))
                    l
                in
                Gp.Series.linespoints_xy ~title:prover l)
         in
         Gp.plot_many
-          ~labels:(Gp.Labels.create ~y:"time (s)" ~x:"problems solved (accumulated)" ())
+          ~labels:(Gp.Labels.create ~x:"time (s)" ~y:"problems solved (accumulated)" ())
           ~title:"cumulative time for n° of problems solved" gp series ~output);
     ()
 
