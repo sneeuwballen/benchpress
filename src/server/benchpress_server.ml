@@ -1121,47 +1121,13 @@ let handle_file_summary (self:t) : unit =
 
 let handle_task_status self =
   H.add_route_handler self.server ~meth:`GET
-    H.Route.(exact "tasks_status" @/ return)
-    (fun _req ->
-       query_wrap (fun() -> "tasks_status")
-       @@ fun _chrono _scope ->
-       let open Html in
-       let bod =
-         let tl = Task_queue.api_task_list self.task_q in
-         if tl.Api.waiting=[] && tl.Api.active=[] then div[]
-         else (
-           mk_ul @@ List.flatten [
-             [mk_li [
-                 txt @@
-                 Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)]];
-             begin match Task_queue.cur_job self.task_q with
-               | None -> []
-               | Some j ->
-                 (* display current job *)
-                 [mk_li [
-                     div ~a:[a_class ["spinner-border"; "spinner-border-sm"]] [span []];
-                     pre [txt @@
-                          Format.asprintf "current task: %a" Task_queue.Job.pp j];
-                     form ~a:[a_id (uri_of_string "cancel");
-                              a_action (uri_of_string @@ "/interrupt/"^Task_queue.Job.uuid j);
-                              a_method `Post;]
-                       [mk_button ~cls:["btn-warning"] [txt "interrupt"]]]
-                 ];
-             end
-           ]
-         )
-       in
-       let html = mk_page ~title:"tasks_status" [div [bod]] in
-       H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string html))
-    );
-  H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "api" @/ exact "tasks_status" @/ return)
     (fun _req ->
        let j =
          Task_queue.basic_status self.task_q
-         |> Task_queue.Basic_status.to_json
+         |> E.map Task_queue.Basic_status.to_json
        in
-       H.Response.make_string ~headers:["Content-Type", "text/json"] (Ok j)
+       H.Response.make_string ~headers:["Content-Type", "text/json"] j
     );
   ()
 

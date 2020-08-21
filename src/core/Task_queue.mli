@@ -3,6 +3,8 @@
 
 module Fmt = CCFormat
 
+type 'a or_error = ('a, string) result
+
 module Job : sig
   type t
 
@@ -39,7 +41,7 @@ val interrupt : t -> uuid:string -> bool
 
 val api_update_external_job : t -> Api.task_descr -> [`Ok | `Interrupted]
 
-val api_task_list : t -> Api.task_list
+val api_task_list : t -> Api.task_list or_error
 
 module Basic_status : sig
   type t
@@ -47,4 +49,4 @@ module Basic_status : sig
   val to_json : t -> string
 end
 
-val basic_status : t -> Basic_status.t
+val basic_status : t -> Basic_status.t or_error

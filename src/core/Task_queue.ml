@@ -4,6 +4,8 @@
 module Fmt = CCFormat
 module M = CCLock
 
+type 'a or_error = ('a, string) result
+
 let src_log = Logs.Src.create "task-queue"
 let timeout_api_expire_s = 60. (* after which api jobs expire *)
 
@@ -40,7 +42,7 @@ module Job = struct
     let t_status = if started self then (
         Api.T_in_progress {
           Api.time_elapsed=time_elapsed self;
-          estimated_completion=Int32.of_int self.j_percent_completion;
+          estimated_completion=self.j_percent_completion;
         }
       ) else Api.T_waiting
     in
@@ -182,7 +184,7 @@ module Basic_status = struct
          | Api.T_in_progress {time_elapsed=t; estimated_completion=c} ->
            ["status", `String "done";
             "time_elapsed", `String (Misc.human_duration t);
-            "estimated_completion", `Int (Int32.to_int c)
+            "estimated_completion", `Int c;
            ])
       ]
     in
