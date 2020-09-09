@@ -10,7 +10,8 @@ build: [
 depends: [
   "dune" { >= "1.11" }
   "base-unix"
-  "containers" { >= "2.7" & < "3.0" }
+  "containers" { >= "3.0" & < "4.0" }
+  "containers-thread" { >= "3.0" & < "4.0" }
   "re" { >= "1.8" & < "2.0" }
   "csv"
   "cmdliner"
@@ -24,7 +25,7 @@ depends: [
   "sqlite3_utils" { >= "0.3" & < "0.4" }
   "printbox" { >= "0.5" & < "0.6" }
   "decoders" { >= "0.3.0" & < "0.4" }
-  "ocaml" {>= "4.03" }
+  "ocaml" {>= "4.08" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"

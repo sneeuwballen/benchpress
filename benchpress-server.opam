@@ -10,7 +10,7 @@ build: [
 depends: [
   "dune" { >= "1.11" }
   "base-unix"
-  "containers" { >= "2.7" & < "3.0" }
+  "containers" { >= "3.0" & < "4.0" }
   "csv"
   "benchpress" { = version }
   "cmdliner"
@@ -24,7 +24,7 @@ depends: [
   "tiny_httpd_camlzip" { >= "0.5" }
   "printbox" { >= "0.5" & < "0.6" }
   "tyxml"  # for printbox.tyxml
-  "ocaml" {>= "4.04" }
+  "ocaml" {>= "4.08" }
   "jemalloc" { >= "0.2" & < "0.3" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
