@@ -174,7 +174,7 @@ let with_file_as_db filename f : _ E.t =
          mk_file_full filename |> scope.unwrap_with (fun e->e,500) in
        try
          Db.with_db ~timeout:500 ~mode:`READONLY filename
-           (fun db -> f scope db)
+           (fun db -> f (scope, db))
        with
        | Db.RcError rc ->
          scope.unwrap_with (fun c->Db.Rc.to_string c,500) (Error rc)

@@ -191,6 +191,7 @@ type 'a try_scope = {
   unwrap_with: 'x 'b. ('b -> 'a) -> ('x,'b) result -> 'x;
 }
 
+
 (** Open a local block with an [unwrap] to unwrap results *)
 let err_with (type err) ?(map_err=fun e -> e) f : (_,err) result =
   let module E = struct exception Local of err end in
