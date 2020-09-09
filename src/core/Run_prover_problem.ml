@@ -9,7 +9,7 @@ type job_res= Prover.name Run_result.t
 
 (* run one particular test *)
 let run_exn_ ~limits prover pb =
-  let timeout = CCOpt.get_exn limits.Limit.All.time in
+  let timeout = CCOpt.get_or ~default:Limit.Time.(mk ~s:30 ()) limits.Limit.All.time in
   Logs.info
     (fun k->k"running %-15s/%-30s (timeout %a)..."
         prover.Prover.name pb.Problem.name Limit.Time.pp timeout);

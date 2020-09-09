@@ -37,12 +37,14 @@ let cmd ~conf ~limits =
       (* this should be safe as we only use pattern recognized
          by the Limit.All.substitute, hence it should never return
          None *)
-      CCOpt.get_exn @@
-      Limit.All.substitute
+      match Limit.All.substitute
         ~memory_as:Megabytes
         ~time_as:Seconds
         ~stack_as:Megabytes
         limits s
+      with
+      | Some x -> x
+      | None -> failwith (Printf.sprintf "cannot substitute in %S" s)
     in
     let add_str s = Buffer.add_substitute buf subst s in
     Buffer.add_string buf "ulimit ";
