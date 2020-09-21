@@ -1,0 +1,30 @@
+
+# BARE signature for the API.
+# See https://baremessages.org/
+
+type TaskProgress {
+  time_elapsed: f64
+  estimated_completion: i32
+}
+
+type StWaiting void
+type StDone void
+type StInProgress TaskProgress
+type Status (StWaiting | StDone | StInProgress)
+
+type TaskDescr {
+  t_id: string
+  t_descr: string
+  t_status: Status
+}
+
+type TaskList {
+  active: []TaskDescr
+  waiting: []TaskDescr
+}
+
+enum OkOrInterrupted {
+  ok
+  interrupted
+}
+

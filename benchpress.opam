@@ -19,13 +19,16 @@ depends: [
   "logs"
   "uuidm"
   "base64"
-  "ocaml-protoc" { >= "2.0" & < "3.0" }
+  "bare-encoding"
   "gnuplot" { >= "0.6" & < "0.8" }
   "sqlite3"
   "sqlite3_utils" { >= "0.3" & < "0.4" }
   "printbox" { >= "0.5" & < "0.6" }
   "decoders" { >= "0.3.0" & < "0.4" }
   "ocaml" {>= "4.08" }
+]
+pin-depends: [
+  ["bare-encoding.dev" "https://github.com/c-cube/bare-ocaml.git"]
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
