@@ -79,7 +79,7 @@ let find_expect ?default_expect ~expect file : Res.t or_error =
       let raw = Prover.run prover ~file
           ~limits:(Limit.All.mk
                      ~time:(Limit.Time.mk ~s:1 ())
-                     ~memory:(Limit.Memory.mk ~m:1 ())
+                     ~memory:(Limit.Memory.mk ~m:200 ())
                      ())
       in
       match Prover.analyze_p_opt prover raw, default_expect with
