@@ -1084,6 +1084,7 @@ let handle_root (self:t) : unit =
         ];
       ]
   in
+  Jemalloc.epoch();
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
 let handle_file_summary (self:t) : unit =
