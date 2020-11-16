@@ -573,12 +573,14 @@ let mk_file_summary filename m : _ Html.elt =
 
 let l_all_expect = ["improved"; "ok"; "disappoint"; "bad"; "error"]
 
-let expect_of_string = function
+let expect_of_string s =
+  match String.trim s with
   | "improved" -> Ok (Some Test.TD_expect_improved)
   | "ok" -> Ok (Some Test.TD_expect_ok)
   | "disappoint" -> Ok (Some Test.TD_expect_disappoint)
   | "bad" -> Ok (Some Test.TD_expect_bad)
   | "error" -> Ok (Some Test.TD_expect_error)
+  | "" -> Ok None
   | e -> Error (spf "unknown 'expect' filter: %S" e)
 
 (* show list of individual results with URLs to single results for a file *)
