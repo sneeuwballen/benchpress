@@ -1186,7 +1186,8 @@ let handle_file self : unit =
         ) else (
           try H.Byte_stream.of_chan @@ open_in file
           with e ->
-            H.Response.fail_raise ~code:500 "cannot open file %S:\n%s" file
+            H.Response.fail_raise ~code:404
+              "cannot open file %S:\n%s\n\nThe benchmark might not be present on this machine." file
               (Printexc.to_string e)
         )
       in
