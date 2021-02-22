@@ -309,33 +309,6 @@ module Task_list = struct
     Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "task-list"
 end
 
-(** {2 List Active Tasks} *)
-
-module Task_run_list = struct
-  let run debug port =
-    Misc.setup_logs debug;
-    let client = Api.Client.create ~port () in
-    match Api.Client.call client "task_list"
-            ~enc:Api.encode_empty {Api.v=()}
-            ~dec:Api.decode_task_list
-    with
-    | Ok l ->
-      Format.printf "@[<v>%a@]@." Api.pp_task_list l;
-      Ok ()
-    | Error e -> Error e
-
-  let cmd =
-    let open Cmdliner in
-    let doc = "list task(s) defined in config" in
-    let port =
-      Arg.(value & opt int Api.default_port &
-           info ["p";"--port"] ~doc:"port to connect to")
-    and debug =
-      Logs_cli.level ()
-    in
-    Term.(pure run $ debug $ port), Term.info ~doc "task-running"
-end
-
 (** {2 Convert results to Sql} *)
 
 module Sql_convert = struct
@@ -379,7 +352,6 @@ let parse_opt () =
     Sql_convert.cmd;
     Task_list.cmd;
     Task_show.cmd;
-    Task_run_list.cmd;
     Plot.cmd;
   ]
 

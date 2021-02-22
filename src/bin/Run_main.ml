@@ -2,72 +2,20 @@ module T = Test
 module E = CCResult
 type 'a or_error = ('a, string) E.t
 
-let mk_progress_api ?interrupted ~uuid api_port : _ option =
-  let module M = CCLock in
-  match api_port with
-  | None -> None
-  | Some p ->
-    let task = {
-      Api.t_id=Uuidm.to_string uuid;
-      t_descr="run provers";
-      t_status=Api.T_waiting;
-    } in
-    let client = Api.Client.create ~port:p () in
-    let period = 0.3 in
-    let state_and_done = M.create (task,false) in (* state of the task *)
-    (* separate thread to update the server *)
-    let rec loop_send() =
-      let tsk, is_done = M.get state_and_done in
-      if not is_done then (
-        Logs.debug (fun k->k"send progress api to the server");
-        begin match
-            Api.Client.call client "task_update" tsk
-            ~enc:Api.encode_task_descr
-            ~dec:Api.decode_ok_or_interrupted
-          with
-          | Ok Api.Ok -> ()
-          | Ok Api.Interrupted ->
-            Logs.warn (fun k->k"task %a interrupted by API!" Api.pp_task_descr tsk);
-            CCOpt.iter (fun m -> CCLock.set m true) interrupted;
-          | Error e ->
-            Logs.err
-              (fun k->k "error when connecting to API: %s" e);
-        end;
-        Thread.delay period;
-        loop_send()
-      )
-    in
-    let _th_sender = Thread.create loop_send () in
-    let r = object
-      method on_progress ~percent ~elapsed_time:t ~eta:_ =
-        M.update state_and_done
-          (fun (task,_) ->
-            {task with
-              t_status=Api.T_in_progress {
-              Api.estimated_completion=Int32.of_int percent; time_elapsed=t;
-            }},false)
-
-      method on_done =
-        M.set state_and_done ({ task with t_status=Api.T_done }, true) ;
-    end
-    in
-    Some r
-
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action
-    ?api_port ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid
+    ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid
     (r:Action.run_provers)
   : (_ * T.Compact_result.t) or_error =
   let open E.Infix in
   begin
     let interrupted = CCLock.create false in
-    let cb_progress = mk_progress_api ~interrupted ~uuid api_port in
     Exec_action.Exec_run_provers.expand ?dyn ?j ?limits r >>= fun r ->
     let len = List.length r.problems in
     Notify.sendf notify "testing with %d provers, %d problems…"
       (List.length r.provers) len;
     let progress =
-      Exec_action.Progress_run_provers.make ?cb_progress ?pp_results ?dyn r in
+      Exec_action.Progress_run_provers.make ?pp_results ?dyn r in
     (* solve *)
     begin
       Exec_action.Exec_run_provers.run ~uuid ?timestamp
@@ -133,7 +81,6 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       (* run action here! *)
       let uuid = Misc.mk_uuid() in
       execute_run_prover_action
-        ~api_port:Api.default_port
         ~uuid ?pp_results ?dyn:progress ~limits ?j ~notify ~timestamp
         run_provers_action
       >>= fun (top_res, (results:T.Compact_result.t)) ->

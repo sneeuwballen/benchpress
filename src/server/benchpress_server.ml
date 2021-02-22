@@ -1110,51 +1110,6 @@ let handle_file_summary (self:t) : unit =
   in
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string_elt h))
 
-let handle_task_status self =
-  H.add_route_handler self.server ~meth:`GET
-    H.Route.(exact "tasks_status" @/ return)
-    (fun _req ->
-       let@@ _chrono, _scope = query_wrap (fun() -> "tasks_status") in
-       let open Html in
-       let bod =
-         let tl = Task_queue.api_task_list self.task_q in
-         if tl.Api.waiting=[] && tl.Api.active=[] then div[]
-         else (
-           mk_ul @@ List.flatten [
-             [mk_li [
-                 txt @@
-                 Format.asprintf "jobs in queue: %d" (Task_queue.size self.task_q)]];
-             begin match Task_queue.cur_job self.task_q with
-               | None -> []
-               | Some j ->
-                 (* display current job *)
-                 [mk_li [
-                     div ~a:[a_class ["spinner-border"; "spinner-border-sm"]] [span []];
-                     pre [txt @@
-                          Format.asprintf "current task: %a" Task_queue.Job.pp j];
-                     form ~a:[a_id (uri_of_string "cancel");
-                              a_action (uri_of_string @@ "/interrupt/"^Task_queue.Job.uuid j);
-                              a_method `Post;]
-                       [mk_button ~cls:["btn-warning"] [txt "interrupt"]]]
-                 ];
-             end
-           ]
-         )
-       in
-       let html = mk_page ~title:"tasks_status" [div [bod]] in
-       H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string html))
-    );
-  H.add_route_handler self.server ~meth:`GET
-    H.Route.(exact "api" @/ exact "tasks_status" @/ return)
-    (fun _req ->
-       let j =
-         Task_queue.basic_status self.task_q
-         |> Task_queue.Basic_status.to_json
-       in
-       H.Response.make_string ~headers:["Content-Type", "text/json"] (Ok j)
-    );
-  ()
-
 let handle_css self : unit =
   let mk_path p' ctype value =
     H.add_route_handler self ~meth:`GET H.Route.(exact p' @/ return)
@@ -1196,34 +1151,11 @@ let handle_file self : unit =
         ~code:200 bytes
     )
 
-(** {2 Local API} *)
-module Api_serve : sig
-  val serve : t -> port:int -> unit
-end = struct
-  let serve (self:t) ~port : unit =
-    Log.info (fun k->k"serve API on port %d" port);
-    let server = Api.Server.create ~port in
-    (* add methods *)
-    Api.Server.add server
-      "task_update"
-      ~dec:Api.decode_task_descr
-      ~enc:Api.encode_ok_or_interrupted
-      (fun task ->
-         match Task_queue.api_update_external_job self.task_q task with
-         | `Ok -> Ok Api.Ok
-         | `Interrupted -> Ok Api.Interrupted);
-    Api.Server.add server
-      "task_list"
-      ~dec:Api.decode_empty ~enc:Api.encode_task_list
-      (fun _e -> Ok (Task_queue.api_task_list self.task_q));
-    Api.Server.serve server
-end
-
 (** {2 Embedded web server} *)
 
 module Cmd = struct
   let main
-      ?(local_only=false) ?port ~dyn_status ~allow_delete ~api_port
+      ?(local_only=false) ?port ~dyn_status ~allow_delete
       (defs:Definitions.t) () =
     try
       let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
@@ -1242,10 +1174,8 @@ module Cmd = struct
           k "enable http debug"
         );
       (* maybe serve the API *)
-      ignore @@ Thread.create (fun()->Api_serve.serve self ~port:api_port) ();
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       handle_root self;
-      handle_task_status self;
       handle_file_summary self;
       handle_css server;
       handle_show self;
@@ -1280,13 +1210,11 @@ module Cmd = struct
       Arg.(value & opt bool false & info ["allow-delete"] ~doc:"allow deletion of files")
     and defs =
       Bin_utils.definitions_term
-    and api_port =
-      Arg.(value & opt int Api.default_port & info ["api-port"] ~doc:"API port")
     in
     let doc = "serve embedded web UI on given port" in
-    let aux defs port local_only dyn_status allow_delete api_port () =
-      main ?port ~local_only ~dyn_status ~allow_delete ~api_port defs () in
-    Term.(pure aux $ defs $ port $ local_only $ dyn_status $ allow_delete $ api_port $ pure () ),
+    let aux defs port local_only dyn_status allow_delete () =
+      main ?port ~local_only ~dyn_status ~allow_delete defs () in
+    Term.(pure aux $ defs $ port $ local_only $ dyn_status $ allow_delete $ pure () ),
     Term.info ~doc "serve"
 end
 

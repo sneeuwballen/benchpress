@@ -37,14 +37,3 @@ val loop : t -> unit
 val interrupt : t -> uuid:string -> bool
 (** Interrupt task. Returns true on success *)
 
-val api_update_external_job : t -> Api.task_descr -> [`Ok | `Interrupted]
-
-val api_task_list : t -> Api.task_list
-
-module Basic_status : sig
-  type t
-
-  val to_json : t -> string
-end
-
-val basic_status : t -> Basic_status.t
