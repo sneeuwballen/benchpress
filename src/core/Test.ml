@@ -696,15 +696,18 @@ module Metadata = struct
 
   let to_printbox ?link:(mk_link=default_linker) self : PB.t =
     let open PB in
-    pb_v_record [
-      "provers", vlist_map mk_link self.provers;
-      "n_results", int self.n_results;
-      "uuid", text @@ Uuidm.to_string self.uuid;
-      "timestamp", (match self.timestamp with
-          | None -> text "none"
-          | Some f -> text @@ Misc.human_datetime f);
-      "total_wall_time", (match self.total_wall_time with
-          | None -> text "none" | Some f -> text @@ Misc.human_duration f);
+    pb_v_record @@ List.flatten [
+      ["provers", vlist_map mk_link self.provers;
+       "n_results", int self.n_results; ];
+      (if self.n_bad>0 then ["bad", int self.n_bad] else []);
+      ["uuid", text @@ Uuidm.to_string self.uuid;
+       "dirs", hlist_map text self.dirs;
+       "timestamp", (match self.timestamp with
+           | None -> text "none"
+           | Some f -> text @@ Misc.human_datetime f);
+       "total_wall_time", (match self.total_wall_time with
+           | None -> text "none" | Some f -> text @@ Misc.human_duration f);
+      ]
     ]
 
   let db_prepare (db:Db.t) : _ or_error =
