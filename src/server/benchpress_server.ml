@@ -17,7 +17,6 @@ type t = {
   task_q: Task_queue.t;
   data_dir: string;
   meta_cache: (string, Test.metadata) Hashtbl.t;
-  dyn_status: bool;
   allow_delete: bool;
 }
 
@@ -144,14 +143,6 @@ module Html = struct
   let to_string h = Format.asprintf "@[%a@]@." (pp ()) h
   let to_string_elt h = Format.asprintf "@[%a@]@." (pp_elt ()) h
 end
-
-let dyn_status self =
-  let open Html in
-  if self.dyn_status then (
-    ul ~a:[a_id "dyn-status"; a_class ["list-group"]] []
-  ) else (
-    div[] (* nothing *)
-  )
 
 let html_redirect ~href (s:string) =
   let open Html in
@@ -290,7 +281,6 @@ let handle_show (self:t) : unit =
     mk_page ~title:"show" @@
     List.flatten [
       [mk_navigation [uri_show file, "show", true];
-       dyn_status self;
        h3 [txt file];
        mk_row @@
        CCList.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@
@@ -365,7 +355,6 @@ let handle_prover_in (self:t) : unit =
           uri_show file, "file", false;
           uri_prover_in file p_name, "prover", true;
         ];
-        dyn_status self;
         div [
           pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
           begin match prover.Prover.defined_in with
@@ -522,7 +511,7 @@ let handle_show_as_table (self:t) : unit =
           (if offset=0 then "full" else spf "full[%d..]" offset),
           true;
         ];
-       dyn_status self];
+      ];
       [div ~a:[a_class ["container-fluid"]] @@
        [form ~a:[a_action (uri_show_table file);
                  a_method `Get;
@@ -634,7 +623,6 @@ let handle_show_detailed (self:t) : unit =
         (if offset=0 then "detailed" else spf "detailed [%d..%d]" offset (offset+List.length l-1)),
         true;
       ];
-     dyn_status self;
      div ~a:[a_class ["container"]] [
        h2 [txt (spf "detailed results (%d total)" n)];
        div ~a:[a_class ["navbar"; "navbar-expand-lg"]] @@
@@ -728,7 +716,6 @@ let handle_show_single (self:t) : unit =
       uri_show_detailed db_file, "detailed", false;
       uri_show_single db_file prover pb_file, "single", true;
     ];
-    dyn_status self;
     h2 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
     div [pb_html pb];
     details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stdout"])
@@ -820,7 +807,6 @@ let handle_compare self : unit =
       mk_page ~title:"compare"
         [
           mk_navigation [];
-          dyn_status self;
           h3 [txt "comparison"];
           div [pb_html box_compare_l];
         ]
@@ -906,7 +892,6 @@ let handle_provers (self:t) : unit =
     mk_page ~title:"provers"
       [
         mk_navigation ["/provers/", "provers", true];
-        dyn_status self;
         h3 [txt "list of provers"];
         mk_ul l
       ]
@@ -945,7 +930,6 @@ let handle_tasks (self:t) : unit =
     mk_page ~title:"tasks"
       [
         mk_navigation ["/tasks/", "tasks", true];
-        dyn_status self;
         h3 [txt "list of tasks"];
         mk_ul l;
       ]
@@ -1017,7 +1001,6 @@ let handle_root (self:t) : unit =
     mk_page ~title:"benchpress"
       [
         h1 [txt "Benchpress"];
-        dyn_status self;
         div ~a:[a_class ["container"]] [
           h2 [txt "configuration"];
           ul ~a:[a_class ["list-group"]] @@ List.flatten [
@@ -1155,7 +1138,7 @@ let handle_file self : unit =
 
 module Cmd = struct
   let main
-      ?(local_only=false) ?port ~dyn_status ~allow_delete
+      ?(local_only=false) ?port ~allow_delete
       (defs:Definitions.t) () =
     try
       let addr = if local_only then "127.0.0.1" else "0.0.0.0" in
@@ -1164,7 +1147,7 @@ module Cmd = struct
       let self = {
         defs; server; data_dir; task_q=Task_queue.create ~defs ();
         meta_cache=Hashtbl.create ~random:true 16;
-        dyn_status; allow_delete;
+        allow_delete;
       } in
       (* thread to execute tasks *)
       let _th_r = Thread.create Task_queue.loop self.task_q in
@@ -1204,17 +1187,15 @@ module Cmd = struct
       Arg.(value & opt (some int) None & info ["p";"port"] ~doc:"port to listen on")
     and local_only =
       Arg.(value & flag & info ["local-only"] ~doc:"only listen on localhost")
-    and dyn_status =
-      Arg.(value & opt bool false & info ["dyn-status"] ~doc:"dynamic status in page")
     and allow_delete =
       Arg.(value & opt bool false & info ["allow-delete"] ~doc:"allow deletion of files")
     and defs =
       Bin_utils.definitions_term
     in
     let doc = "serve embedded web UI on given port" in
-    let aux defs port local_only dyn_status allow_delete () =
-      main ?port ~local_only ~dyn_status ~allow_delete defs () in
-    Term.(pure aux $ defs $ port $ local_only $ dyn_status $ allow_delete $ pure () ),
+    let aux defs port local_only allow_delete () =
+      main ?port ~local_only ~allow_delete defs () in
+    Term.(pure aux $ defs $ port $ local_only $ allow_delete $ pure () ),
     Term.info ~doc "serve"
 end
 

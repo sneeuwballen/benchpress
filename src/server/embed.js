@@ -72,48 +72,7 @@ function lazyLoadAll() {
         lazyLoad(e, target);
     });
 }
-// update the 'dyn-status' object
-function updateTasks() {
-    return __awaiter(this, void 0, void 0, function () {
-        var targetNode, st, st_json, s, _i, _a, j, compl, _b, _c, j;
-        return __generator(this, function (_d) {
-            switch (_d.label) {
-                case 0:
-                    targetNode = document.getElementById('dyn-status');
-                    if (!targetNode) return [3 /*break*/, 3];
-                    return [4 /*yield*/, fetch('/api/tasks_status/')];
-                case 1:
-                    st = _d.sent();
-                    return [4 /*yield*/, st.json()];
-                case 2:
-                    st_json = _d.sent();
-                    s = '';
-                    for (_i = 0, _a = st_json.active; _i < _a.length; _i++) {
-                        j = _a[_i];
-                        compl = "";
-                        if (j.estimated_completion !== undefined) {
-                            compl = ", estimated completion: " + j.estimated_completion + "%";
-                        }
-                        s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <p>active task: (uuid: " + j.uuid + ", elapsed: " + j.time_elapsed + compl + ")</p>\n                <pre>" + j.descr + "</pre>\n                <form id=\"cancel\" action=\"/interrupt/" + j.uuid + "/\" method=\"POST\">\n                 <button class=\"btn btn-warning\"> interrupt </button>\n                </form> </li>";
-                    }
-                    for (_b = 0, _c = st_json.waiting; _b < _c.length; _b++) {
-                        j = _c[_b];
-                        s += "<li class=\"list-group-item\">\n                <div class=\"spinner-border\"></div>\n                <p>waiting task (uuid " + j.uuid + ")</p>\n                <pre>" + j.descr + "</pre>\n                </li>";
-                    }
-                    targetNode.innerHTML = s;
-                    _d.label = 3;
-                case 3: return [2 /*return*/];
-            }
-        });
-    });
-}
 lazyLoadAll();
 document.addEventListener('change', function () {
     lazyLoadAll();
 });
-window.onload = function () {
-    if (document.getElementById('dyn-status') !== undefined) {
-        updateTasks();
-        setInterval(updateTasks, 500);
-    }
-};

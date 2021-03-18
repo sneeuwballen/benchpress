@@ -36,59 +36,7 @@ function lazyLoadAll() {
     });
 }
 
-interface TaskDescr {
-    descr: string;
-    uuid: string;
-    time_elapsed?: string;
-    estimated_completion?: number;
-}
-interface TaskStatus {
-    active: Array<TaskDescr>;
-    waiting: Array<TaskDescr>;
-}
-
-// update the 'dyn-status' object
-async function updateTasks() {
-    const targetNode = document.getElementById('dyn-status');
-    if (targetNode) {
-        const st = await fetch('/api/tasks_status/');
-        const st_json = <TaskStatus> await st.json();
-        var s = '';
-
-        for (let j of st_json.active) {
-            var compl = "";
-            if (j.estimated_completion !== undefined) {
-                compl = `, estimated completion: ${j.estimated_completion}%`;
-            }
-            s += `<li class="list-group-item">
-                <div class="spinner-border"></div>
-                <p>active task: (uuid: ${j.uuid}, elapsed: ${j.time_elapsed}${compl})</p>
-                <pre>${j.descr}</pre>
-                <form id="cancel" action="/interrupt/${j.uuid}/" method="POST">
-                 <button class="btn btn-warning"> interrupt </button>
-                </form> </li>`;
-        }
-
-        for (let j of st_json.waiting) {
-            s += `<li class="list-group-item">
-                <div class="spinner-border"></div>
-                <p>waiting task (uuid ${j.uuid})</p>
-                <pre>${j.descr}</pre>
-                </li>`;
-        }
-
-        targetNode.innerHTML = s;
-    }
-}
-
 lazyLoadAll();
 document.addEventListener('change', () => {
     lazyLoadAll();
 });
-
-window.onload = () => {
-    if (document.getElementById('dyn-status') !== undefined) {
-        updateTasks();
-        setInterval(updateTasks, 500);
-    }
-}
