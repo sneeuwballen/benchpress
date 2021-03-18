@@ -5,7 +5,6 @@ module Fmt = CCFormat
 module M = CCLock
 
 let src_log = Logs.Src.create "task-queue"
-let timeout_api_expire_s = 60. (* after which api jobs expire *)
 
 type job = {
   j_uuid: string;
@@ -30,9 +29,6 @@ module Job = struct
   let interrupt self = M.set self.j_interrupted true
   let interrupted self = M.get self.j_interrupted
   let time_elapsed self = Unix.gettimeofday() -. self.j_started_time
-  let started self = self.j_started_time > -1.
-  let set_percent_completion self i = self.j_percent_completion <- i
-  let set_eta self f = self.j_eta <- f
 end
 
 (* TODO: replace the blocking queue with a custom thing with priorities *)
