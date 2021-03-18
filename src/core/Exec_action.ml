@@ -138,8 +138,8 @@ end = struct
     Db.setup_timeout db ~ms;
     T.Top_result.db_prepare db >>= fun () ->
     T.Metadata.to_db db
-      {T.timestamp=Some timestamp; uuid; total_wall_time=None;
-       n_results=0; provers=[]} >>= fun () ->
+      {T.timestamp=Some timestamp; uuid; total_wall_time=None; n_bad=0;
+       n_results=0; dirs=[]; provers=[]} >>= fun () ->
     Misc.err_with ~map_err:(Printf.sprintf "while inserting provers: %s")
       (fun scope -> List.iter (fun p -> Prover.to_db db p |> scope.unwrap) self.provers)
     >>= fun () ->
@@ -184,7 +184,7 @@ end = struct
                     Uuidm.pp uuid);
       let timestamp = Some timestamp in
       let meta = {
-        T.uuid; timestamp; total_wall_time; n_results=0;
+        T.uuid; timestamp; total_wall_time; n_results=0; dirs=[]; n_bad=0;
         provers=List.map Prover.name self.provers;
       } in
       Logs.debug (fun k->k "saving metadata…");

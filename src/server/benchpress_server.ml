@@ -545,20 +545,44 @@ let handle_show_as_table (self:t) : unit =
   H.Response.make_string (Ok (Html.to_string h))
 
 (* html for the summary of [file] with metadata [m] *)
-let mk_file_summary filename m : _ Html.elt =
+let mk_file_summary filename (m:Test.metadata) : _ Html.elt list =
   let open Html in
-  let entry_descr, title =
-    let descr = Printf.sprintf "%d res for {%s} at %s"
-        m.Test.n_results (String.concat "," m.Test.provers)
-        (CCOpt.map_or ~default:"<unknown date>"
-           Misc.human_datetime m.Test.timestamp)
+
+  let add_title =
+    let title = [a_title (Test.Metadata.to_string m)] in
+    let url_show =
+      Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') filename)
     in
-    descr, [a_title (Test.Metadata.to_string m)]
+    fun x -> mk_a ~a:(a_href url_show :: title) [x]
   in
-  let url_show =
-    Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') filename)
+
+  let nres =
+    let hd = add_title @@ txt (spf "%d res" m.n_results)
+    and tl =
+      if m.n_bad > 0
+      then [span ~a:[a_class ["badge"; "bg-danger"]]
+              [txt (spf "%d bad" m.n_bad)]]
+      else []
+    in
+    span ~a:[a_class ["col-md-3"]] (hd :: tl)
+  and provers =
+    span ~a:[a_class ["col-md-3"]]
+      [txt (spf "{%s}" @@ String.concat "," m.Test.provers)]
+  and date =
+    span ~a:[a_class ["col-md-3"; "text-secondary"]]
+      [txt @@ CCOpt.map_or ~default:"<unknown date>"
+         Misc.human_datetime m.Test.timestamp]
+  and dirs =
+    if CCList.is_empty m.dirs then []
+    else
+      let title = String.concat "\n" m.dirs in
+      [span ~a:[a_title title] [
+          txt @@ spf "dirs {%s}" @@ String.concat "," @@
+          List.map (Misc.truncate_left 10) m.dirs]]
   in
-  mk_a ~a:(a_href url_show :: title) [txt entry_descr]
+
+  let fields = List.flatten [ [nres; provers; date;]; dirs ] in
+  fields
 
 let l_all_expect = ["improved"; "ok"; "disappoint"; "bad"; "error"]
 
@@ -996,6 +1020,42 @@ let handle_root (self:t) : unit =
   @@ fun _req ->
   let@@ chrono, _scope = query_wrap (fun()->"handle /") in
   let entries = Bin_utils.list_entries self.data_dir in
+
+  let mk_entry (s0, size) : _ Html.elt =
+    let open Html in
+    let s = Filename.basename s0 in
+    let meta = CCHashtbl.get self.meta_cache s0 in
+    let url_show =
+      Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
+    and url_meta =
+      Printf.sprintf "/file-sum/%s" (U.percent_encode s)
+    in
+
+    (* description aprt *)
+    let descr = match meta with
+      | Some meta ->
+        (* metadata cached, just display it *)
+        mk_file_summary s meta
+      | None ->
+        (* lazy loading *)
+        [mk_a ~cls:["disabled"; "lazy-load"]
+           ~a:[a_href url_show;
+               Unsafe.string_attrib "x_src" url_meta]
+           [txt s0]]
+    in
+    li ~a:[a_class ["list-group-item"]] [
+      div ~a:[a_class ["row"]] [
+        (* lazy loading of status *)
+        div ~a:[a_class ["col-md-9"; "justify-self-left"]] descr;
+        h4 ~a:[a_class ["col-md-1"; "justify-self-right"]] [
+          span ~a:[a_class ["badge"; "text-secondary"]]
+            [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
+        ];
+        div ~a:[a_class ["col-md-1"; "justify-self-right"]]
+          [input ~a:[a_input_type `Checkbox; a_name s] ()];
+      ]]
+  in
+
   let h =
     let open Html in
     mk_page ~title:"benchpress"
@@ -1010,41 +1070,7 @@ let handle_root (self:t) : unit =
                [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
           ];
         ];
-        let l =
-          CCList.map
-            (fun (s0,size) ->
-               let s = Filename.basename s0 in
-               let meta = CCHashtbl.get self.meta_cache s0 in
-               let url_show =
-                 Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
-               and url_meta =
-                 Printf.sprintf "/file-sum/%s" (U.percent_encode s)
-               in
-               li ~a:[a_class ["list-group-item"]]
-                 [div ~a:[a_class ["row"]]
-                    [
-                      (* lazy loading of status *)
-                      div ~a:[a_class ["col-md-9"; "justify-self-left"]]
-                        (match meta with
-                         | Some meta ->
-                           (* metadata cached, just display it *)
-                           [mk_file_summary s meta]
-                         | None ->
-                           (* lazy loading *)
-                           [mk_a ~cls:["disabled"; "lazy-load"]
-                              ~a:[a_href url_show;
-                                  Unsafe.string_attrib "x_src" url_meta]
-                              [txt s0]]
-                        );
-                      h4 ~a:[a_class ["col-md-2"]] [
-                        span ~a:[a_class ["badge"; "text-secondary"]]
-                          [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
-                      ];
-                      div ~a:[a_class ["col-1"]]
-                        [input ~a:[a_input_type `Checkbox; a_name s] ()];
-                    ]])
-            entries
-        in
+        let l = CCList.map mk_entry entries in
         Log.info (fun k->k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
         div ~a:[a_class ["container"]] [
           h2 [txt "list of results"];
@@ -1072,11 +1098,12 @@ let handle_root (self:t) : unit =
   Jemalloc.epoch();
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
+(* summary for a file. Called in lazy-load typically. *)
 let handle_file_summary (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "file-sum" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ _chrono, scope = query_wrap (fun()->spf "file-summary/%s" file) in
+  let@@ chrono, scope = query_wrap (fun()->spf "file-summary/%s" file) in
   let file_full =
     Bin_utils.mk_file_full file |> scope.unwrap_with (add_err_code 404)
   in
@@ -1089,9 +1116,13 @@ let handle_file_summary (self:t) : unit =
           let title = [a_title @@ "<no metadata>: "  ^ e] in
           mk_a ~a:(a_href (uri_show s) :: title) [txt s]
         )
-      ~ok:(fun m -> mk_file_summary s m)
+      ~ok:(fun m -> div (mk_file_summary s m))
   in
-  H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string_elt h))
+  let r =
+    H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string_elt h))
+  in
+  Log.info (fun k->k "summary for %s in %.3fs" file (Misc.Chrono.since_last chrono));
+  r
 
 let handle_css self : unit =
   let mk_path p' ctype value =

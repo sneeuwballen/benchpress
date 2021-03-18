@@ -208,6 +208,64 @@ end
 
 (** {2 Basic analysis of results} *)
 
+module Summarize_dirs : sig
+  type path = string list
+  type path_opt = path option
+  val init : path_opt
+  val string_of_path : path -> string
+  val merge_path1 : path_opt -> Db.Data.t -> path_opt
+(*   val setup_fun : Db.t -> unit *)
+end = struct
+  type path = string list
+  type path_opt = path option
+
+  (* split path into components *)
+  let split_path_ s : path =
+    let rec aux acc s =
+      let dir = Filename.dirname s in
+      if s="." then acc
+      else if s<>dir then aux (Filename.basename s::acc) dir
+      else s::acc
+    in
+    aux [] s
+
+  let rec merge_paths (p1:path) (p2:path) : path =
+    match p1, p2 with
+    | [], _ | _, [] -> []
+    | d1 :: tl1, d2 :: tl2 ->
+      if d1=d2 then d1 :: merge_paths tl1 tl2 else []
+
+  let nopath_ = None
+  let init = nopath_
+
+  let merge_path1 (data:path_opt) (d2:Db.Data.t) : path_opt =
+    let get_str = function
+      | Db.Data.TEXT s | Db.Data.BLOB s -> s
+      | _ -> raise Exit
+    in
+    try
+      let p2 = split_path_ @@ get_str d2 in
+      match data with
+      | None -> Some p2
+      | Some p1 -> Some (merge_paths p1 p2)
+    with Exit -> nopath_
+
+  let string_of_path = String.concat "/"
+
+  let finalize path : Db.Data.t =
+    match path with
+    | None -> Db.Data.NULL
+    | Some path ->
+      let path = string_of_path path in
+      Db.Data.TEXT path
+
+  (* FIXME: https://github.com/mmottl/sqlite3-ocaml/issues/47
+  let setup_fun db : unit =
+    Sqlite3.Aggregate.create_fun1 db "mergepaths"
+      ~init ~final:finalize ~step:merge_path1;
+     *)
+end
+
 module Analyze : sig
   type t = {
     improved  : int;
@@ -223,6 +281,10 @@ module Analyze : sig
   val of_db_for : ?full:bool -> Db.t -> prover:Prover.name -> t or_error
   val of_db : ?full:bool -> Db.t -> (Prover.name * t) list or_error
 
+  val of_db_dirs : Db.t -> string list or_error
+  val of_db_n_bad : Db.t -> int or_error
+  (** Compute number of bad results *)
+
   val to_printbox_l : ?link:prover_string_linker ->
     (Prover.name * t) list -> PrintBox.t
   val to_printbox_bad : ?link:path_linker -> t -> PrintBox.t
@@ -236,7 +298,7 @@ module Analyze : sig
 
   val is_ok : t -> bool
 
-  val num_failed : t -> int
+  val num_bad : t -> int
 
   val pp : t Fmt.printer
   val pp_bad : t Fmt.printer
@@ -252,19 +314,21 @@ end = struct
     total     : int;
   }
 
+  let int1_cursor ~ctx (scope: _ Misc.try_scope) c =
+    Db.Cursor.next c
+    |> CCOpt.to_result ("expected a result in "^ctx)
+    |> scope.unwrap
+
+  let get1_int (scope: _ Misc.try_scope) db ~ctx q ~ty p =
+    Db.exec db q ~ty p ~f:(int1_cursor ~ctx scope)
+    |> scope.unwrap_with Db.Rc.to_string
+
   let of_db_for ?(full=false) (db:Db.t) ~prover : t or_error =
     let tags = Prover.tags_of_db db in
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading analyze(%s) from DB: %s" prover)
       (fun scope ->
-         let get1_int ~ctx q ~ty p =
-           Db.exec db q ~ty p
-             ~f:(fun c ->
-                 Db.Cursor.next c
-                 |> CCOpt.to_result ("expected a result in "^ctx)
-                 |> scope.unwrap)
-           |> scope.unwrap_with Db.Rc.to_string
-         in
+         let get1_int = get1_int scope db in
          let ok =
            get1_int ~ctx:"get ok results"
              ~ty:Db.Ty.(p1 text, p1 int, id)
@@ -341,10 +405,50 @@ end = struct
          let provers = list_provers db |> scope.unwrap in
          CCList.map (fun p -> p, of_db_for ~full db ~prover:p |> scope.unwrap) provers)
 
+  let of_db_n_bad (db:Db.t) : int or_error =
+    Misc.err_with
+      ~map_err:(Printf.sprintf "while computing n-bad from DB: %s")
+      (fun scope ->
+         Db.exec db ~f:(int1_cursor ~ctx:"extracting n-bad" scope)
+           ~ty:Db.Ty.(nil, p1 int, id)
+           {| select count(*) from prover_res
+                where res in ('sat','unsat')
+                and res != file_expect
+                and file_expect in ('sat','unsat'); |}
+         |> scope.unwrap_with Db.Rc.to_string)
+
+  let of_db_dirs (db:Db.t) : string list or_error =
+    (* use ocaml function *)
+    Misc.err_with
+      ~map_err:(Printf.sprintf "while computing dirs from DB: %s")
+      (fun scope ->
+         let r = ref Summarize_dirs.init in
+         let() = Db.exec db
+           ~ty:Db.Ty.(nil, p1 data, id)
+           {| select distinct file from prover_res; |}
+           ~f:(fun c ->
+               Db.Cursor.iter c ~f:(fun d -> r := Summarize_dirs.merge_path1 !r d))
+                 |> scope.unwrap_with Db.Rc.to_string
+         in
+         match !r with
+           | None -> []
+           | Some p -> [Summarize_dirs.string_of_path p]
+      )
+    (* FIXME:
+    Summarize_dirs.setup_fun db;
+    Misc.err_with
+      ~map_err:(Printf.sprintf "while computing dirs from DB: %s")
+      (fun scope ->
+         Db.exec db ~f:Db.Cursor.to_list
+           ~ty:Db.Ty.(nil, p1 text, id)
+           {| select mergepaths(distinct file) from prover_res; |}
+         |> scope.unwrap_with Db.Rc.to_string)
+       *)
+
   (* build statistics and list of mismatch from raw results *)
 
   let is_ok r = r.bad = 0
-  let num_failed r = r.bad
+  let num_bad r = r.bad
 
   let get_improved r = r.improved
   let get_ok r = r.ok
@@ -580,6 +684,8 @@ type metadata = {
   timestamp: float option; (* timestamp *)
   total_wall_time: float option;
   n_results: int;
+  n_bad: int;
+  dirs: string list;
   provers: Prover.name list;
 }
 
@@ -645,15 +751,22 @@ module Metadata = struct
              ~ty:Db.Ty.(p1 int,id) ~f:Db.Cursor.next
            |> CCOpt.to_result "no prover results" |> scope.unwrap
          in
+         let n_bad = Analyze.of_db_n_bad db |> scope.unwrap in
+         let dirs = Analyze.of_db_dirs db |> scope.unwrap in
+         Logs.debug (fun k->k "dirs: [%s]" (String.concat "," dirs));
          let provers =
            Db.exec_no_params_exn db "select distinct name from prover;"
              ~f:Db.Cursor.to_list_rev ~ty:Db.Ty.(p1 any_str, id)
          in
-         { timestamp; total_wall_time; uuid; n_results; provers; })
+         { timestamp; total_wall_time; uuid; n_results; n_bad; dirs; provers; })
 
   let pp_l out (self:t) : unit =
-    Fmt.fprintf out "@[<v>n-results: %d@ provers: [%s]@ timestamp: %s@ total-time: %s@ uuid: %a@]"
-      self.n_results (String.concat ";" self.provers)
+    Fmt.fprintf out
+      "@[<v>n-results: %d%s@ provers: [%s]@ timestamp: \
+       %s@ total-time: %s@ uuid: %a@]"
+      self.n_results
+      (if self.n_bad>0 then Printf.sprintf " bad: %d" self.n_bad else "")
+      (String.concat ";" self.provers)
       (CCOpt.map_or ~default:"<no time>" Misc.human_datetime self.timestamp)
       (CCOpt.map_or ~default:"<no wall time>" Misc.human_duration self.total_wall_time)
       Uuidm.pp self.uuid

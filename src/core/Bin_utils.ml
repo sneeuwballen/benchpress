@@ -77,7 +77,7 @@ let check_res_an notify a : unit or_error =
     E.return ()
   ) else (
     let n_fail =
-      List.fold_left (fun n (_,r) -> n + T.Analyze.num_failed r) 0 a
+      List.fold_left (fun n (_,r) -> n + T.Analyze.num_bad r) 0 a
     in
     Notify.sendf notify "FAIL (%d failures)" n_fail;
     E.fail_fprintf "FAIL (%d failures)" n_fail
