@@ -7,7 +7,7 @@
  (libraries containers containers.unix containers-thread re
    re.perl csv iter printbox logs logs.cli ISO8601 gnuplot
    decoders uuidm sqlite3 sqlite3_utils cmdliner)
- (flags :standard -warn-error -3-32-34-50 -safe-string))
+ (flags :standard -warn-error -3-32-34-50-16 -safe-string))
 
 (rule
   (targets builtin_config.ml)

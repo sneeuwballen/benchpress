@@ -215,7 +215,7 @@ module Summarize_dirs : sig
   val init : path_opt
   val string_of_path : path -> string
   val merge_path1 : path_opt -> Db.Data.t -> path_opt
-(*   val setup_fun : Db.t -> unit *)
+  val setup_fun : Db.t -> unit
 end = struct
   type path = string list
   type path_opt = path option
@@ -260,11 +260,9 @@ end = struct
       let path = string_of_path path in
       Db.Data.TEXT path
 
-  (* FIXME: https://github.com/mmottl/sqlite3-ocaml/issues/47
   let setup_fun db : unit =
     Sqlite3.Aggregate.create_fun1 db "mergepaths"
       ~init ~final:finalize ~step:merge_path1;
-     *)
 end
 
 module Analyze : sig
@@ -423,6 +421,7 @@ end = struct
   let of_db_dirs (db:Db.t) : string list or_error =
     Profile.with_ "test.analyze.dirs" @@ fun () ->
     (* use ocaml function *)
+    (*
     Misc.err_with
       ~map_err:(Printf.sprintf "while computing dirs from DB: %s")
       (fun scope ->
@@ -438,7 +437,7 @@ end = struct
            | None -> []
            | Some p -> [Summarize_dirs.string_of_path p]
       )
-    (* FIXME:
+       *)
     Summarize_dirs.setup_fun db;
     Misc.err_with
       ~map_err:(Printf.sprintf "while computing dirs from DB: %s")
@@ -447,7 +446,6 @@ end = struct
            ~ty:Db.Ty.(nil, p1 text, id)
            {| select mergepaths(distinct file) from prover_res; |}
          |> scope.unwrap_with Db.Rc.to_string)
-       *)
 
   (* build statistics and list of mismatch from raw results *)
 
