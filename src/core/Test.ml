@@ -210,31 +210,28 @@ end
 (** {2 Basic analysis of results} *)
 
 module Summarize_dirs : sig
-  type path = string list
+  type path
   type path_opt = path option
   val init : path_opt
   val string_of_path : path -> string
   val merge_path1 : path_opt -> Db.Data.t -> path_opt
   val setup_fun : Db.t -> unit
 end = struct
-  type path = string list
+  type path = string
   type path_opt = path option
 
-  (* split path into components *)
-  let split_path_ s : path =
-    let rec aux acc s =
-      let dir = Filename.dirname s in
-      if s="." then acc
-      else if s<>dir then aux (Filename.basename s::acc) dir
-      else s::acc
-    in
-    aux [] s
-
-  let rec merge_paths (p1:path) (p2:path) : path =
-    match p1, p2 with
-    | [], _ | _, [] -> []
-    | d1 :: tl1, d2 :: tl2 ->
-      if d1=d2 then d1 :: merge_paths tl1 tl2 else []
+  let merge_paths (p1:path) (p2:path) : path =
+    if p1 = p2 then p1
+    else (
+      (* find prefix, textually *)
+      let i = ref 0 in
+      while !i < String.length p1 && !i < String.length p2 && p1.[!i] = p2.[!i] do
+        incr i
+      done;
+      let p = String.sub p1 0 !i in
+      if Sys.file_exists p && Sys.is_directory p
+      then p else Filename.dirname p
+    )
 
   let nopath_ = None
   let init = nopath_
@@ -245,13 +242,13 @@ end = struct
       | _ -> raise Exit
     in
     try
-      let p2 = split_path_ @@ get_str d2 in
+      let p2 = get_str d2 in
       match data with
       | None -> Some p2
       | Some p1 -> Some (merge_paths p1 p2)
     with Exit -> nopath_
 
-  let string_of_path = String.concat "/"
+  let string_of_path s = s
 
   let finalize path : Db.Data.t =
     match path with
@@ -444,7 +441,7 @@ end = struct
       (fun scope ->
          Db.exec db ~f:Db.Cursor.to_list
            ~ty:Db.Ty.(nil, p1 text, id)
-           {| select mergepaths(distinct file) from prover_res; |}
+           {| select mergepaths(file) from prover_res; |}
          |> scope.unwrap_with Db.Rc.to_string)
 
   (* build statistics and list of mismatch from raw results *)
