@@ -189,6 +189,7 @@ end = struct
       )
 
   let of_db (db:Db.t) : (Prover.name * t) list or_error =
+    Profile.with_ "stat.of-db" @@ fun () ->
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading stats from DB: %s")
       (fun scope ->
@@ -399,6 +400,7 @@ end = struct
   *)
 
   let of_db ?(full=false) db : _ list or_error =
+    Profile.with_ "test.analyze" @@ fun () ->
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
       (fun scope ->
@@ -406,6 +408,7 @@ end = struct
          CCList.map (fun p -> p, of_db_for ~full db ~prover:p |> scope.unwrap) provers)
 
   let of_db_n_bad (db:Db.t) : int or_error =
+    Profile.with_ "test.analyze.n-bad" @@ fun () ->
     Misc.err_with
       ~map_err:(Printf.sprintf "while computing n-bad from DB: %s")
       (fun scope ->
@@ -418,6 +421,7 @@ end = struct
          |> scope.unwrap_with Db.Rc.to_string)
 
   let of_db_dirs (db:Db.t) : string list or_error =
+    Profile.with_ "test.analyze.dirs" @@ fun () ->
     (* use ocaml function *)
     Misc.err_with
       ~map_err:(Printf.sprintf "while computing dirs from DB: %s")
@@ -738,6 +742,7 @@ module Metadata = struct
     |> Misc.db_err ~ctx:"inserting metadata"
 
   let of_db db : t or_error =
+    Profile.with_ "metadata.of-db" @@ fun () ->
     Misc.err_with
       ~map_err:(Printf.sprintf "while reading metadata: %s")
       (fun scope ->
@@ -791,6 +796,7 @@ module Compact_result = struct
   type t = compact_result
 
   let of_db ?full db : t or_error =
+    Profile.with_ "compact-res.of-db" @@ fun () ->
     let open E.Infix in
     Db.transact db (fun _ ->
       Metadata.of_db db >>= fun cr_meta ->
@@ -821,6 +827,7 @@ end = struct
   }
 
   let of_db db =
+    Profile.with_ "plot.of-db" @@ fun () ->
     Misc.err_with
       ~map_err:(Printf.sprintf "while plotting DB: %s")
       (fun scope ->
@@ -853,6 +860,7 @@ end = struct
     with e -> E.of_exn_trace e
 
   let to_gp ~output self =
+    Profile.with_ "plot.gnuplot" @@ fun () ->
     Gp.with_ (fun gp ->
         let series =
           self.lines
@@ -880,6 +888,7 @@ end = struct
     to_gp self ~output:(Gp.Output.create ~size:(1800,1024) @@ `Png file)
 
   let to_png (self:t) : string =
+    Profile.with_ "plot.to-png" @@ fun () ->
     CCIO.File.with_temp ~prefix:"benchpress_plot" ~suffix:".png"
       (fun file ->
          Logs.debug (fun k->k "plot into file %s" file);
@@ -1461,6 +1470,7 @@ end = struct
       )
 
   let get_res db prover file : _ or_error =
+    Profile.with_ "detailed-res" ~args:["prover",prover] @@ fun () ->
     Misc.err_with
       ~map_err:(Printf.sprintf "in get_res for '%s' on '%s':\n%s" prover file)
       (fun scope ->

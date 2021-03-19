@@ -79,6 +79,7 @@ let push self task : unit =
 let loop self =
   while true do
     let job = CCBlockingQueue.take self.jobs in
+    Profile.with_ "task-queue.job" @@ fun () ->
     job.j_started_time <- Unix.gettimeofday();
     M.set self.cur (Some job);
     Logs.info ~src:src_log (fun k->k "run job for task %s" job.j_task.Task.name);

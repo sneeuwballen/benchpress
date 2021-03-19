@@ -357,6 +357,7 @@ let parse_opt () =
 
 let () =
   CCFormat.set_color_default true;
+  if Sys.getenv_opt "PROFILE"=Some "1" then Profile.enable();
   match parse_opt () with
   | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
   | `Ok (Ok ()) | `Version | `Help -> ()

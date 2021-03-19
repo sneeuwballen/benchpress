@@ -213,6 +213,7 @@ let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
    @param f takes a chrono and a [scope] for failing *)
 let query_wrap mkctx
     (f:(Misc.Chrono.t * (string*int) Misc.try_scope) -> _) =
+  Profile.with_ "query" @@ fun () ->
   let chrono = Misc.Chrono.start () in
   let f' scope =
     try f (chrono, scope)
@@ -1232,7 +1233,8 @@ end
 
 let () =
   CCFormat.set_color_default true;
-  match Cmdliner.Term.eval Cmd.cmd with
+  if Sys.getenv_opt "PROFILE"=Some "1" then Profile.enable();
+  match Profile.with1 "cmdliner" Cmdliner.Term.eval Cmd.cmd with
   | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
   | `Ok (Ok ()) | `Version | `Help -> ()
   | `Ok (Error e) ->

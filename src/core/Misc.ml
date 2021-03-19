@@ -6,6 +6,7 @@ module Str_set = CCSet.Make(String)
 module E = CCResult
 module Db = Sqlite3_utils
 type 'a or_error = ('a, string) E.t
+let spf = Printf.sprintf
 
 let _lock = CCLock.create()
 
@@ -302,3 +303,4 @@ module Json = struct
 
   let to_string (self:t) : string = Fmt.asprintf "%a" pp self
 end
+
