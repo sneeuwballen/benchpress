@@ -25,6 +25,6 @@ val cmd : conf:conf -> limits:Limit.All.t -> string option
 (** Given a ulimit conf, and a set of limits, return an adequate command
     (if any is necessary) to enforce the limits using ulimit. *)
 
-val prefix_cmd : ?prefix:string -> cmd:string -> string
+val prefix_cmd : ?prefix:string -> cmd:string -> unit -> string
 (** Adequately prefix the given command with the optional given prefix command. *)
 

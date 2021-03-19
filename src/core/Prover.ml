@@ -220,7 +220,7 @@ let run ?env ~limits ~file (self:t) : Proc_run_result.t =
   let prefix = Ulimit.cmd ~conf:self.ulimits ~limits:(
       Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits
     ) in
-  let cmd = Ulimit.prefix_cmd ?prefix ~cmd in
+  let cmd = Ulimit.prefix_cmd ?prefix ~cmd () in
   run_proc cmd
 
 let analyze_p_opt (self:t) (r:Proc_run_result.t) : Res.t option =

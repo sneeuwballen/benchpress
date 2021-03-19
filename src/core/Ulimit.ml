@@ -54,7 +54,7 @@ let cmd ~conf ~limits =
     Some (Buffer.contents buf)
   )
 
-let prefix_cmd ?prefix ~cmd =
+let prefix_cmd ?prefix ~cmd () =
   match prefix with
   | None -> cmd
   | Some s -> s ^ "; " ^ cmd
