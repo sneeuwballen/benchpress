@@ -816,6 +816,8 @@ module Cactus_plot : sig
   val of_db : Db.t -> t or_error
   val of_file : string -> t or_error
 
+  val combine : (string * t) list -> t
+
   val show : t -> unit
   val save_to_file : t -> string -> unit
   val to_png : t -> string
@@ -823,7 +825,7 @@ end = struct
   module Gp = Gnuplot
 
   type t = {
-    lines: (Prover.name * float list) list;
+    lines: (string * Prover.name * float list) list;
   }
 
   let of_db db =
@@ -850,9 +852,15 @@ end = struct
              ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
            |> scope.unwrap_with Db.Rc.to_string
          in
-         let lines = CCList.map (fun p -> p, get_prover p) provers in
+         let lines = CCList.map (fun p -> "", p, get_prover p) provers in
          { lines }
       )
+
+  let combine (l:(_*t) list) : t =
+    {lines=
+       CCList.flat_map (fun (pre1,plot) ->
+         List.map (fun (pre2,prover,line) -> pre1^pre2,prover,line) plot.lines) l
+    }
 
   let of_file file : t or_error =
     try
@@ -865,7 +873,7 @@ end = struct
         let series =
           self.lines
           |> CCList.map
-            (fun (prover,l) ->
+            (fun (pre,prover,l) ->
                let l =
                  let sum = ref 0. in
                  CCList.mapi
@@ -874,7 +882,8 @@ end = struct
                       (!sum, float i))
                    l
                in
-               Gp.Series.linespoints_xy ~title:prover l)
+               let title = if pre="" then prover else pre^"."^prover in
+               Gp.Series.linespoints_xy ~title l)
         in
         Gp.plot_many
           ~labels:(Gp.Labels.create ~x:"time (s)" ~y:"problems solved (accumulated)" ())

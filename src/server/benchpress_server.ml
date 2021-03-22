@@ -372,16 +372,31 @@ let handle_prover_in (self:t) : unit =
 let handle_show_gp (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-gp" @/ string_urlencoded @/ return)
-  @@ fun file _req ->
-  let@@ chrono, scope = query_wrap (fun() -> spf "show-gp/%s" file) in
-  Log.info (fun k->k "----- start show-gp %s -----" file);
-  let file_full =
-    Bin_utils.mk_file_full file
-    |> scope.unwrap_with (add_err_code 404) in
+  @@ fun q_arg _req ->
+  let@@ chrono, scope = query_wrap (fun() -> spf "show-gp/%s" q_arg) in
+  Log.info (fun k->k "----- start show-gp %s -----" q_arg);
+  let files = CCString.split_on_char ',' q_arg |> List.map String.trim in
+  let files_full =
+    files
+    |> List.map
+      (fun file ->
+        Bin_utils.mk_file_full file
+        |> scope.unwrap_with (add_err_code 404)) in
   let cactus_plot =
     let open E.Infix in
     try
-      Test.Cactus_plot.of_file file_full >|= fun plot ->
+      begin match files_full with
+        | [f] -> Test.Cactus_plot.of_file f
+        | fs ->
+          fs
+          |> List.mapi
+            (fun i f ->
+               let p =
+                 Test.Cactus_plot.of_file f |> scope.unwrap_with (add_err_code 500)
+               in
+               spf "file %d (%s)" i (Filename.basename f), p)
+          |> Test.Cactus_plot.combine |> E.return
+      end >|= fun plot ->
       Test.Cactus_plot.to_png plot
     with e ->
       let e = Printexc.to_string e in
@@ -391,7 +406,7 @@ let handle_show_gp (self:t) : unit =
   Log.info (fun k->k "rendered to gplot in %.3fs" (Misc.Chrono.since_last chrono));
   let plot = cactus_plot |> scope.unwrap_with (add_err_code 500) in
   Log.debug (fun k->k "encode png file of %d bytes" (String.length plot));
-  Log.debug (fun k->k "successful reply for show-gp/%S" file);
+  Log.debug (fun k->k "successful reply for show-gp/%S" q_arg);
   H.Response.make_string
     ~headers:H.Headers.([] |> set "content-type" "image/png")
     (Ok plot)
@@ -801,7 +816,8 @@ let handle_compare self : unit =
     let files =
       names
       |> CCList.map
-        (fun s -> match Bin_utils.mk_file_full s with
+        (fun s ->
+           match Bin_utils.mk_file_full s with
            | Error e ->
              Log.err (fun k->k "cannot load file %S" s);
              H.Response.fail_raise ~code:404 "invalid file %S: %s" s e
@@ -818,9 +834,8 @@ let handle_compare self : unit =
               Log.err (fun k->k"cannot compare %s and %s: %s" f1 f2 e);
               H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1 f2
           in
-          (* TODO: graph *)
           vlist ~bars:false [
-            text f1; text f2;
+            sprintf "old: %s" f1; sprintf "new: %s" f2;
             Test.pb_v_record @@
             CCList.map (fun (pr,c) -> pr, Test_compare.Short.to_printbox c)
               c
@@ -829,11 +844,18 @@ let handle_compare self : unit =
     in
     let h =
       let open Html in
+      let uri_plot = uri_gnuplot (String.concat "," names) in
       mk_page ~title:"compare"
         [
           mk_navigation [];
           h3 [txt "comparison"];
           div [pb_html box_compare_l];
+          div [img
+             ~src:uri_plot
+             ~a:[a_class ["img-fluid"];
+                 Unsafe.string_attrib "loading" "lazy";
+                ]
+             ~alt:"cactus plot of provers" ()];
         ]
     in
     H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
