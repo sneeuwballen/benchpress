@@ -282,6 +282,7 @@ let dec_action : action Se.D.decoder =
         field_opt "timeout" int >>= fun timeout ->
         field_opt "memory" int >>= fun memory ->
         field_opt "stack" dec_stack_limit >>= fun stack ->
+        let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
         succeed @@ A_run_provers {dirs;provers;timeout;memory;stack;pattern}
       | "progn" -> list_or_singleton self >|= fun l -> A_progn l
       | "run_cmd" -> list1 string >|= fun s -> A_run_cmd s
