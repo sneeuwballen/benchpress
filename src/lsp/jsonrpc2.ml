@@ -273,6 +273,6 @@ module Blocking_IO = struct
     )
 
   let read_line = input_line
-  let write = output
-  let write_string = output_string
+  let write oc b i len = output oc b i len; flush oc
+  let write_string oc s = output_string oc s; flush oc
 end
