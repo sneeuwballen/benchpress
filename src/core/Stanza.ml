@@ -5,7 +5,8 @@ module E = CCResult
 module Fmt = CCFormat
 module Se = Sexp_loc
 
-type 'a or_error = ('a, string) E.t
+type loc = Sexp_loc.loc
+type 'a or_error = ('a, string * loc) E.t
 
 (** {2 Type Definitions} *)
 
@@ -344,8 +345,8 @@ let dec tags : (_ list * t) Se.D.decoder =
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
 
-exception Wrap of string
-let wrapf fmt = Format.kasprintf (fun s ->raise (Wrap s)) fmt
+exception Wrap of string * Sexp_loc.loc
+let wrapf ~loc fmt = Format.kasprintf (fun s ->raise (Wrap (s,loc))) fmt
 
 let parse_string_list_ s : _ list or_error =
   let buf = Lexing.from_string s in
@@ -353,46 +354,75 @@ let parse_string_list_ s : _ list or_error =
   let rec iter acc = match Se.Decoder.next d with
     | Se.End -> Result.Ok (List.rev acc)
     | Se.Yield x -> iter (x::acc)
-    | Se.Fail e -> Result.Error e
+    | Se.Fail e ->
+      (* FIXME: get location somehow, maybe containers 3.3 `last_loc` *)
+      Result.Error (e, Sexp_loc.noloc)
   in
   try iter []
-  with e -> E.of_exn e
+  with e ->
+    let loc = Sexp_loc.noloc in
+    E.map_err (fun s -> s, loc) @@ E.of_exn e
 
 (** Parse a list of files into a list of stanzas *)
-let parse_files ?(builtin=true) (files:string list) : t list or_error =
+let parse_files, parse_string =
   let decode_sexp_l l =
     CCList.fold_map
       (fun tags s ->
          match Se.D.decode_value (dec tags) s with
          | Ok x -> x
          | Error e ->
-           wrapf "at %a, error@ %s" Se.pp_loc s.Se.loc
+           wrapf ~loc:s.Se.loc "at %a, error@ %s" Se.pp_loc s.Se.loc
              (Se.D.string_of_error e))
       l
   in
-  try
+  (* prelude? *)
+  let get_prelude ~builtin () =
     let tags, prelude =
       if builtin then
         match parse_string_list_ Builtin_config.config with
         | Ok l ->
           let tags, l = decode_sexp_l [] l in
           tags, St_enter_file "prelude" :: l
-        | Error e ->
-          wrapf "failure when reading builtin config: %s" e
+        | Error (e,loc) ->
+          wrapf ~loc "failure when reading builtin config: %s" e
       else [], []
     in
-    CCList.fold_map
-      (fun tags file ->
-         Se.cur_file_ := file; (* issue in CCSexp's locations *)
-         let file = Misc.mk_abs_path file in
-         match Se.parse_file_list file with
-         | Error e -> wrapf "cannot parse %s:@,%s" file e
-         | Ok l ->
-           let tags, l = decode_sexp_l tags l in
-           tags, St_enter_file file :: l)
-      tags files
+    tags, prelude
+  in
+  let process_file tags file =
+    Se.cur_file_ := file; (* issue in CCSexp's locations *)
+    let file = Misc.mk_abs_path file in
+    match Se.parse_file_list file with
+    | Error e -> wrapf ~loc:Sexp_loc.noloc "cannot parse %s:@,%s" file e
+    | Ok l ->
+      let tags, l = decode_sexp_l tags l in
+      tags, St_enter_file file :: l
+  and process_string ~filename tags s =
+    Se.cur_file_ := filename; (* issue in CCSexp's locations *)
+    match Se.parse_string_list s with
+    | Error e -> wrapf ~loc:Sexp_loc.noloc "cannot parse %s:@,%s" filename e
+    | Ok l ->
+      let tags, l = decode_sexp_l tags l in
+      tags, St_enter_file filename :: l
+  in
+  let wrap_err_ f =
+    try f ()
+    with Wrap (e,loc) -> Error (e,loc)
+  in
+  let parse_files ?(builtin=true) (files:string list) : t list or_error =
+    wrap_err_ @@ fun () ->
+    let tags, prelude = get_prelude ~builtin () in
+    CCList.fold_map process_file tags files
     |> snd
     |> CCList.cons prelude
     |> CCList.flatten
     |> E.return
-  with Wrap e -> Error e
+  and parse_string ?(builtin=true) ~filename (s:string) : t list or_error =
+    wrap_err_ @@ fun () ->
+    let tags, prelude = get_prelude ~builtin () in
+    let _tags, l = process_string ~filename tags s in
+    CCList.cons prelude [l]
+    |> CCList.flatten
+    |> E.return
+  in
+  parse_files, parse_string

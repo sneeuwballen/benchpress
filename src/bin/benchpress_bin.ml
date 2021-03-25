@@ -235,7 +235,7 @@ module Check_config = struct
     | Ok c ->
       Format.printf "@[<v>%a@]@." Stanza.pp_l c;
       Ok ()
-    | Error e -> Error e
+    | Error (e,_loc) -> Error e
 
   let cmd =
     let open Cmdliner in

@@ -24,7 +24,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
           | Ok x -> `Ok x
           | Error s -> `Error (false, s)
         end
-      | Error e -> `Error (false, e)
+      | Error (e, _loc) -> `Error (false, e)
     end
   in
   let args =
@@ -45,7 +45,7 @@ let get_definitions () : Definitions.t or_error =
   let conf_files = List.map Xdg.interpolate_home conf_files in
   Logs.info (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
   let open E.Infix in
-  Stanza.parse_files conf_files >>= fun l ->
+  (Stanza.parse_files conf_files |> E.map_err fst) >>= fun l ->
   (* combine configs *)
   Definitions.of_stanza_l l
 
