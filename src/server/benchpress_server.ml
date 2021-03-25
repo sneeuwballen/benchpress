@@ -174,6 +174,8 @@ let mk_navigation ?(btns=[]) path =
 (* default reply headers *)
 let default_html_headers = H.Headers.([] |> set "content-type" "text/html; charset=utf-8")
 
+let delete_warning = "delete (no confirmation will be asked!!)"
+
 let uri_show file =
   Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') file)
 
@@ -299,7 +301,8 @@ let handle_show (self:t) : unit =
          if self.allow_delete then [
            form ~a:[a_method `Post] [
              mk_button ~cls:["btn-danger";"btn-sm"]
-               ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/"); ]
+               ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/");
+                   a_title delete_warning;]
                [txt "delete"];
            ]] else [];
        ]
@@ -1108,7 +1111,7 @@ let handle_root (self:t) : unit =
               if self.allow_delete then [
                 mk_col ~cls:["col-auto";"p-1"] [
                   mk_button ~cls:["btn-danger";"btn-sm"]
-                    ~a:[a_formaction "/delete/"]
+                    ~a:[a_formaction "/delete/"; a_title delete_warning]
                     [txt "delete selected"]]
               ]
               else [];
