@@ -27,7 +27,7 @@ module Run = struct
     and pp_results =
       Arg.(value & opt bool true & info ["pp-results"] ~doc:"print results as they are found")
     and save =
-      Arg.(value & opt bool false & info ["save"] ~doc:"save results on disk")
+      Arg.(value & opt bool true & info ["save"] ~doc:"save results on disk")
     and dir_file =
       Arg.(value & opt (some string) None & info ["F"] ~doc:"file containing a list of files")
     and task =
