@@ -39,6 +39,7 @@ class blsp = object(self)
   method private _on_doc
       ~(notify_back:L.notify_back)
       (uri:Lsp.Types.DocumentUri.t) (contents:string) =
+    Format.eprintf "on doc@.";
     let r = Stanza.parse_string ~filename:uri contents in
     Lock.with_lock buffers (fun b -> Hashtbl.replace b uri r);
     let diags = diagnostics r in
