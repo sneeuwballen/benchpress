@@ -4,8 +4,8 @@ module Stanza = Benchpress.Stanza
 
 module Lock = CCLock
 
-module IO = Jsonrpc2.Blocking_IO
-module L = Jsonrpc2.Make(IO)
+module IO = Linol.Blocking_IO
+module L = Linol.Jsonrpc2.Make(IO)
 type loc = Sexp_loc.loc
 
 type processed_buf = (Stanza.t list, string * Sexp_loc.loc) result
