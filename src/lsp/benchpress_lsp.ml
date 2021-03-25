@@ -12,7 +12,7 @@ type processed_buf = (Stanza.t list, string * Sexp_loc.loc) result
 
 let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
   let mk_pos_ p =
-    Lsp.Types.Position.create ~line:p.Sexp_loc.line ~character:p.col in
+    Lsp.Types.Position.create ~line:(1+p.Sexp_loc.line) ~character:p.col in
   Lsp.Types.Range.create ~start:(mk_pos_ l.start) ~end_:(mk_pos_ l.stop)
 
 let diagnostics (p:processed_buf) : _ list =
