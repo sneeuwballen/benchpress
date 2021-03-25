@@ -4,7 +4,7 @@ type 'a or_error = ('a, string) E.t
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action
-    ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid
+    ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid ~save
     (r:Action.run_provers)
   : (_ * T.Compact_result.t) or_error =
   let open E.Infix in
@@ -20,7 +20,7 @@ let execute_run_prover_action
     begin
       Exec_action.Exec_run_provers.run ~uuid ?timestamp
         ~interrupted:(fun () -> CCLock.get interrupted)
-        ~on_solve:progress#on_res ~on_done:(fun _ -> progress#on_done) r
+        ~on_solve:progress#on_res ~save ~on_done:(fun _ -> progress#on_done) r
       |> E.add_ctxf "running %d tests" len
     end
     >>= fun results ->
@@ -32,7 +32,8 @@ type top_task =
   | TT_other of Action.t
 
 let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
-    ?meta:_ ?summary ?task ?dir_file (defs:Definitions.t) paths () : unit or_error =
+    ?meta:_ ?summary ?task ?dir_file ?(save=true)
+    (defs:Definitions.t) paths () : unit or_error =
   let open E.Infix in
   Logs.info
     (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
@@ -73,7 +74,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
   end >>= fun tt_task ->
   begin match tt_task with
     | TT_other a ->
-      Exec_action.run defs a
+      Exec_action.run ~save defs a
     | TT_run_provers run_provers_action ->
       let j = CCOpt.Infix.( j <+> Definitions.option_j defs) in
       let progress = CCOpt.Infix.( dyn <+> Definitions.option_progress defs) in
@@ -81,7 +82,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       (* run action here! *)
       let uuid = Misc.mk_uuid() in
       execute_run_prover_action
-        ~uuid ?pp_results ?dyn:progress ~limits ?j ~notify ~timestamp
+        ~uuid ?pp_results ?dyn:progress ~limits ?j ~notify ~timestamp ~save
         run_provers_action
       >>= fun (top_res, (results:T.Compact_result.t)) ->
       if CCOpt.is_some csv then (

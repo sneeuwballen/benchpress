@@ -42,6 +42,7 @@ module Exec_run_provers : sig
     ?on_done:(Test.compact_result -> unit) ->
     ?interrupted:(unit -> bool) ->
     uuid:Uuidm.t ->
+    save:bool ->
     expanded ->
     (Test.top_result lazy_t * Test.compact_result) or_error
     (** Run the given prover(s) on the given problem set, obtaining results
@@ -121,13 +122,18 @@ end = struct
   let run ?(timestamp=Unix.gettimeofday())
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_done = _nop)
       ?(interrupted=fun _->false)
-      ~uuid
+      ~uuid ~save
       (self:expanded) : _ E.t =
     let open E.Infix in
     let start = Unix.gettimeofday() in
     (* prepare DB *)
-    let db_file = db_file_for_uuid ~timestamp uuid in
-    let db = Sqlite3.db_open ~mutex:`FULL db_file in
+    let db =
+      if save then (
+        let db_file = db_file_for_uuid ~timestamp uuid in
+        Sqlite3.db_open ~mutex:`FULL db_file
+      ) else
+        Sqlite3.db_open ":memory:"
+    in
     begin match Sys.getenv "BENCHPRESS_BUSY_TIMEOUT" with
       | n ->
         (try Ok (int_of_string n)
@@ -364,7 +370,7 @@ module Git_checkout = struct
 end
 
 (** Run the given action *)
-let rec run ?interrupted ?cb_progress
+let rec run ?(save=true) ?interrupted ?cb_progress
     (defs:Definitions.t) (a:Action.t) : unit or_error =
   Misc.err_with
     ~map_err:(fun e -> Printf.sprintf "while running action: %s" e)
@@ -384,14 +390,14 @@ let rec run ?interrupted ?cb_progress
            let uuid = Misc.mk_uuid () in
            let res =
              Exec_run_provers.run ?interrupted ~on_solve:progress#on_res
-               ~on_done:(fun _ -> progress#on_done)
+               ~on_done:(fun _ -> progress#on_done) ~save
                ~timestamp:(Unix.gettimeofday()) ~uuid r_expanded
              |> scope.unwrap
            in
            Format.printf "task done: %a@." Test.Compact_result.pp res;
            ()
          | Action.Act_progn l ->
-           List.iter (fun a -> run ?interrupted defs a |> scope.unwrap) l
+           List.iter (fun a -> run ~save ?interrupted defs a |> scope.unwrap) l
          | Action.Act_git_checkout git ->
            Git_checkout.run git |> scope.unwrap
          | Action.Act_run_cmd s ->
