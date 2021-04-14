@@ -28,12 +28,6 @@
 (rule
  (with-stdout-to benchpress-server.1 (run ./benchpress_server.exe --help=groff)))
 
-(rule
-  (targets embed.js)
-  (deps embed.ts tsconfig.json)
-  (mode promote)
-  (action (run tsc --build tsconfig.json)))
-
 (install
  (section man)
  (package benchpress-server)
