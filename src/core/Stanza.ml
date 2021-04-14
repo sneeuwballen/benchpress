@@ -5,7 +5,7 @@ module E = CCResult
 module Fmt = CCFormat
 module Se = Sexp_loc
 
-type loc = Sexp_loc.loc
+type loc = Sexp_loc.sloc
 type 'a or_error = ('a, string * loc) E.t
 
 (** {2 Type Definitions} *)
@@ -346,7 +346,7 @@ let dec tags : (_ list * t) Se.D.decoder =
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
 
-exception Wrap of string * Sexp_loc.loc
+exception Wrap of string * Sexp_loc.sloc
 let wrapf ~loc fmt = Format.kasprintf (fun s ->raise (Wrap (s,loc))) fmt
 
 let parse_string_list_ s : _ list or_error =

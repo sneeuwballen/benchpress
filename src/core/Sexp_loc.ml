@@ -2,7 +2,7 @@
 
 type pos = {line: int; col: int}
 
-type loc = {
+type sloc = {
   file: string;
   start: pos;
   stop: pos;
@@ -11,7 +11,7 @@ type loc = {
 let cur_file_ = ref "<none>"
 let noloc = {file="<none>"; start={line=1;col=1}; stop={line=1;col=1}}
 
-let pp_loc out (loc:loc) : unit =
+let pp_loc out (loc:sloc) : unit =
   if loc.start.line=loc.stop.line then (
     Format.fprintf out "%s:%d.%d-%d" loc.file loc.start.line loc.start.col loc.stop.col
   ) else (
@@ -20,7 +20,7 @@ let pp_loc out (loc:loc) : unit =
   )
 
 type t = {
-  loc: loc;
+  loc: sloc;
   view: view;
 }
 and view =
@@ -35,7 +35,7 @@ let list = list_with_loc ~loc:noloc
 (** {2 Serialization and helpers} *)
 
 include (CCSexp.Make(struct
-           type nonrec loc=loc
+           type nonrec loc=sloc
            type nonrec t=t
 
            let make_loc =

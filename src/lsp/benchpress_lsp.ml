@@ -6,9 +6,9 @@ module Lock = CCLock
 
 module IO = Linol.Blocking_IO
 module L = Linol.Jsonrpc2.Make(IO)
-type loc = Sexp_loc.loc
+type loc = Sexp_loc.sloc
 
-type processed_buf = (Stanza.t list, string * Sexp_loc.loc) result
+type processed_buf = (Stanza.t list, string * Sexp_loc.sloc) result
 
 let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
   let mk_pos_ p =
