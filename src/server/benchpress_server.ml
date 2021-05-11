@@ -177,7 +177,7 @@ let default_html_headers = H.Headers.([] |> set "content-type" "text/html; chars
 let delete_warning = "delete (no confirmation will be asked!!)"
 
 let uri_show file =
-  Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') file)
+  Printf.sprintf "/show/%s/" (U.percent_encode ~skip:(fun c->c='/') file)
 
 let uri_show_single db_file prover path =
   spf "/show_single/%s/%s/%s/"
@@ -188,9 +188,9 @@ let uri_show_single db_file prover path =
 let link_show_single db_file prover path =
   PB.link (PB.text path) ~uri:(uri_show_single db_file prover path)
 
-let uri_get_file pb = spf "/get-file/%s" (U.percent_encode pb)
-let uri_gnuplot pb = spf "/show-gp/%s" (U.percent_encode pb)
-let uri_error_bad pb = spf "/show-err/%s" (U.percent_encode pb)
+let uri_get_file pb = spf "/get-file/%s/" (U.percent_encode pb)
+let uri_gnuplot pb = spf "/show-gp/%s/" (U.percent_encode pb)
+let uri_error_bad pb = spf "/show-err/%s/" (U.percent_encode pb)
 let uri_show_detailed
     ?(offset=0) ?(filter_prover="") ?(filter_pb="")
     ?(filter_res="") ?(filter_expect="") pb =
@@ -207,7 +207,7 @@ let uri_prover_in file prover =
   spf "/prover-in/%s/%s/" (U.percent_encode file) (U.percent_encode prover)
 let uri_show_table ?(offset=0) file =
   spf "/show_table/%s/?offset=%d" (U.percent_encode file) offset
-let uri_show_csv file = "/show_csv/"^U.percent_encode file
+let uri_show_csv file = spf "/show_csv/%s" (U.percent_encode file)
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
@@ -250,7 +250,7 @@ let handle_show (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ chrono, scope = query_wrap (fun()-> spf "/show/%s" file) in
+  let@@ chrono, scope = query_wrap (fun()-> uri_show file) in
   Log.info (fun k->k "----- start show %s -----" file);
   let _file_full, cr =
     Bin_utils.load_file_summary ~full:false file
@@ -312,7 +312,7 @@ let handle_show (self:t) : unit =
       [
         h3 [txt "summary"];
         mk_a ~cls:["btn-link"; "btn-sm"; "h-50"]
-          ~a:[a_href (Printf.sprintf "/show_csv/%s"
+          ~a:[a_href (Printf.sprintf "/show_csv/%s/"
                         (U.percent_encode file))]
           [txt "download as csv"];
         mk_a ~cls:["btn-link"; "btn-sm"]
@@ -569,9 +569,7 @@ let mk_file_summary filename (m:Test.metadata) : _ Html.elt list =
 
   let add_title =
     let title = [a_title (Test.Metadata.to_string m)] in
-    let url_show =
-      Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') filename)
-    in
+    let url_show = uri_show filename in
     fun x -> mk_a ~a:(a_href url_show :: title) [x]
   in
 
@@ -792,7 +790,7 @@ let handle_show_csv (self:t): unit =
     try Test.Top_result.db_to_csv_string ?provers db
     with e -> scope.unwrap_with (fun e->Printexc.to_string e,500) (Error e)
   in
-  Log.debug (fun k->k "successful reply in %.3fs for /show_csv/%S"
+  Log.debug (fun k->k "successful reply in %.3fs for /show_csv/%S/"
                 (Misc.Chrono.elapsed chrono) db_file);
   H.Response.make_string
     ~headers:["Content-Type", "plain/csv";
@@ -1051,11 +1049,8 @@ let handle_root (self:t) : unit =
     let open Html in
     let s = Filename.basename s0 in
     let meta = CCHashtbl.get self.meta_cache s0 in
-    let url_show =
-      Printf.sprintf "/show/%s" (U.percent_encode ~skip:(fun c->c='/') s)
-    and url_meta =
-      Printf.sprintf "/file-sum/%s" (U.percent_encode s)
-    in
+    let url_show = uri_show s in
+    let url_meta = Printf.sprintf "/file-sum/%s" (U.percent_encode s) in
 
     (* description aprt *)
     let descr = match meta with
