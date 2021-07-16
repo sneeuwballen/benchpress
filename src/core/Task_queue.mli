@@ -1,5 +1,5 @@
 
-(** {1 Task queue for the server} *)
+(** Task queue for the server *)
 
 module Fmt = CCFormat
 

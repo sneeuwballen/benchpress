@@ -1,4 +1,4 @@
-(** {1 Basic XDG config}
+(** Basic XDG config
 
     We follow losely
     https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html *)

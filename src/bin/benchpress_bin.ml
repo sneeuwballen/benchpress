@@ -124,8 +124,8 @@ module Plot = struct
       Bin_utils.mk_file_full file >>= fun file ->
       Db.with_db ~timeout:500 ~mode:`READONLY file
         (fun db ->
-           T.Cactus_plot.of_db db >>= fun p ->
-           T.Cactus_plot.show p;
+           Cactus_plot.of_db db >>= fun p ->
+           Cactus_plot.show p;
            Ok ())
     with e -> E.of_exn_trace e
 

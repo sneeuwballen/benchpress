@@ -1,17 +1,15 @@
 
 (** {1 Execute actions} *)
 
-module Fmt = CCFormat
-module E = CCResult
-module Db = Misc.Db
-module T = Test
-type 'a or_error = ('a, string) E.t
+open Misc
 
 (** File for results with given uuid and timestamp *)
 let db_file_for_uuid ~timestamp (uuid:Uuidm.t) : string =
   let filename =
     Printf.sprintf "res-%s-%s.sqlite"
-      (ISO8601.Permissive.string_of_datetime_basic timestamp)
+      (match Ptime.of_float_s timestamp with
+       | None -> Printf.sprintf "<time %.1fs>" timestamp
+       | Some t -> datetime_compact t)
       (Uuidm.to_string uuid)
   in
   let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
@@ -39,12 +37,12 @@ module Exec_run_provers : sig
     ?timestamp:float ->
     ?on_start:(expanded -> unit) ->
     ?on_solve:(Test.result -> unit) ->
-    ?on_done:(Test.compact_result -> unit) ->
+    ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
     uuid:Uuidm.t ->
     save:bool ->
     expanded ->
-    (Test.top_result lazy_t * Test.compact_result) or_error
+    (Test_top_result.t lazy_t * Test_compact_result.t) or_error
     (** Run the given prover(s) on the given problem set, obtaining results
         after all the problems have been dealt with.
         @param on_solve called whenever a single problem is solved
@@ -119,13 +117,13 @@ end = struct
 
   let _nop _ = ()
 
-  let run ?(timestamp=Unix.gettimeofday())
+  let run ?(timestamp=now_s())
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_done = _nop)
       ?(interrupted=fun _->false)
       ~uuid ~save
       (self:expanded) : _ E.t =
     let open E.Infix in
-    let start = Unix.gettimeofday() in
+    let start = now_s() in
     (* prepare DB *)
     let db =
       if save then (
@@ -142,9 +140,9 @@ end = struct
       | exception Not_found -> Ok 3000
     end >>= fun ms ->
     Db.setup_timeout db ~ms;
-    T.Top_result.db_prepare db >>= fun () ->
-    T.Metadata.to_db db
-      {T.timestamp=Some timestamp; uuid; total_wall_time=None; n_bad=0;
+    Test_top_result.db_prepare db >>= fun () ->
+    Test_metadata.to_db db
+      {Test_metadata.timestamp=Some timestamp; uuid; total_wall_time=None; n_bad=0;
        n_results=0; dirs=[]; provers=[]} >>= fun () ->
     Misc.err_with ~map_err:(Printf.sprintf "while inserting provers: %s")
       (fun scope -> List.iter (fun p -> Prover.to_db db p |> scope.unwrap) self.provers)
@@ -183,24 +181,25 @@ end = struct
     if interrupted() then (
       Error "interrupted"
     ) else (
-      let total_wall_time = Some (Unix.gettimeofday() -. start) in
+      let total_wall_time = now_s() -. start in
       let uuid = uuid in
       Logs.info (fun k->k"benchmark done in %a, uuid=%a"
-                    Misc.pp_human_duration (CCOpt.get_exn total_wall_time)
+                    Misc.pp_human_duration total_wall_time
                     Uuidm.pp uuid);
       let timestamp = Some timestamp in
+      let total_wall_time = Some total_wall_time in
       let meta = {
-        T.uuid; timestamp; total_wall_time; n_results=0; dirs=[]; n_bad=0;
+        Test_metadata.uuid; timestamp; total_wall_time; n_results=0; dirs=[]; n_bad=0;
         provers=List.map Prover.name self.provers;
       } in
       Logs.debug (fun k->k "saving metadata…");
-      T.Metadata.to_db db meta >>= fun () ->
+      Test_metadata.to_db db meta >>= fun () ->
       let top_res = lazy (
         let provers = CCList.map fst jobs in
-        T.Top_result.make ~meta ~provers res_l
+        Test_top_result.make ~meta ~provers res_l
         |> E.get_or_failwith
       ) in
-      T.Compact_result.of_db db >>= fun r ->
+      Test_compact_result.of_db db >>= fun r ->
       on_done r;
       Logs.debug (fun k->k "closing db…");
       ignore (Sqlite3.db_close db : bool);
@@ -239,11 +238,11 @@ end = struct
 
   (* callback that prints a result *)
   let progress_dynamic len =
-    let start = Unix.gettimeofday () in
+    let start = now_s() in
     let count = ref 0 in
     let tick() = incr count in
     let get_state() =
-      let time_elapsed = Unix.gettimeofday () -. start in
+      let time_elapsed = now_s() -. start in
       let percent = if len=0 then 100. else (float_of_int !count *. 100.) /. float_of_int len in
       (* elapsed=(percent/100)*total, so total=elapsed*100/percent; eta=total-elapsed *)
       let eta = time_elapsed *. (100. -. percent) /. percent in
@@ -304,13 +303,14 @@ end = struct
         ~dyn (len * List.length r.provers)
 end
 
-let dump_results_sqlite (results:T.top_result) : unit =
-  let uuid = results.T.meta.uuid in
+let dump_results_sqlite (results:Test_top_result.t) : unit =
+  let uuid = results.Test_top_result.meta.uuid in
   (* save results *)
   let dump_file =
     let filename =
       Printf.sprintf "res-%s-%s.sqlite"
-        (CCOpt.map_or ~default:"date" Misc.human_datetime results.T.meta.timestamp)
+        (CCOpt.map_or ~default:"date"
+           Misc.human_datetime results.Test_top_result.meta.timestamp)
         (Uuidm.to_string uuid)
     in
     let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
@@ -320,7 +320,7 @@ let dump_results_sqlite (results:T.top_result) : unit =
   Logs.app (fun k->k "write results into sqlite DB `%s`" dump_file);
   (try
      match Db.with_db ~timeout:500 dump_file
-             (fun db -> Test.Top_result.to_db db results)
+             (fun db -> Test_top_result.to_db db results)
      with
      | Ok () -> ()
      | Error e ->
@@ -391,10 +391,10 @@ let rec run ?(save=true) ?interrupted ?cb_progress
            let res =
              Exec_run_provers.run ?interrupted ~on_solve:progress#on_res
                ~on_done:(fun _ -> progress#on_done) ~save
-               ~timestamp:(Unix.gettimeofday()) ~uuid r_expanded
+               ~timestamp:(now_s()) ~uuid r_expanded
              |> scope.unwrap
            in
-           Format.printf "task done: %a@." Test.Compact_result.pp res;
+           Format.printf "task done: %a@." Test_compact_result.pp res;
            ()
          | Action.Act_progn l ->
            List.iter (fun a -> run ~save ?interrupted defs a |> scope.unwrap) l

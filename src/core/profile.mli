@@ -1,4 +1,6 @@
 
+(** Profiling probes *)
+
 type span
 val enter : unit -> span
 

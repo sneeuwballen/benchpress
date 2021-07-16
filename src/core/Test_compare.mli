@@ -1,8 +1,7 @@
 
-(** {1 Compare two result files} *)
+(** Compare two result files *)
 
-module Fmt = CCFormat
-type 'a or_error = ('a, string) CCResult.t
+open Misc
 type filename = string
 
 module Short : sig

@@ -1,11 +1,6 @@
 
-(** {1 Compare two result files} *)
 
-module Fmt = CCFormat
-module E = CCResult
-module Db = Sqlite3_utils
-module PB = PrintBox
-type 'a or_error = ('a, string) CCResult.t
+open Misc
 type filename = string
 
 let pb_v_record = Test.pb_v_record

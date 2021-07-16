@@ -55,7 +55,7 @@ let dump_csv ~csv results : unit =
     | None -> ()
     | Some file ->
       Logs.app (fun k->k "write results in CSV to file `%s`" file);
-      T.Top_result.to_csv_file file results;
+      Test_top_result.to_csv_file file results;
       (try ignore (Sys.command (Printf.sprintf "gzip -f '%s'" file):int) with _ -> ())
   end
 
@@ -67,51 +67,51 @@ let dump_summary ~summary results : unit =
       CCIO.with_out file
         (fun oc ->
            let out = Format.formatter_of_out_channel oc in
-           Format.fprintf out "%a@." T.Top_result.pp_compact results);
+           Format.fprintf out "%a@." Test_top_result.pp_compact results);
   end
 
 let check_res_an notify a : unit or_error =
-  if List.for_all (fun (_,r) -> T.Analyze.is_ok r) a
+  if List.for_all (fun (_,r) -> Test_analyze.is_ok r) a
   then (
     Notify.send notify "OK";
     E.return ()
   ) else (
     let n_fail =
-      List.fold_left (fun n (_,r) -> n + T.Analyze.num_bad r) 0 a
+      List.fold_left (fun n (_,r) -> n + Test_analyze.num_bad r) 0 a
     in
     Notify.sendf notify "FAIL (%d failures)" n_fail;
     E.fail_fprintf "FAIL (%d failures)" n_fail
   )
 
-let check_compact_res notify (results:T.Compact_result.t) : unit or_error =
-  check_res_an notify (results.T.cr_analyze)
+let check_compact_res notify (results:Test_compact_result.t) : unit or_error =
+  check_res_an notify (results.Test_compact_result.cr_analyze)
 
-let check_res notify (results:T.top_result) : unit or_error =
-  let a = T.Top_result.analyze results in
+let check_res notify (results:Test_top_result.t) : unit or_error =
+  let a = Test_top_result.analyze results in
   check_res_an notify a
 
 let printbox_stat st : unit =
-  let box_st = T.Stat.to_printbox_l st in
+  let box_st = Test_stat.to_printbox_l st in
   Printf.printf "STAT:\n%s\n%!" (PrintBox_text.to_string box_st);
   ()
 
 let printbox_analyze a =
-  let box_a = T.Analyze.to_printbox_l a in
+  let box_a = Test_analyze.to_printbox_l a in
   Printf.printf "ANALYSIS:\n%s\n%!" (PrintBox_text.to_string box_a);
   ()
 
-let printbox_compact_results (results:T.Compact_result.t) : unit =
-  printbox_stat results.T.cr_stat;
-  printbox_analyze results.T.cr_analyze;
+let printbox_compact_results (results:Test_compact_result.t) : unit =
+  printbox_stat results.cr_stat;
+  printbox_analyze results.cr_analyze;
   ()
 
-let printbox_results (results:T.top_result) : unit =
+let printbox_results (results:Test_top_result.t) : unit =
   begin
-    let st = T.Top_result.stat results in
+    let st = Test_top_result.stat results in
     printbox_stat st;
   end;
   begin
-    let a = T.Top_result.analyze results in
+    let a = Test_top_result.analyze results in
     printbox_analyze a;
   end;
   ()
@@ -149,7 +149,7 @@ let guess_uuid (f:string) =
     None
 
 (** Load file by name *)
-let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
+let load_file_full (f:string) : (string*Test_top_result.t, _) E.t =
   try
     match mk_file_full f with
     | Error _ as e -> e
@@ -157,7 +157,7 @@ let load_file_full (f:string) : (string*T.Top_result.t, _) E.t =
       if Filename.check_suffix f ".sqlite" then (
         try
           Db.with_db ~timeout:1500 ~mode:`NO_CREATE file
-            (fun db -> T.Top_result.of_db db |> E.map (fun r->file,r))
+            (fun db -> Test_top_result.of_db db |> E.map (fun r->file,r))
         with e -> E.of_exn e
       ) else (
         E.fail_fprintf "invalid name %S, expected a .sqlite file" f
@@ -182,7 +182,7 @@ let with_file_as_db filename f : _ E.t =
 
 let load_file f = E.map snd @@ load_file_full f
 
-let load_file_summary ?(full=false) (f:string) : (string * T.compact_result,_) E.t =
+let load_file_summary ?(full=false) (f:string) : (string * Test_compact_result.t,_) E.t =
   let open E.Infix in
   if Filename.check_suffix f ".sqlite" then (
     match mk_file_full f with
@@ -190,10 +190,10 @@ let load_file_summary ?(full=false) (f:string) : (string * T.compact_result,_) E
     | Ok file ->
       Db.with_db ~timeout:500 ~mode:`READONLY file
         (fun db ->
-           T.Compact_result.of_db ~full db >>= fun cr ->
+           Test_compact_result.of_db ~full db >>= fun cr ->
            E.return (file, cr))
   ) else (
     load_file_full f >>= fun (f,res) ->
-    T.Top_result.to_compact_result res >>= fun cr ->
+    Test_top_result.to_compact_result res >>= fun cr ->
     E.return (f, cr)
   )

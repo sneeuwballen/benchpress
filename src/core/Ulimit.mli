@@ -1,6 +1,5 @@
-(* This file is free software. See file "license" for more details. *)
 
-(** {1 Ulimit handling of limits} *)
+(** Ulimit handling of limits *)
 
 type conf = {
   time : bool;

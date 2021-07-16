@@ -6,7 +6,7 @@ type 'a or_error = ('a, string) E.t
 let execute_run_prover_action
     ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid ~save
     (r:Action.run_provers)
-  : (_ * T.Compact_result.t) or_error =
+  : (_ * Test_compact_result.t) or_error =
   let open E.Infix in
   begin
     let interrupted = CCLock.create false in
@@ -84,7 +84,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       execute_run_prover_action
         ~uuid ?pp_results ?dyn:progress ~limits ?j ~notify ~timestamp ~save
         run_provers_action
-      >>= fun (top_res, (results:T.Compact_result.t)) ->
+      >>= fun (top_res, (results:Test_compact_result.t)) ->
       if CCOpt.is_some csv then (
         Bin_utils.dump_csv ~csv @@ Lazy.force top_res;
       );
@@ -98,7 +98,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       (* try to send a desktop notification *)
       (try CCUnix.call "notify-send 'benchmark done (%s)'"
              (CCOpt.map_or ~default:"?" Misc.human_duration
-                results.T.cr_meta.total_wall_time) |> ignore
+                results.cr_meta.total_wall_time) |> ignore
        with _ -> ());
       r
   end

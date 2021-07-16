@@ -8,8 +8,9 @@ all: build
 clean:
 	@dune clean
 
+WATCH?= @all
 watch:
-	@dune build @all -w
+	@dune build $(WATCH) -w
 
 install: build
 	@dune install

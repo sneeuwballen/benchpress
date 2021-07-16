@@ -11,12 +11,19 @@ let spf = Printf.sprintf
 
 let[@inline] (let@@) f1 f2 = f1 @@ f2
 
+type expect_filter =
+  | TD_expect_improved
+  | TD_expect_ok
+  | TD_expect_disappoint
+  | TD_expect_bad
+  | TD_expect_error
+
 type t = {
   mutable defs: Definitions.t;
   server: H.t;
   task_q: Task_queue.t;
   data_dir: string;
-  meta_cache: (string, Test.metadata) Hashtbl.t;
+  meta_cache: (string, Test_metadata.t) Hashtbl.t;
   allow_delete: bool;
 }
 
@@ -259,23 +266,23 @@ let handle_show (self:t) : unit =
   let box_meta =
     (* link to the prover locally *)
     let link prover = PB.link (PB.text prover) ~uri:(uri_prover_in file prover) in
-    Test.Metadata.to_printbox ~link cr.T.cr_meta
+    Test_metadata.to_printbox ~link cr.cr_meta
   in
   let box_summary =
-    Test.Analyze.to_printbox_l
+    Test_analyze.to_printbox_l
       ~link:(fun p r ->
           uri_show_detailed ~filter_prover:p ~filter_expect:r file)
-      cr.T.cr_analyze in
+      cr.cr_analyze in
   let box_stat =
     let to_link prover tag =
       uri_show_detailed ~filter_prover:prover ~filter_res:tag file
     in
-    Test.Stat.to_printbox_l ~to_link cr.T.cr_stat
+    Test_stat.to_printbox_l ~to_link cr.cr_stat
   in
   (* TODO: make one table instead? with links to detailed comparison
      (i.e. as-table with proper filters) *)
   let box_compare_l =
-    Test.Comparison_short.to_printbox_l cr.T.cr_comparison in
+    Test_comparison_short.to_printbox_l cr.cr_comparison in
   let uri_plot = uri_gnuplot file in
   let uri_err = uri_error_bad file in
   Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
@@ -389,18 +396,18 @@ let handle_show_gp (self:t) : unit =
     let open E.Infix in
     try
       begin match files_full with
-        | [f] -> Test.Cactus_plot.of_file f
+        | [f] -> Cactus_plot.of_file f
         | fs ->
           fs
           |> List.mapi
             (fun i f ->
                let p =
-                 Test.Cactus_plot.of_file f |> scope.unwrap_with (add_err_code 500)
+                 Cactus_plot.of_file f |> scope.unwrap_with (add_err_code 500)
                in
                spf "file %d (%s)" i (Filename.basename f), p)
-          |> Test.Cactus_plot.combine |> E.return
+          |> Cactus_plot.combine |> E.return
       end >|= fun plot ->
-      Test.Cactus_plot.to_png plot
+      Cactus_plot.to_png plot
     with e ->
       let e = Printexc.to_string e in
       Log.err (fun k->k "failure to build a cactus plot: %s" e);
@@ -426,8 +433,8 @@ let handle_show_errors (self:t) : unit =
   Log.info (fun k->k "show-err: loaded full summary in %.3fs"
                (Misc.Chrono.since_last chrono));
   let link_file = link_show_single file in
-  let bad = Test.Analyze.to_printbox_bad_l ~link:link_file cr.T.cr_analyze in
-  let errors = Test.Analyze.to_printbox_errors_l ~link:link_file cr.T.cr_analyze in
+  let bad = Test_analyze.to_printbox_bad_l ~link:link_file cr.cr_analyze in
+  let errors = Test_analyze.to_printbox_errors_l ~link:link_file cr.cr_analyze in
   Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let mk_dl_file l =
     let open Html in
@@ -467,17 +474,12 @@ let handle_show_errors (self:t) : unit =
   H.Response.make_string (Ok (Html.to_string_elt h))
 
 let trf_of_string = function
-  | "bad" -> Some Test.TRF_bad
-  | "different" -> Some Test.TRF_different
-  | "all" -> Some Test.TRF_all
+  | "bad" -> Some Test_top_result.TRF_bad
+  | "different" -> Some Test_top_result.TRF_different
+  | "all" -> Some Test_top_result.TRF_all
   | s ->
     Log.warn (fun k->k "unknown table filter: %S" s);
     None
-
-let string_of_trf = function
-  | Test.TRF_bad -> "bad"
-  | Test.TRF_different -> "different"
-  | Test.TRF_all -> "all"
 
 (* show full table for a file *)
 let handle_show_as_table (self:t) : unit =
@@ -499,7 +501,7 @@ let handle_show_as_table (self:t) : unit =
     let link_res prover pb ~res =
       PB.link ~uri:(uri_show_single file prover pb) (PB.text res)
     in
-    Test.Top_result.db_to_printbox_table
+    Test_top_result.db_to_printbox_table
       ?filter_res ~filter_pb ~offset ~link_pb:link_get_file
       ~page_size ~link_res db
   in
@@ -547,9 +549,9 @@ let handle_show_as_table (self:t) : unit =
             List.map
               (fun trf ->
                  let sel = if Some trf = filter_res then [a_selected()] else [] in
-                 let s = string_of_trf trf in
+                 let s = Test_top_result.string_of_trf trf in
                  option ~a:(sel @[a_value s]) (txt s))
-              [Test.TRF_all; Test.TRF_bad; Test.TRF_different];
+              [Test_top_result.TRF_all; TRF_bad; TRF_different];
             mk_button
               ~cls:["btn-info"; "btn-sm"; "btn-success"; "m-3";]
               [txt "filter"];
@@ -564,11 +566,11 @@ let handle_show_as_table (self:t) : unit =
   H.Response.make_string (Ok (Html.to_string h))
 
 (* html for the summary of [file] with metadata [m] *)
-let mk_file_summary filename (m:Test.metadata) : _ Html.elt list =
+let mk_file_summary filename (m:Test_metadata.t) : _ Html.elt list =
   let open Html in
 
   let add_title =
-    let title = [a_title (Test.Metadata.to_string m)] in
+    let title = [a_title (Test_metadata.to_string m)] in
     let url_show = uri_show filename in
     fun x -> mk_a ~a:(a_href url_show :: title) [x]
   in
@@ -584,11 +586,11 @@ let mk_file_summary filename (m:Test.metadata) : _ Html.elt list =
     span ~a:[a_class ["col-md-3"]] (hd :: tl)
   and provers =
     span ~a:[a_class ["col-md-3"]]
-      [txt (spf "{%s}" @@ String.concat "," m.Test.provers)]
+      [txt (spf "{%s}" @@ String.concat "," m.provers)]
   and date =
     span ~a:[a_class ["col-md-3"; "text-secondary"]]
       [txt @@ CCOpt.map_or ~default:"<unknown date>"
-         Misc.human_datetime m.Test.timestamp]
+         Misc.human_datetime m.timestamp]
   and dirs =
     if CCList.is_empty m.dirs then []
     else
@@ -605,11 +607,11 @@ let l_all_expect = ["improved"; "ok"; "disappoint"; "bad"; "error"]
 
 let expect_of_string s =
   match String.trim s with
-  | "improved" -> Ok (Some Test.TD_expect_improved)
-  | "ok" -> Ok (Some Test.TD_expect_ok)
-  | "disappoint" -> Ok (Some Test.TD_expect_disappoint)
-  | "bad" -> Ok (Some Test.TD_expect_bad)
-  | "error" -> Ok (Some Test.TD_expect_error)
+  | "improved" -> Ok (Some Test_detailed_res.TD_expect_improved)
+  | "ok" -> Ok (Some Test_detailed_res.TD_expect_ok)
+  | "disappoint" -> Ok (Some Test_detailed_res.TD_expect_disappoint)
+  | "bad" -> Ok (Some Test_detailed_res.TD_expect_bad)
+  | "error" -> Ok (Some Test_detailed_res.TD_expect_error)
   | "" -> Ok None
   | e -> Error (spf "unknown 'expect' filter: %S" e)
 
@@ -635,7 +637,7 @@ let handle_show_detailed (self:t) : unit =
   scope.unwrap @@
   let@@ scope, db = Bin_utils.with_file_as_db db_file in
   let l, n, complete =
-    Test.Detailed_res.list_keys
+    Test_detailed_res.list_keys
       ~page_size ~offset ~filter_prover ~filter_res ?filter_expect ~filter_pb db
     |> scope.unwrap_with (add_err_code 500) in
   Log.debug (fun k->k "got %d results in %.3fs, complete=%B"
@@ -704,7 +706,7 @@ let handle_show_detailed (self:t) : unit =
        ]];
      let rows =
        CCList.map
-         (fun {Test.Detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
+         (fun {Test_detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
             let url_file_res = uri_show_single db_file prover pb_file in
             let url_file = uri_get_file pb_file in
             tr [
@@ -745,10 +747,10 @@ let handle_show_single (self:t) : unit =
   H.Response.make_string ~headers:default_html_headers
   @@ scope.unwrap @@
   let@@ scope, db = Bin_utils.with_file_as_db db_file in
-  let r = Test.Detailed_res.get_res db prover pb_file
+  let r = Test_detailed_res.get_res db prover pb_file
           |> scope.unwrap_with (add_err_code 500) in
   let pb, pb_prover, stdout, stderr =
-    Test.Detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
+    Test_detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
   in
   let open Html in
   let h = mk_page ~title:"single result" [
@@ -787,7 +789,7 @@ let handle_show_csv (self:t): unit =
     with _ -> None
   in
   let csv =
-    try Test.Top_result.db_to_csv_string ?provers db
+    try Test_top_result.db_to_csv_string ?provers db
     with e -> scope.unwrap_with (fun e->Printexc.to_string e,500) (Error e)
   in
   Log.debug (fun k->k "successful reply in %.3fs for /show_csv/%S/"
@@ -1024,7 +1026,7 @@ let get_meta (self:t) (p:string) : _ result =
     let res =
       try
         Sqlite3_utils.with_db ~cache:`PRIVATE ~mode:`READONLY p
-          (fun db -> Test.Metadata.of_db db)
+          (fun db -> Test_metadata.of_db db)
       with e ->
         Error (Printf.sprintf "not a valid db: %S: %s"
                  (Filename.basename p) @@ Printexc.to_string e)
@@ -1032,7 +1034,7 @@ let get_meta (self:t) (p:string) : _ result =
     E.iter
       (fun m ->
          (* cache if it's complete *)
-         if Test.Metadata.is_complete m then (
+         if Test_metadata.is_complete m then (
            Hashtbl.add self.meta_cache p m
          )) res;
     res

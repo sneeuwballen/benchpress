@@ -19,6 +19,7 @@ depends: [
   "logs"
   "uuidm"
   "base64"
+  "ptime"
   "gnuplot" { >= "0.6" & < "0.8" }
   "sqlite3"
   "sqlite3_utils" { >= "0.3" & < "0.4" }

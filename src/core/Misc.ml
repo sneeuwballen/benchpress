@@ -5,10 +5,13 @@ module Str_map = CCMap.Make(String)
 module Str_set = CCSet.Make(String)
 module E = CCResult
 module Db = Sqlite3_utils
+module PB = PrintBox
 type 'a or_error = ('a, string) E.t
 let spf = Printf.sprintf
 
 let _lock = CCLock.create()
+
+let now_s() = Ptime_clock.now () |> Ptime.to_float_s
 
 let reset_line = "\x1b[2K\r"
 let synchronized f = CCLock.with_lock _lock f
@@ -41,7 +44,7 @@ module Log_report = struct
     let app, app_flush = buf_fmt () in
     let dst, dst_flush = buf_fmt () in
     let pp_header fmt header =
-      let now = Unix.gettimeofday() in
+      let now = now_s() in
       Format.fprintf fmt "@[<2>[%a|t%d] %a@ "
         ISO8601.Permissive.pp_datetime now Thread.(id @@ self()) pp_h header
     in
@@ -158,6 +161,11 @@ let human_datetime (f:float) : string =
 
 let pp_human_datetime out f = Fmt.string out (human_datetime f)
 
+(** Compact representation of a datetime *)
+let datetime_compact (t:Ptime.t) : string =
+  let (y,m,d), ((h,min,z),_tz) = Ptime.to_date_time t in
+  Printf.sprintf "%4d%02d%02dT%02d%02d%02d" y m d h min z
+
 (** Human readable size *)
 let human_size (x:int) : string =
   if x >= 1_000_000 then Printf.sprintf "%d.%dM" (x / 1_000_000) ((x/1000) mod 1_000)
@@ -265,14 +273,14 @@ end = struct
     mutable last: float;
   }
   let start () : t =
-    let t = Unix.gettimeofday() in
+    let t = now_s() in
     { start=t; last=t }
   let elapsed (self:t) =
-    let now = Unix.gettimeofday() in
+    let now = now_s() in
     self.last <- now;
     now -. self.start
   let since_last (self:t) =
-    let now = Unix.gettimeofday() in
+    let now = now_s() in
     let r = now -. self.last in
     self.last <- now;
     r
