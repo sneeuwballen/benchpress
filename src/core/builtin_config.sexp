@@ -17,8 +17,8 @@
   (name z3)
   (cmd "z3 $file")
   (version "cmd:z3 --version")
-  (unsat "unsat")
-  (sat "^sat"))
+  (unsat "unsat|(s UNSATISFIABLE)")
+  (sat "(^sat)|(s SATISFIABLE)"))
 
 (prover
   (name cvc4)
