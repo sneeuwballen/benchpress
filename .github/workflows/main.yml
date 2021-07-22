@@ -1,22 +1,27 @@
 name: build
-on: [push]
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
 jobs:
   run:
     name: Build
     runs-on: ${{ matrix.operating-system }}
     strategy:
       matrix:
-        ocaml-version: [ '4.08.0' ]
+        ocaml-compiler: [ '4.08.x', '4.12.x' ]
         operating-system: [macos-latest, ubuntu-latest]
         #operating-system: [macos-latest, ubuntu-latest, windows-latest]
     steps:
     - uses: actions/checkout@master
     - uses: avsm/setup-ocaml@master
       with:
-        ocaml-version: ${{ matrix.ocaml-version }}
+        ocaml-compiler: ${{ matrix.ocaml-compiler }}
     - run: opam pin -n .
-    - run: opam depext -yt benchpress
-    - run: opam depext -yt benchpress-server
-    - run: opam install -t . --deps-only
+    - run: opam depext -y benchpress benchpress-server
+    - run: opam install . --deps-only
     - run: opam exec -- dune build @all --ignore-promoted-rules
     - run: opam exec -- dune runtest --ignore-promoted-rules
