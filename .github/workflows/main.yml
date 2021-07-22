@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@master
     - uses: avsm/setup-ocaml@master
       with:
-        ocaml-version: ${{ matrix.ocaml-version }}
+        ocaml-compiler: ${{ matrix.ocaml-compiler }}
     - run: opam pin -n .
     - run: opam depext -y benchpress benchpress-server
     - run: opam install . --deps-only
