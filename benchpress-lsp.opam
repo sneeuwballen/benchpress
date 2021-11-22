@@ -12,7 +12,7 @@ depends: [
   "containers" { >= "3.0" & < "4.0" }
   "containers-thread" { >= "3.0" & < "4.0" }
   "benchpress" { = version }
-  "linol" { >= "0.2" & < "0.3" }
+  "linol" { >= "0.4" & < "0.5" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
