@@ -1,28 +1,45 @@
 
-module Sexp_loc = Benchpress.Sexp_loc
+module Loc = Benchpress.Loc
 module Stanza = Benchpress.Stanza
 
 module Lock = CCLock
 
 module IO = Linol.Blocking_IO
 module L = Linol.Jsonrpc2.Make(IO)
-type loc = Sexp_loc.sloc
+module LT = Lsp.Types
+module Log = (val Logs.src_log Logs.Src.(create "lsp"))
 
-type processed_buf = (Stanza.t list, string * Sexp_loc.sloc) result
+type loc = Loc.t
+
+type processed_buf = (Stanza.t list, string * loc list) result
 
 let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
   let mk_pos_ p =
-    Lsp.Types.Position.create ~line:(p.Sexp_loc.line-1) ~character:p.col in
+    Lsp.Types.Position.create ~line:(p.Loc.line-1) ~character:p.col in
   Lsp.Types.Range.create ~start:(mk_pos_ l.start) ~end_:(mk_pos_ l.stop)
 
-let diagnostics (p:processed_buf) : _ list =
+let diagnostics ~uri (p:processed_buf) : _ list =
   match p with
-  | Ok _ -> []
-  | Error (msg,loc) ->
+  | Ok _l ->
+    Log.debug (fun k->k"in %s: ok, %d stanzas" uri (List.length _l));
+    []
+  | Error (msg,loc::locs) ->
+    Log.debug (fun k->k"in %s: err %s" uri msg);
+    let tr_loc loc =
+      LT.DiagnosticRelatedInformation.create
+        ~location:(LT.Location.create ~uri ~range:(range_of_loc_ loc))
+        ~message:"Related position"
+    in
     let d =
-      Lsp.Types.(Diagnostic.create ~severity:DiagnosticSeverity.Error
-        ~range:(range_of_loc_ loc) ~message:msg ()) in
+      LT.Diagnostic.create ~severity:LT.DiagnosticSeverity.Error
+        ~range:(range_of_loc_ loc) ~message:msg
+        ~relatedInformation:(List.map tr_loc locs)
+        ()
+    in
     [d]
+  | Error (msg, []) ->
+    Log.err (fun k->k"in %s: err %s (no loc)" uri msg);
+    [] (* TODO: log it? *)
 
 class blsp = object(self)
   inherit L.server
@@ -41,7 +58,7 @@ class blsp = object(self)
       (uri:Lsp.Types.DocumentUri.t) (contents:string) =
     let r = Stanza.parse_string ~filename:uri contents in
     Lock.with_lock buffers (fun b -> Hashtbl.replace b uri r);
-    let diags = diagnostics r in
+    let diags = diagnostics ~uri r in
     notify_back#send_diagnostic diags
 
   (* We now override the [on_notify_doc_did_open] method that will be called
@@ -61,7 +78,16 @@ class blsp = object(self)
     IO.return ()
 end
 
+let setup_debug() =
+  if Sys.getenv_opt "LSP_DEBUG"=Some "1" then (
+    let out = open_out "/tmp/lsp.log" in
+    let out = Format.formatter_of_out_channel out in
+    Logs.set_reporter (Logs.format_reporter ~app:out ~dst:out ());
+    Logs.set_level ~all:true (Some Logs.Debug);
+  )
+
 let () =
+  setup_debug();
   let lsp = new blsp in
   let server = L.create ~ic:stdin ~oc:stdout lsp in
   L.run server

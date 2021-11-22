@@ -5,8 +5,8 @@ module E = CCResult
 module Fmt = CCFormat
 module Se = Sexp_loc
 
-type loc = Sexp_loc.sloc
-type 'a or_error = ('a, string * loc) E.t
+type loc = Loc.t
+type 'a or_error = ('a, string * loc list) E.t
 
 (** {2 Type Definitions} *)
 
@@ -176,8 +176,57 @@ let fail_sexp_f fmt =
     (fun s ->
        let open Se.D in
        value >>= fun sexp ->
-       fail @@ Format.asprintf "@[<v>at %a:@,%s@]" Se.pp_loc sexp.Se.loc s)
+       fail_with
+        (Decoders.Decode.Decoder_error (s, Some sexp)))
     fmt
+
+module D_fields = struct
+  module Str_map = CCMap.Make(CCString)
+  type t = (Se.t * Se.t) Str_map.t ref
+
+  let decode_sub v d =
+    Se.D.from_result (Se.D.decode_value d v)
+
+  let get : t Se.D.decoder =
+    let open Se.D in
+    let+ l = key_value_pairs_seq' value
+        (fun k_val ->
+           let+ k = decode_sub k_val string
+           and+ v = value in
+           k, (k_val, v))
+    in
+    let m =
+      List.fold_left
+        (fun m (k,v) -> Str_map.add k v m) Str_map.empty l
+    in
+    ref m
+
+  let check_no_field_left (self:t) : unit Se.D.decoder =
+    let open Se.D in
+    match Str_map.choose_opt !self with
+    | None -> succeed ()
+    | Some (k, (k_val,_)) ->
+      fail_with
+        (Decoders.Decode.Decoder_error
+           (Printf.sprintf "unknown key '%s'" k, Some k_val))
+
+  let field (self:t) key d : _ Se.D.decoder =
+    let open Se.D in
+    match Str_map.get key !self with
+    | None -> fail (Printf.sprintf "key not found: '%s'" key)
+    | Some (_,v) -> 
+      self := Str_map.remove key !self;
+      decode_sub v d
+
+  let field_opt (self:t) key d : _ Se.D.decoder =
+    let open Se.D in
+    match Str_map.get key !self with
+    | None -> succeed None
+    | Some (_,v) ->
+      self := Str_map.remove key !self;
+      let+ x = decode_sub v d in
+      Some x
+end
 
 let dec_res tags =
   let open Se.D in
@@ -219,9 +268,11 @@ let dec_version : _ Se.D.decoder =
     "atom", str;
     "list", (string >>:: function
       | "git" ->
-        field "branch" string >>= fun branch ->
-        field "commit" string >>= fun commit ->
-        succeed (Version_exact (Prover.Git {branch; commit}))
+        let* m = D_fields.get in
+        let* branch = D_fields.field m "branch" string in
+        let* commit = D_fields.field m "commit" string in
+        let+ () = D_fields.check_no_field_left m in
+        Version_exact (Prover.Git {branch; commit})
       | s -> fail_sexp_f "invalid `version` constructor: %s" s);
   ]
 
@@ -276,21 +327,25 @@ let dec_action : action Se.D.decoder =
   fix (fun self ->
       string >>:: function
       | "run_provers" ->
-        field "dirs" (list_or_singleton string) >>= fun dirs ->
-        field "provers" (list_or_singleton string) >>= fun provers ->
-        field_opt "pattern" dec_regex >>= fun pattern ->
-        field_opt "timeout" int >>= fun timeout ->
-        field_opt "memory" int >>= fun memory ->
-        field_opt "stack" dec_stack_limit >>= fun stack ->
+        let* m = D_fields.get in
+        let* dirs = D_fields.field m "dirs" (list_or_singleton string) in
+        let* provers = D_fields.field m "provers" (list_or_singleton string) in
+        let* pattern = D_fields.field_opt m "pattern" dec_regex in
+        let* timeout = D_fields.field_opt m "timeout" int in
+        let* memory = D_fields.field_opt m "memory" int in
+        let* stack = D_fields.field_opt m "stack" dec_stack_limit in
+        let+ () = D_fields.check_no_field_left m in
         let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
-        succeed @@ A_run_provers {dirs;provers;timeout;memory;stack;pattern}
+        A_run_provers {dirs;provers;timeout;memory;stack;pattern}
       | "progn" -> list_or_singleton self >|= fun l -> A_progn l
       | "run_cmd" -> list1 string >|= fun s -> A_run_cmd s
       | "git_checkout" ->
-        field "dir" string >>= fun dir ->
-        field "ref" string >>= fun ref ->
-        field_opt "fetch_first" dec_fetch_first >>= fun fetch_first ->
-        succeed @@ A_git_checkout {dir; ref; fetch_first}
+        let* m = D_fields.get in
+        let* dir = D_fields.field m "dir" string in
+        let* ref = D_fields.field m "ref" string in
+        let* fetch_first = D_fields.field_opt m "fetch_first" dec_fetch_first in
+        let+ () = D_fields.check_no_field_left m in
+        A_git_checkout {dir; ref; fetch_first}
       | s ->
         fail_sexp_f "unknown config stanzas %s" s)
 
@@ -299,10 +354,12 @@ let dec tags : (_ list * t) Se.D.decoder =
   let open Se.D in
   string >>:: function
   | "dir" ->
-    field "path" string >>= fun path ->
-    field_opt "expect" (dec_expect tags) >>= fun expect ->
-    field_opt "pattern" dec_regex >>= fun pattern ->
-    succeed (tags, St_dir {path;expect;pattern})
+    let* m = D_fields.get in
+    let* path = D_fields.field m "path" string in
+    let* expect = D_fields.field_opt m "expect" (dec_expect tags) in
+    let* pattern = D_fields.field_opt m "pattern" dec_regex in
+    let+ () = D_fields.check_no_field_left m in
+    (tags, St_dir {path;expect;pattern})
   | "prover" ->
     let tag = string >>:: function
       | "tag" ->
@@ -314,17 +371,18 @@ let dec tags : (_ list * t) Se.D.decoder =
         )
       | _ -> succeed None
     in
-    field "name" string >>= fun name ->
-    field "cmd" string >>= fun cmd ->
-    field_opt "version" dec_version >>= fun version ->
-    field_opt "sat" dec_regex >>= fun sat ->
-    field_opt "unsat" dec_regex >>= fun unsat ->
-    field_opt "unknown" dec_regex >>= fun unknown ->
-    field_opt "timeout" dec_regex >>= fun timeout ->
-    field_opt "memory" dec_regex >>= fun memory ->
-    field_opt "ulimit" dec_ulimits >>= fun ulimits ->
-    list_filter tag >>= fun custom ->
-    succeed @@
+    let* m = D_fields.get in
+    D_fields.field m "name" string >>= fun name ->
+    D_fields.field m "cmd" string >>= fun cmd ->
+    D_fields.field_opt m "version" dec_version >>= fun version ->
+    D_fields.field_opt m "sat" dec_regex >>= fun sat ->
+    D_fields.field_opt m "unsat" dec_regex >>= fun unsat ->
+    D_fields.field_opt m "unknown" dec_regex >>= fun unknown ->
+    D_fields.field_opt m "timeout" dec_regex >>= fun timeout ->
+    D_fields.field_opt m "memory" dec_regex >>= fun memory ->
+    D_fields.field_opt m "ulimit" dec_ulimits >>= fun ulimits ->
+    let* custom = list_filter tag in
+    let+ () = D_fields.check_no_field_left m in
     (tags, St_prover {
         name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
         ulimits;
@@ -332,37 +390,44 @@ let dec tags : (_ list * t) Se.D.decoder =
       binary_deps=[]; (* TODO *)
     })
   | "task" ->
-    field "name" string >>= fun name ->
-    field_opt "synopsis" string >>= fun synopsis ->
-    field "action" dec_action >>= fun action ->
-    succeed @@ (tags, St_task {name;synopsis;action})
+    let* m = D_fields.get in
+    D_fields.field m "name" string >>= fun name ->
+    D_fields.field_opt m "synopsis" string >>= fun synopsis ->
+    D_fields.field m "action" dec_action >>= fun action ->
+    let+ () = D_fields.check_no_field_left m in
+    (tags, St_task {name;synopsis;action})
   | "set-options" ->
-    field_opt "progress" bool >>= fun progress ->
-    field_opt "j" int >>= fun j ->
-    succeed @@ (tags, St_set_options {progress; j})
+    let* m = D_fields.get in
+    D_fields.field_opt m "progress" bool >>= fun progress ->
+    D_fields.field_opt m "j" int >>= fun j ->
+    let+ () = D_fields.check_no_field_left m in
+    (tags, St_set_options {progress; j})
   | "custom-tag" ->
-    field "name" string >>= fun s ->
-    succeed @@ (s::tags,St_declare_custom_tag s)
+    let* m = D_fields.get in
+    D_fields.field m "name" string >>= fun s ->
+    let+ () = D_fields.check_no_field_left m in
+    (s::tags,St_declare_custom_tag s)
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
 
-exception Wrap of string * Sexp_loc.sloc
+exception Wrap of string * Loc.t list
 let wrapf ~loc fmt = Format.kasprintf (fun s ->raise (Wrap (s,loc))) fmt
 
-let parse_string_list_ s : _ list or_error =
-  let buf = Lexing.from_string s in
+let parse_string_list_ str : _ list or_error =
+  let module Se = Se.Sexp in
+  let buf = Lexing.from_string str in
   let d = Se.Decoder.of_lexbuf buf in
   let rec iter acc = match Se.Decoder.next d with
     | Se.End -> Result.Ok (List.rev acc)
     | Se.Yield x -> iter (x::acc)
     | Se.Fail e ->
-      (* FIXME: get location somehow, maybe containers 3.3 `last_loc` *)
-      Result.Error (e, Sexp_loc.noloc)
+      (* FIXME: get location from Sexp_loc iself? *)
+      let loc = Loc.of_lexbuf ~input:(Loc.Input.string str) buf in
+      Result.Error (e, [loc])
   in
   try iter []
   with e ->
-    let loc = Sexp_loc.noloc in
-    E.map_err (fun s -> s, loc) @@ E.of_exn e
+    E.map_err (fun s -> s, []) @@ E.of_exn e
 
 (** Parse a list of files into a list of stanzas *)
 let parse_files, parse_string =
@@ -372,7 +437,9 @@ let parse_files, parse_string =
          match Se.D.decode_value (dec tags) s with
          | Ok x -> x
          | Error e ->
-           wrapf ~loc:s.Se.loc "at %a, error@ %s" Se.pp_loc s.Se.loc
+           let locs = Sexp_loc.loc_of_err e in
+           let locs = if locs=[] then [s.Se.loc] else locs in
+           wrapf ~loc:locs "%a@ Error: %s" Loc.pp_l locs
              (Se.D.string_of_error e))
       l
   in
@@ -391,17 +458,15 @@ let parse_files, parse_string =
     tags, prelude
   in
   let process_file tags file =
-    Se.cur_file_ := file; (* issue in CCSexp's locations *)
     let file = Misc.mk_abs_path file in
-    match Se.parse_file_list file with
-    | Error e -> wrapf ~loc:Sexp_loc.noloc "cannot parse %s:@,%s" file e
+    match Se.parse_file_l file with
+    | Error e -> wrapf ~loc:[] "cannot parse %s:@,%s" file e
     | Ok l ->
       let tags, l = decode_sexp_l tags l in
       tags, St_enter_file file :: l
   and process_string ~filename tags s =
-    Se.cur_file_ := filename; (* issue in CCSexp's locations *)
-    match Se.parse_string_list s with
-    | Error e -> wrapf ~loc:Sexp_loc.noloc "cannot parse %s:@,%s" filename e
+    match Se.parse_string_l ~filename s with
+    | Error e -> wrapf ~loc:[] "cannot parse %s:@,%s" filename e
     | Ok l ->
       let tags, l = decode_sexp_l tags l in
       tags, St_enter_file filename :: l

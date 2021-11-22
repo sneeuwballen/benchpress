@@ -1,26 +1,9 @@
 (** {1 S-expressions with locations} *)
 
-type pos = {line: int; col: int}
-
-type sloc = {
-  file: string;
-  start: pos;
-  stop: pos;
-}
-
-let cur_file_ = ref "<none>"
-let noloc = {file="<none>"; start={line=1;col=1}; stop={line=1;col=1}}
-
-let pp_loc out (loc:sloc) : unit =
-  if loc.start.line=loc.stop.line then (
-    Format.fprintf out "%s:%d.%d-%d" loc.file loc.start.line loc.start.col loc.stop.col
-  ) else (
-    Format.fprintf out "%s:%d.%d-%d.%d"
-      loc.file loc.start.line loc.start.col loc.stop.line loc.stop.col
-  )
+open Common
 
 type t = {
-  loc: sloc;
+  loc: Loc.t;
   view: view;
 }
 and view =
@@ -29,39 +12,84 @@ and view =
 
 let atom_with_loc ~loc s : t= {loc; view=Atom s}
 let list_with_loc ~loc l : t = {loc; view=List l}
-let atom = atom_with_loc ~loc:noloc
-let list = list_with_loc ~loc:noloc
+let atom = atom_with_loc ~loc:Loc.none
+let list = list_with_loc ~loc:Loc.none
 
 (** {2 Serialization and helpers} *)
 
-include (CCSexp.Make(struct
-           type nonrec loc=sloc
-           type nonrec t=t
+module Sexp0 : sig
+  type 'a or_error = ('a, string) result
+  val pp : t Fmt.printer
+  val of_int : int -> t
+  val of_float : float -> t
+  val of_bool : bool -> t
+  val of_list : t list -> t
+  val to_string : t -> string
+  val parse_string : filename:string -> string -> t or_error
+  val parse_string_l : filename:string -> string -> t list or_error
+  val parse_file : string -> t or_error
+  val parse_file_l : string -> t list or_error
+  module Sexp : CCSexp_intf.S with type t = t
+end = struct
+  type 'a or_error = ('a, string) result
 
-           let make_loc =
-             Some (fun (l1,c1)(l2,c2) file : loc ->
-                 let file = if file="" then !cur_file_ else file in
-                 {file; start={line=l1;col=c1};stop={line=l2;col=c2}})
+  let cur_file_ = ref ""
+  let cur_input_ = ref (Loc.Input.string "")
 
-           let atom_with_loc ~loc s : t= {loc; view=Atom s}
-           let list_with_loc ~loc l : t = {loc; view=List l}
-           let atom = atom_with_loc ~loc:noloc
-           let list = list_with_loc ~loc:noloc
+  module Sexp = CCSexp.Make(struct
+      type nonrec loc=Loc.t
+      type nonrec t=t
 
-           let match_ s ~atom ~list =
-             match s.view with
-             | Atom s -> atom s
-             | List l -> list l
-         end) : CCSexp.S with type t := t)
+      let make_loc =
+        Some (fun (l1,c1)(l2,c2) file : loc ->
+            let input = !cur_input_ in
+            let file = if file="" then !cur_file_ else file in
+            {file; input; start={line=l1;col=c1};stop={line=l2;col=c2}})
+
+      let atom_with_loc ~loc s : t= {loc; view=Atom s}
+      let list_with_loc ~loc l : t = {loc; view=List l}
+      let atom = atom
+      let list = list
+
+      let match_ s ~atom ~list =
+        match s.view with
+        | Atom s -> atom s
+        | List l -> list l
+    end)
+
+  include Sexp
+
+  let parse_string ~filename s =
+    cur_file_ := filename;
+    cur_input_ := Loc.Input.string s;
+    parse_string s
+
+  let parse_string_l ~filename s =
+    cur_file_ := filename;
+    cur_input_ := Loc.Input.string s;
+    parse_string_list s
+
+  let parse_file file =
+    cur_file_ := file;
+    cur_input_ := Loc.Input.file file;
+    parse_file file
+
+  let parse_file_l file =
+    cur_file_ := file;
+    cur_input_ := Loc.Input.file file;
+    parse_file_list file
+end
+
+include Sexp0
 
 (** {2 Decoder} *)
 
 module D = struct
   include Decoders.Decode.Make(struct
       type value = t
-      let to_list = of_list
+      let to_list l = list l
       let pp = pp
-      let of_string = parse_string
+      let of_string s = parse_string ~filename:"<string>" s
       let of_file = parse_file
       let get_string s = match s.view with Atom s -> Some s | List _ -> None
       let get_ ~f s = match s.view with
@@ -80,7 +108,7 @@ module D = struct
                (List.map
                   (fun kv -> match kv.view with
                      | List [k;v] -> k, v
-                     | List (k :: vs) -> k, of_list vs (* support "(foo a b c)" *)
+                     | List (k :: vs) -> k, list_with_loc ~loc:kv.loc vs (* support "(foo a b c)" *)
                      | _ -> raise Exit)
                   l)
            with Exit -> None)
@@ -95,6 +123,13 @@ module D = struct
     | [x;y] -> s1 x >>= fun x -> s2 y >|= fun y -> x,y
     | _ -> fail "need binary list"
 end
+
+let rec loc_of_err : D.error -> Loc.t list =
+  function
+  | Decoders.Decode.Decoder_error (_, s) ->
+    begin match s with Some s -> [s.loc] | None -> [] end
+  | Decoders.Decode.Decoder_errors l -> CCList.flat_map loc_of_err l
+  | Decoders.Decode.Decoder_tag (_, e) -> loc_of_err e
 
 (** {2 Encoder} *)
 

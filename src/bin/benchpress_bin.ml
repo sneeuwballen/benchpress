@@ -227,7 +227,8 @@ end
 (** {2 Check config} *)
 
 module Check_config = struct
-  let run with_default f =
+  let run debug with_default f =
+    Misc.setup_logs debug;
     let default_file = Misc.default_config () in
     let f =
       if f=[] then (
@@ -243,12 +244,14 @@ module Check_config = struct
     let open Cmdliner in
     let files =
       Arg.(value & pos_all string [] & info [] ~doc:"file(s) to check")
+    and debug =
+      Logs_cli.level ()
     and with_default =
       Arg.(value & opt bool false & info ["d"; "default"] ~doc:"combine with the default config file(s)")
     in
     let doc = "parse and print configuration file(s)" in
-    let aux with_default files () = run with_default files in
-    Term.(pure aux $ with_default $ files $ pure () ), Term.info ~doc "check-config"
+    let aux debug with_default files () = run debug with_default files in
+    Term.(pure aux $ debug $ with_default $ files $ pure () ), Term.info ~doc "check-config"
 end
 
 (** {2 See prover(s)} *)
