@@ -6,7 +6,7 @@ module T = Test
 module E = CCResult
 module Db = Sqlite3_utils
 
-type 'a or_error = ('a, string) E.t
+type 'a or_error = ('a, string * Loc.t list) E.t
 
 (** {2 Run} *)
 module Run = struct
@@ -14,12 +14,12 @@ module Run = struct
   let cmd =
     let open Cmdliner in
     let aux j pp_results dyn paths dir_file defs task timeout memory
-        meta provers csv summary no_color save
-      : (unit,string) E.t =
+        meta provers csv summary no_color save : unit or_error =
       if no_color then CCFormat.set_color_default false;
       let dyn = if dyn then Some true else None in
       Run_main.main ~pp_results ?dyn ~j ?timeout ?memory ?csv ~provers
         ~meta ?task ?summary ?dir_file ~save defs paths ()
+      |> Bin_utils.lift_err
     in
     let defs = Bin_utils.definitions_term
     and dyn =
@@ -72,6 +72,7 @@ module List_files = struct
       Ok ()
     with e ->
       E.of_exn_trace e
+      |> Bin_utils.lift_err
 
   (* sub-command to sample a directory *)
   let cmd =
@@ -108,6 +109,7 @@ module Show = struct
       Misc.setup_logs debug;
       if no_color then CCFormat.set_color_default false;
       Show.main ~check ~bad ?csv ?summary file
+      |> Bin_utils.lift_err
     in
     let doc = "show benchmark results (see `list-files`)" in
     Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ debug $ file),
@@ -120,14 +122,17 @@ module Plot = struct
   let main file : unit or_error =
     let open E.Infix in
     Logs.debug (fun k->k "plot file %s" file);
-    try
+    (try
       Bin_utils.mk_file_full file >>= fun file ->
       Db.with_db ~timeout:500 ~mode:`READONLY file
         (fun db ->
            Cactus_plot.of_db db >>= fun p ->
            Cactus_plot.show p;
            Ok ())
-    with e -> E.of_exn_trace e
+    with e ->
+      E.of_exn_trace e
+    )
+    |> Bin_utils.lift_err
 
   (* sub-command for showing results *)
   let cmd =
@@ -151,7 +156,7 @@ end
 module Sample = struct
   open E.Infix
 
-  let files_of_dir (p:string) : string list or_error =
+  let files_of_dir (p:string) : (string list, _) result =
     try
       CCIO.File.walk_l p
       |> CCList.filter_map
@@ -188,7 +193,7 @@ module Sample = struct
   (* sub-command to sample a directory *)
   let cmd =
     let open Cmdliner in
-    let aux n dir = run ~n dir in
+    let aux n dir = run ~n dir |> Bin_utils.lift_err in
     let dir =
       Arg.(value & pos_all string [] &
            info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
@@ -211,6 +216,7 @@ module Dir = struct
        | Config -> Misc.config_dir()
        | State -> Misc.data_dir ());
     Ok ()
+    |> Bin_utils.lift_err
 
   (* sub-command for showing results *)
   let cmd =
@@ -238,7 +244,7 @@ module Check_config = struct
     | Ok c ->
       Format.printf "@[<v>%a@]@." Stanza.pp_l c;
       Ok ()
-    | Error (e,_loc) -> Error e
+    | Error (e,locs) -> Error (e,locs)
 
   let cmd =
     let open Cmdliner in
@@ -258,10 +264,13 @@ end
 
 module Prover_show = struct
   let run defs names =
-    let open E.Infix in
-    E.map_l (Definitions.find_prover defs) names >>= fun l ->
-    Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
-    Ok ()
+    begin
+      let open E.Infix in
+      E.map_l (Definitions.find_prover defs) names >>= fun l ->
+      Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
+      Ok ()
+    end
+    |> Bin_utils.lift_err
 
   let cmd =
     let open Cmdliner in
@@ -277,6 +286,7 @@ module Prover_list = struct
     let l = Definitions.all_provers defs in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp_name) l;
     Ok ()
+    |> Bin_utils.lift_err
 
   let cmd =
     let open Cmdliner in
@@ -288,10 +298,13 @@ end
 
 module Task_show = struct
   let run defs names =
-    let open E.Infix in
-    E.map_l (Definitions.find_task defs) names >>= fun l ->
-    Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
-    Ok ()
+    begin
+      let open E.Infix in
+      E.map_l (Definitions.find_task defs) names >>= fun l ->
+      Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
+      Ok ()
+    end
+    |> Bin_utils.lift_err
 
   let cmd =
     let open Cmdliner in
@@ -307,6 +320,7 @@ module Task_list = struct
     let l = Definitions.all_tasks defs in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp_name) l;
     Ok ()
+    |> Bin_utils.lift_err
 
   let cmd =
     let open Cmdliner in
@@ -317,6 +331,10 @@ end
 (** {2 Convert results to Sql} *)
 
 module Sql_convert = struct
+  let run defs files =
+    Sql_res.run defs files
+    |> Bin_utils.lift_err
+
   (* sub-command for showing results *)
   let cmd =
     let open Cmdliner in
@@ -325,7 +343,7 @@ module Sql_convert = struct
            info [] ~docv:"FILES" ~doc:"files to read")
     in
     let doc = "convert result(s) into sqlite files" in
-    Term.(pure Sql_res.run $ Bin_utils.definitions_term $ files),
+    Term.(pure run $ Bin_utils.definitions_term $ files),
     Term.info ~doc "sql-convert"
 end
 
@@ -366,6 +384,6 @@ let () =
   match parse_opt () with
   | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
   | `Ok (Ok ()) | `Version | `Help -> ()
-  | `Ok (Error e) ->
-    print_endline ("error: " ^ e);
+  | `Ok (Error (e, locs)) ->
+    Format.eprintf "@.%a@{<Red>Error@}:@ %s" Loc.pp_l locs e;
     exit 1

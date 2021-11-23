@@ -197,3 +197,8 @@ let load_file_summary ?(full=false) (f:string) : (string * Test_compact_result.t
     Test_top_result.to_compact_result res >>= fun cr ->
     E.return (f, cr)
   )
+
+let lift_err = function
+  | Ok x -> Ok x
+  | Error s -> Error (s, [])
+

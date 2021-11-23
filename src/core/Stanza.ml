@@ -439,8 +439,7 @@ let parse_files, parse_string =
          | Error e ->
            let locs = Sexp_loc.loc_of_err e in
            let locs = if locs=[] then [s.Se.loc] else locs in
-           wrapf ~loc:locs "%a@ Error: %s" Loc.pp_l locs
-             (Se.D.string_of_error e))
+           wrapf ~loc:locs "Error: %s" (Se.D.string_of_error e))
       l
   in
   (* prelude? *)

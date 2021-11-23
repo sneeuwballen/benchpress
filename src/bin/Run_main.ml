@@ -6,7 +6,7 @@ type 'a or_error = ('a, string) E.t
 let execute_run_prover_action
     ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid ~save
     (r:Action.run_provers)
-  : (_ * Test_compact_result.t) or_error =
+  : ((_ * Test_compact_result.t), string) E.t =
   let open E.Infix in
   begin
     let interrupted = CCLock.create false in
