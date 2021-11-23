@@ -1,8 +1,8 @@
 
 (** {1 Configuration Stanzas} *)
 
+open Common
 module E = CCResult
-module Fmt = CCFormat
 module Se = Sexp_loc
 
 type loc = Loc.t
@@ -473,7 +473,7 @@ let parse_files, parse_string =
   in
   let wrap_err_ f =
     try f ()
-    with Wrap (e,loc) -> Error (e,loc)
+    with Wrap (e,locs) -> Error (e,locs)
   in
   let parse_files ?(builtin=true) (files:string list) : t list or_error =
     wrap_err_ @@ fun () ->
