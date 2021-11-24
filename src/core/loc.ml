@@ -95,7 +95,12 @@ module Pos = struct
   let (=) a b = a.line = b.line && a.col = b.col
   let min a b = if a<=b then a else b
   let max a b = if a<=b then b else a
+
+  let pp out self = Fmt.fprintf out "line %d, col %d" self.line self.col
 end
+
+let contains loc pos =
+  Pos.( loc.start <= pos && pos <= loc.stop )
 
 let tr_position (self:t) (pos:pos) : Lexing.position =
   let line_offset = Input.find_line_offset self.input ~line:pos.line in

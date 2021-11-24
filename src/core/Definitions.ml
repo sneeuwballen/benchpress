@@ -53,6 +53,7 @@ module Def = struct
   let pp out = function
     | D_prover p -> Prover.pp out p.view
     | D_task t -> Task.pp out t.view
+  let show = Fmt.to_string pp
 end
 
 let to_iter self : _ Iter.t = Str_map.to_iter self.defs
@@ -81,6 +82,8 @@ let get_version ?(binary="") (v:Stanza.version_field) : Prover.version =
       end
     | Stanza.Version_exact v -> v
   end
+
+let find self name = Str_map.get name self.defs
 
 let find_prover self name : Prover.t with_loc or_error =
   match Str_map.get name self.defs with

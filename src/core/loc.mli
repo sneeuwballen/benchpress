@@ -14,6 +14,9 @@ module Pos : sig
   val (<=) : t -> t -> bool
   val (<) : t -> t -> bool
   val (=) : t -> t -> bool
+  val min : t -> t -> t
+  val max : t -> t -> t
+  val pp : t Fmt.printer
 end
 
 type t = {
@@ -26,6 +29,8 @@ type t = {
 val none : t
 val pp : t Fmt.printer
 val pp_l : t list Fmt.printer
+
+val contains : t -> pos -> bool
 
 val union : t -> t -> t
 val union_l : t list -> t option

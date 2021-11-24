@@ -1,8 +1,10 @@
 
 module Loc = Benchpress.Loc
 module Stanza = Benchpress.Stanza
-module Or_error = Benchpress.Or_error
+module E = Benchpress.Or_error
 module Error = Benchpress.Error
+module Definitions = Benchpress.Definitions
+module Sexp_loc = Benchpress.Sexp_loc
 
 module Lock = CCLock
 
@@ -14,7 +16,9 @@ module Log = (val Logs.src_log Logs.Src.(create "lsp"))
 type loc = Loc.t
 
 type processed_buf = {
-  stanzas: Stanza.t list Or_error.t;
+  text: string;
+  stanzas: Stanza.t list E.t;
+  defs: Definitions.t E.t;
 }
 
 let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
@@ -59,6 +63,28 @@ let diagnostics ~uri (p:processed_buf) : _ list =
         [d]
     end
 
+let find_atom_under_ (s:string) (pos:Loc.pos) : string option =
+  let buf = Lexing.from_string ~with_positions:true s in
+  let input = Loc.Input.string s in
+  let exception E of string in
+  try
+    while true do
+      let tok = CCSexp_lex.token buf in
+      let loc = Loc.of_lexbuf ~input buf in
+      if Loc.contains loc pos then (
+        match tok with
+        | CCSexp_lex.ATOM s -> raise (E s)
+        | _ -> raise Exit
+      ) else if Loc.(Pos.(pos <= loc.start)) then (
+        raise Exit
+      )
+    done;
+    assert false
+  with
+  | Exit -> None
+  | E s -> Some s
+;;
+
 class blsp = object(self)
   inherit L.server
 
@@ -66,8 +92,11 @@ class blsp = object(self)
   val buffers: (Lsp.Types.DocumentUri.t, processed_buf) Hashtbl.t Lock.t
     = Lock.create @@ Hashtbl.create 32
 
-  method! config_hover = Some (`Bool false)
-  method! config_definition = Some (`Bool false)
+  method! config_hover = Some (`Bool true)
+  method! config_definition = Some (`Bool true)
+  method! config_completion =
+    let opts = LT.CompletionOptions.create () in
+    Some opts
 
   (* configure how sync happens *)
   method! config_sync_opts =
@@ -75,6 +104,92 @@ class blsp = object(self)
     LT.TextDocumentSyncOptions.create ~openClose:true ~change
       ~save:(LT.SaveOptions.create ~includeText:false ())
       ()
+
+  method! on_req_hover ~notify_back:_ ~id:_ ~uri ~pos
+      (_ : L.doc_state) : LT.Hover.t option =
+    let pos = {Loc.line=pos.L.Position.line; col=pos.character} in
+    begin
+      match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
+      | Some {defs=Ok defs; text; _} ->
+        Log.debug (fun k->k"found buffer with defs");
+        begin match find_atom_under_ text pos with
+          | None -> None
+          | Some a ->
+            begin match Definitions.find defs a with
+              | None ->
+                Log.err (fun k->k"didn't find def for %S" a);
+                None
+
+              | Some d ->
+                let contents =
+                  `MarkedString {LT.MarkedString.value=Definitions.Def.show d; language=None}
+                in
+                let h = LT.Hover.create ~contents () in
+                Some h
+            end
+        end
+      | _ -> None
+    end
+
+  method! on_req_definition ~notify_back:_ ~id:_ ~uri ~pos
+      (_ : L.doc_state) : LT.Locations.t option =
+    let pos = {Loc.line=pos.L.Position.line; col=pos.character} in
+    begin
+      match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
+      | Some {defs=Ok defs; text; _} ->
+        Log.debug (fun k->k"found buffer with defs");
+        begin match find_atom_under_ text pos with
+          | None -> None
+          | Some a ->
+            begin match Definitions.find defs a with
+              | None ->
+                Log.err (fun k->k"didn't find def for %S" a);
+                None
+
+              | Some d ->
+                let loc = Definitions.Def.loc d in
+                let range = range_of_loc_ loc in
+                (* FIXME: find the right URI, def could come from another file *)
+                let l = `Location [LT.Location.create ~uri ~range] in
+                Some l
+            end
+        end
+      | _ -> None
+    end
+
+  (* FIXME: completion is never useful on a parsable buffer, and
+     buffers that do not parse have no definitions *)
+  method! on_req_completion ~notify_back:_ ~id:_ ~uri ~pos ~ctx:_
+        (_ : L.doc_state) :
+          [ `CompletionList of LT.CompletionList.t
+          | `List of LT.CompletionItem.t list ] option =
+    let pos = {Loc.line=pos.L.Position.line; col=pos.character} in
+    Log.debug (fun k->k"completion request in '%s' at pos %a" uri Loc.Pos.pp pos);
+    begin
+      match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
+      | Some {defs=Ok defs; text; _} ->
+        Log.debug (fun k->k"found local doc");
+        begin match find_atom_under_ text pos with
+          | None -> None
+          | Some a ->
+            Log.debug (fun k->k"found atom %S" a);
+            let l =
+              Definitions.completions ~before_pos:pos defs a
+              |> List.map
+                (fun d ->
+                   let name, label = match d with
+                     | Definitions.D_prover p -> p.view.name, "prover"
+                     | Definitions.D_task t -> t.view.name , "task"
+                   in
+                   LT.CompletionItem.create ~label
+                     ~detail:(Definitions.Def.show d)
+                     ~insertText:name ()
+                )
+            in
+            Some (`List l)
+        end
+      | _ -> None
+    end
 
   (* We define here a helper method that will:
      - process a document
@@ -85,8 +200,13 @@ class blsp = object(self)
       ~(notify_back:L.notify_back)
       (uri:Lsp.Types.DocumentUri.t) (contents:string) =
     Log.debug (fun k->k"on doc %s" uri);
-    let r = Stanza.parse_string ~filename:uri contents in
-    let pdoc = {stanzas=r} in
+    let open E.Infix in
+    let stanzas = Stanza.parse_string ~filename:uri contents in
+    let defs =
+      let* stanzas = stanzas in
+      Definitions.of_stanza_l stanzas
+    in
+    let pdoc = {stanzas; defs; text=contents} in
     Lock.with_lock buffers (fun b -> Hashtbl.replace b uri pdoc);
     let diags = diagnostics ~uri pdoc in
     Log.debug (fun k->k"send diags for %s" uri);
