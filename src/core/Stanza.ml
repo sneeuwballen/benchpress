@@ -194,13 +194,17 @@ let fail_sexp_f fmt =
 
 module D_fields = struct
   module Str_map = CCMap.Make(CCString)
-  type t = (Se.t * Se.t) Str_map.t ref
+  type t = {
+    mutable m: (Se.t * Se.t) Str_map.t;
+    value: Se.t;
+  }
 
   let decode_sub v d =
     Se.D.from_result (Se.D.decode_value d v)
 
   let get : t Se.D.decoder =
     let open Se.D in
+    let* self = value in
     let+ l = key_value_pairs_seq' value
         (fun k_val ->
            let+ k = decode_sub k_val string
@@ -211,11 +215,11 @@ module D_fields = struct
       List.fold_left
         (fun m (k,v) -> Str_map.add k v m) Str_map.empty l
     in
-    ref m
+    {m; value=self}
 
   let check_no_field_left (self:t) : unit Se.D.decoder =
     let open Se.D in
-    match Str_map.choose_opt !self with
+    match Str_map.choose_opt self.m with
     | None -> succeed ()
     | Some (k, (k_val,_)) ->
       fail_with
@@ -224,18 +228,21 @@ module D_fields = struct
 
   let field (self:t) key d : _ Se.D.decoder =
     let open Se.D in
-    match Str_map.get key !self with
-    | None -> fail (Printf.sprintf "key not found: '%s'" key)
+    match Str_map.get key self.m with
+    | None ->
+      fail_with
+        (Decoders.Decode.Decoder_error
+           (Printf.sprintf "key not found: '%s'" key, Some self.value))
     | Some (_,v) ->
-      self := Str_map.remove key !self;
+      self.m <- Str_map.remove key self.m;
       decode_sub v d
 
   let field_opt (self:t) key d : _ Se.D.decoder =
     let open Se.D in
-    match Str_map.get key !self with
+    match Str_map.get key self.m with
     | None -> succeed None
     | Some (_,v) ->
-      self := Str_map.remove key !self;
+      self.m <- Str_map.remove key self.m;
       let+ x = decode_sub v d in
       Some x
 end
@@ -361,7 +368,7 @@ let dec_action : action Se.D.decoder =
         let+ () = D_fields.check_no_field_left m in
         A_git_checkout {dir; ref; fetch_first;loc}
       | s ->
-        fail_sexp_f "unknown config stanzas %s" s)
+        fail_sexp_f "unknown config stanza %s" s)
 
 (* TODO: carry definitions around? *)
 let dec tags : (_ list * t) Se.D.decoder =
