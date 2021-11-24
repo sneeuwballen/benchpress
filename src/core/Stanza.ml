@@ -8,6 +8,8 @@ module Se = Sexp_loc
 type loc = Loc.t
 type 'a or_error = 'a Or_error.t
 
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.stanzas"))
+
 (** {2 Type Definitions} *)
 
 (** Result to expect for a problem *)
@@ -414,6 +416,7 @@ let dec tags : (_ list * t) Se.D.decoder =
     })
   | "task" ->
     let* m = D_fields.get in
+    Log.debug (fun k->k"task: loc %a sexp %a" Loc.pp m.value.Se.loc Se.pp m.value);
     D_fields.field m "name" string >>= fun name ->
     D_fields.field_opt m "synopsis" string >>= fun synopsis ->
     D_fields.field m "action" dec_action >>= fun action ->
@@ -439,7 +442,7 @@ let fail_with_error_f ?loc fmt = Format.kasprintf (fun s ->raise (Wrap (Error.ma
 
 let parse_string_list_ str : _ list or_error =
   let module Se = Se.Sexp in
-  let buf = Lexing.from_string str in
+  let buf = Lexing.from_string ~with_positions:true str in
   let d = Se.Decoder.of_lexbuf buf in
   let rec iter acc = match Se.Decoder.next d with
     | Se.End -> Result.Ok (List.rev acc)
@@ -447,7 +450,9 @@ let parse_string_list_ str : _ list or_error =
     | Se.Fail msg ->
       (* FIXME: get location from Sexp_loc iself? *)
       let loc = Loc.of_lexbuf ~input:(Loc.Input.string str) buf in
-      Result.Error (Error.make ~loc msg)
+      let err = Error.make ~loc msg in
+      Log.debug (fun k->k"parse_string_list failed: %a" Error.pp err);
+      Result.Error err
   in
   try iter []
   with e ->

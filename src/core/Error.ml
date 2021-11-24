@@ -37,7 +37,7 @@ let pp out (self:t) =
     | None ->
       Fmt.fprintf out "@[@{<Red>Error@}:@ %a@]" Fmt.string_lines msg
     | Some loc ->
-      Fmt.fprintf out "@[<v>%a@ @[@{<Red>Error@}:@ %a@]@]"
+      Fmt.fprintf out "@[<v>%a@[@{<Red>Error@}:@ %a@]@]"
         Loc.pp loc Fmt.string_lines msg
   in
   let rec pp_rec_ out self =

@@ -44,17 +44,19 @@ end = struct
         Some (fun (l1,c1)(l2,c2) file : loc ->
             let input = !cur_input_ in
             let file = if file="" then !cur_file_ else file in
-            {file; input; start={line=l1;col=c1};stop={line=l2;col=c2}})
+            let loc = {Loc.file; input; start={line=l1;col=c1};stop={line=l2;col=c2}} in
+            Logs.debug (fun k->k"make_loc %d:%d - %d:%d@ res %a" l1 c1 l2 c2 Loc.pp loc);
+            loc)
 
       let atom_with_loc ~loc s : t= {loc; view=Atom s}
       let list_with_loc ~loc l : t = {loc; view=List l}
       let atom = atom
       let list = list
 
-      let match_ s ~atom ~list =
+      let match_ s ~atom:fa ~list:fl =
         match s.view with
-        | Atom s -> atom s
-        | List l -> list l
+        | Atom s -> fa s
+        | List l -> fl l
     end)
 
   include Sexp

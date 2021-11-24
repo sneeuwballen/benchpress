@@ -84,6 +84,7 @@ end
 let setup_logs (lvl:Logs.level option) : unit =
   Logs.set_reporter (Log_report.reporter());
   Logs.set_level ~all:true lvl;
+  Logs.debug (fun k->k "logs are setup");
   ()
 
 let pp_list ?(sep=" ") f out l =
