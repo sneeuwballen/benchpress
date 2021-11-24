@@ -165,7 +165,7 @@ let load_file_full (f:string) : (string*Test_top_result.t, _) E.t =
   with e ->
     E.of_exn_trace e
 
-let with_file_as_db filename f : _ E.t =
+let with_file_as_db ~map_err filename f : _ E.t =
   Misc.err_with
     ~map_err:(fun (e,code) ->
         Printf.sprintf "while processing DB %s: %s" filename e,code)
