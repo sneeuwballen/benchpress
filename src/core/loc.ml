@@ -88,6 +88,15 @@ type t = {
 let none = {file="<none>"; input=Input.string "";
             start={line=1;col=1}; stop={line=1;col=1}}
 
+module Pos = struct
+  type t = pos
+  let (<=) a b = a.line < b.line || (a.line = b.line && a.col <= b.col)
+  let (<) a b = a.line < b.line || (a.line = b.line && a.col < b.col)
+  let (=) a b = a.line = b.line && a.col = b.col
+  let min a b = if a<=b then a else b
+  let max a b = if a<=b then b else a
+end
+
 let tr_position (self:t) (pos:pos) : Lexing.position =
   let line_offset = Input.find_line_offset self.input ~line:pos.line in
   {Lexing.pos_fname=self.file;
@@ -132,3 +141,13 @@ let of_lexbuf ~input (lexbuf:Lexing.lexbuf) : t =
   let file = start.pos_fname in
   let tr_pos p = {line=p.pos_lnum; col=p.pos_cnum - p.pos_bol + 1} in
   {file; input; start=tr_pos start; stop=tr_pos stop}
+
+let union a b =
+  {start=Pos.min a.start b.start;
+   stop=Pos.max a.stop b.stop;
+   file=a.file; input=a.input}
+
+let union_l = function
+  | [] -> None
+  | [l] -> Some l
+  | l1 :: tl -> Some (List.fold_left union l1 tl)

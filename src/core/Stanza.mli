@@ -2,11 +2,10 @@
 (** Stanzas for the configuration language *)
 
 open Common
-module E = CCResult
 module Se = Sexp_loc
 
 type loc = Loc.t
-type 'a or_error = ('a, string * loc list) E.t
+type 'a or_error = 'a Or_error.t
 
 (** Result to expect for a problem *)
 type expect =
@@ -36,13 +35,18 @@ type action =
       timeout: int option;
       memory: int option;
       stack : stack_limit option;
+      loc: Loc.t;
     }
   | A_git_checkout of {
       dir: string;
       ref: string;
       fetch_first: git_fetch option;
+      loc: Loc.t;
     }
-  | A_run_cmd of string
+  | A_run_cmd of {
+      cmd: string;
+      loc: Loc.t;
+    }
   | A_progn of action list
 
 (** Stanzas for the configuration *)
@@ -50,6 +54,7 @@ type t =
   | St_enter_file of string
   | St_prover of {
       name: string;
+      loc: Loc.t;
       version: version_field option;
       cmd: string;
       (** the command line to run.
@@ -72,17 +77,23 @@ type t =
       path: string;
       expect: expect option;
       pattern: regex option; (** Pattern of problems in this directory *)
+      loc: Loc.t;
     }
   | St_task of {
       name: string; (* name of this task *)
       synopsis: string option;
       action: action;
+      loc: Loc.t;
     }
   | St_set_options of {
       progress: bool option;
       j: int option;
+      loc: Loc.t;
     }
-  | St_declare_custom_tag of string
+  | St_declare_custom_tag of {
+      tag: string;
+      loc: Loc.t
+    }
 
 val pp_expect : expect Fmt.printer
 val pp_version_field: version_field Fmt.printer

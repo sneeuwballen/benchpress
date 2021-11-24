@@ -9,6 +9,13 @@ end
 
 type pos = {line: int; col: int}
 
+module Pos : sig
+  type t = pos
+  val (<=) : t -> t -> bool
+  val (<) : t -> t -> bool
+  val (=) : t -> t -> bool
+end
+
 type t = {
   file: string;
   start: pos;
@@ -20,4 +27,8 @@ val none : t
 val pp : t Fmt.printer
 val pp_l : t list Fmt.printer
 
+val union : t -> t -> t
+val union_l : t list -> t option
+
 val of_lexbuf : input:Input.t -> Lexing.lexbuf -> t
+

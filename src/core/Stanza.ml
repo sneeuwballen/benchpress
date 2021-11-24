@@ -2,11 +2,11 @@
 (** {1 Configuration Stanzas} *)
 
 open Common
-module E = CCResult
+module E = Or_error
 module Se = Sexp_loc
 
 type loc = Loc.t
-type 'a or_error = ('a, string * loc list) E.t
+type 'a or_error = 'a Or_error.t
 
 (** {2 Type Definitions} *)
 
@@ -38,13 +38,18 @@ type action =
       timeout: int option;
       memory: int option;
       stack : stack_limit option;
+      loc: Loc.t;
     }
   | A_git_checkout of {
       dir: string;
       ref: string;
       fetch_first: git_fetch option;
+      loc: Loc.t;
     }
-  | A_run_cmd of string
+  | A_run_cmd of {
+      cmd: string;
+      loc: Loc.t;
+    }
   | A_progn of action list
 
 (** Stanzas for the configuration *)
@@ -52,6 +57,7 @@ type t =
   | St_enter_file of string
   | St_prover of {
       name: string;
+      loc: Loc.t;
       version: version_field option;
       cmd: string;
       (** the command line to run.
@@ -74,17 +80,23 @@ type t =
       path: string;
       expect: expect option;
       pattern: regex option; (** Pattern of problems in this directory *)
+      loc: Loc.t;
     }
   | St_task of {
       name: string; (* name of this task *)
       synopsis: string option;
       action: action;
+      loc: Loc.t;
     }
   | St_set_options of {
       progress: bool option;
       j: int option;
+      loc: Loc.t;
     }
-  | St_declare_custom_tag of string
+  | St_declare_custom_tag of {
+      tag: string;
+      loc: Loc.t
+    }
 
 (** {2 Printers} *)
 
@@ -111,7 +123,7 @@ let pp_stack_limit out = function
 let rec pp_action out =
   let open Misc.Pp in
   function
-  | A_run_provers {dirs;provers;timeout;memory;stack;pattern;} ->
+  | A_run_provers {dirs;provers;timeout;memory;stack;pattern;loc=_} ->
     Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a%a@])"
       (pp_f "dirs" (pp_l pp_str)) dirs
       (pp_f "provers" (pp_l pp_str)) provers
@@ -120,8 +132,8 @@ let rec pp_action out =
       (pp_opt "memory" Fmt.int) memory
       (pp_opt "stack" pp_stack_limit) stack
   | A_progn l -> Fmt.fprintf out "(@[progn %a@])" (pp_l pp_action) l
-  | A_run_cmd s -> Fmt.fprintf out "(@[run_cmd %a@])" pp_regex s
-  | A_git_checkout {dir;ref;fetch_first} ->
+  | A_run_cmd {cmd=s;loc=_} -> Fmt.fprintf out "(@[run_cmd %a@])" pp_regex s
+  | A_git_checkout {dir;ref;fetch_first;loc=_;} ->
     Fmt.fprintf out "(@[<v>git_checkout%a%a%a@])"
       (pp_f "dir" pp_regex) dir
       (pp_f "ref" pp_regex) ref
@@ -131,14 +143,14 @@ let pp out =
   let open Misc.Pp in
   function
   | St_enter_file f -> Fmt.fprintf out "(@[enter-file@ %a@])" pp_str f
-  | St_dir {path; expect; pattern; } ->
+  | St_dir {path; expect; pattern; loc=_; } ->
     Fmt.fprintf out "(@[<v>dir%a%a%a@])"
       (pp_f "path" Fmt.string) path
       (pp_opt "expect" pp_expect) expect
       (pp_opt "pattern" pp_regex) pattern
   | St_prover {
       name; cmd; version; unsat; sat; unknown; timeout; memory;
-      binary=_; binary_deps=_; custom; ulimits;
+      binary=_; binary_deps=_; custom; ulimits; loc=_;
     } ->
     let pp_custom out (x,y) =
       Fmt.fprintf out "(@[tag %a@ %a@])" pp_str x pp_regex y in
@@ -153,16 +165,16 @@ let pp out =
       (pp_opt "timeout" pp_regex) timeout
       (pp_opt "memory" pp_regex) memory
       (pp_l1 pp_custom) custom
-  | St_task {name; synopsis; action;} ->
+  | St_task { name; synopsis; action; loc=_; } ->
     Fmt.fprintf out "(@[<v>task%a%a%a@])"
       (pp_f "name" pp_str) name
       (pp_opt "synopsis" pp_str) synopsis
       (pp_f "action" pp_action) action
-  | St_set_options {j; progress} ->
+  | St_set_options {j; progress;loc=_} ->
     Fmt.fprintf out "(@[<v>set-options%a%a])"
       (pp_opt "progress" Fmt.bool) progress
       (pp_opt "j" Fmt.int) j
-  | St_declare_custom_tag t ->
+  | St_declare_custom_tag {tag=t;loc=_} ->
     Fmt.fprintf out "(custom-tag %s)" t
 
 let pp_l out l =
@@ -214,7 +226,7 @@ module D_fields = struct
     let open Se.D in
     match Str_map.get key !self with
     | None -> fail (Printf.sprintf "key not found: '%s'" key)
-    | Some (_,v) -> 
+    | Some (_,v) ->
       self := Str_map.remove key !self;
       decode_sub v d
 
@@ -325,6 +337,8 @@ let dec_stack_limit : _ Se.D.decoder =
 let dec_action : action Se.D.decoder =
   let open Se.D in
   fix (fun self ->
+      let* sexp = value in
+      let loc = sexp.Se.loc in
       string >>:: function
       | "run_provers" ->
         let* m = D_fields.get in
@@ -336,22 +350,24 @@ let dec_action : action Se.D.decoder =
         let* stack = D_fields.field_opt m "stack" dec_stack_limit in
         let+ () = D_fields.check_no_field_left m in
         let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
-        A_run_provers {dirs;provers;timeout;memory;stack;pattern}
+        A_run_provers {dirs;provers;timeout;memory;stack;pattern;loc}
       | "progn" -> list_or_singleton self >|= fun l -> A_progn l
-      | "run_cmd" -> list1 string >|= fun s -> A_run_cmd s
+      | "run_cmd" -> list1 string >|= fun s -> A_run_cmd {cmd=s;loc}
       | "git_checkout" ->
         let* m = D_fields.get in
         let* dir = D_fields.field m "dir" string in
         let* ref = D_fields.field m "ref" string in
         let* fetch_first = D_fields.field_opt m "fetch_first" dec_fetch_first in
         let+ () = D_fields.check_no_field_left m in
-        A_git_checkout {dir; ref; fetch_first}
+        A_git_checkout {dir; ref; fetch_first;loc}
       | s ->
         fail_sexp_f "unknown config stanzas %s" s)
 
 (* TODO: carry definitions around? *)
 let dec tags : (_ list * t) Se.D.decoder =
   let open Se.D in
+  let* sexp = value in
+  let loc = sexp.Se.loc in
   string >>:: function
   | "dir" ->
     let* m = D_fields.get in
@@ -359,7 +375,7 @@ let dec tags : (_ list * t) Se.D.decoder =
     let* expect = D_fields.field_opt m "expect" (dec_expect tags) in
     let* pattern = D_fields.field_opt m "pattern" dec_regex in
     let+ () = D_fields.check_no_field_left m in
-    (tags, St_dir {path;expect;pattern})
+    (tags, St_dir {path;expect;pattern;loc})
   | "prover" ->
     let tag = string >>:: function
       | "tag" ->
@@ -385,7 +401,7 @@ let dec tags : (_ list * t) Se.D.decoder =
     let+ () = D_fields.check_no_field_left m in
     (tags, St_prover {
         name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
-        ulimits;
+        ulimits; loc;
       binary=None;
       binary_deps=[]; (* TODO *)
     })
@@ -395,23 +411,24 @@ let dec tags : (_ list * t) Se.D.decoder =
     D_fields.field_opt m "synopsis" string >>= fun synopsis ->
     D_fields.field m "action" dec_action >>= fun action ->
     let+ () = D_fields.check_no_field_left m in
-    (tags, St_task {name;synopsis;action})
+    (tags, St_task {name;synopsis;action;loc})
   | "set-options" ->
     let* m = D_fields.get in
     D_fields.field_opt m "progress" bool >>= fun progress ->
     D_fields.field_opt m "j" int >>= fun j ->
     let+ () = D_fields.check_no_field_left m in
-    (tags, St_set_options {progress; j})
+    (tags, St_set_options {progress; j; loc})
   | "custom-tag" ->
     let* m = D_fields.get in
     D_fields.field m "name" string >>= fun s ->
     let+ () = D_fields.check_no_field_left m in
-    (s::tags,St_declare_custom_tag s)
+    (s::tags,St_declare_custom_tag {tag=s;loc})
   | s ->
     fail_sexp_f "unknown config stanzas %s" s
 
-exception Wrap of string * Loc.t list
-let wrapf ~loc fmt = Format.kasprintf (fun s ->raise (Wrap (s,loc))) fmt
+exception Wrap of Error.t
+let fail_with_error e =  raise (Wrap e)
+let fail_with_error_f ?loc fmt = Format.kasprintf (fun s ->raise (Wrap (Error.make ?loc s))) fmt
 
 let parse_string_list_ str : _ list or_error =
   let module Se = Se.Sexp in
@@ -420,14 +437,15 @@ let parse_string_list_ str : _ list or_error =
   let rec iter acc = match Se.Decoder.next d with
     | Se.End -> Result.Ok (List.rev acc)
     | Se.Yield x -> iter (x::acc)
-    | Se.Fail e ->
+    | Se.Fail msg ->
       (* FIXME: get location from Sexp_loc iself? *)
       let loc = Loc.of_lexbuf ~input:(Loc.Input.string str) buf in
-      Result.Error (e, [loc])
+      Result.Error (Error.make ~loc msg)
   in
   try iter []
   with e ->
-    E.map_err (fun s -> s, []) @@ E.of_exn e
+    CCResult.of_exn e
+    |> CCResult.map_err Error.make
 
 (** Parse a list of files into a list of stanzas *)
 let parse_files, parse_string =
@@ -437,9 +455,8 @@ let parse_files, parse_string =
          match Se.D.decode_value (dec tags) s with
          | Ok x -> x
          | Error e ->
-           let locs = Sexp_loc.loc_of_err e in
-           let locs = if locs=[] then [s.Se.loc] else locs in
-           wrapf ~loc:locs "Error: %s" (Se.D.string_of_error e))
+           let loc = Sexp_loc.loc_of_err e |> Loc.union_l in
+           fail_with_error_f ?loc "Error: %s" (Se.D.string_of_error e))
       l
   in
   (* prelude? *)
@@ -450,8 +467,8 @@ let parse_files, parse_string =
         | Ok l ->
           let tags, l = decode_sexp_l [] l in
           tags, St_enter_file "prelude" :: l
-        | Error (e,loc) ->
-          wrapf ~loc "failure when reading builtin config: %s" e
+        | Error e ->
+          fail_with_error @@ Error.wrap "Reading builtin config" e
       else [], []
     in
     tags, prelude
@@ -459,20 +476,20 @@ let parse_files, parse_string =
   let process_file tags file =
     let file = Misc.mk_abs_path file in
     match Se.parse_file_l file with
-    | Error e -> wrapf ~loc:[] "cannot parse %s:@,%s" file e
+    | Error e -> fail_with_error_f ?loc:None "cannot parse file '%s':@ %s" file e
     | Ok l ->
       let tags, l = decode_sexp_l tags l in
       tags, St_enter_file file :: l
   and process_string ~filename tags s =
     match Se.parse_string_l ~filename s with
-    | Error e -> wrapf ~loc:[] "cannot parse %s:@,%s" filename e
+    | Error e -> fail_with_error_f ?loc:None "cannot parse file '%s':@ %s" filename e
     | Ok l ->
       let tags, l = decode_sexp_l tags l in
       tags, St_enter_file filename :: l
   in
   let wrap_err_ f =
     try f ()
-    with Wrap (e,locs) -> Error (e,locs)
+    with Wrap e -> Error e
   in
   let parse_files ?(builtin=true) (files:string list) : t list or_error =
     wrap_err_ @@ fun () ->

@@ -10,7 +10,7 @@ type t = {
 let of_db db =
   Profile.with_ "plot.of-db" @@ fun () ->
   Misc.err_with
-    ~map_err:(Printf.sprintf "while plotting DB: %s")
+    ~map_err:(Error.wrapf "plotting DB")
     (fun scope ->
        let provers = list_provers db |> scope.unwrap in
        Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
@@ -29,7 +29,7 @@ let of_db db =
               (if has_custom_tags then "or exists (select 1 from custom_tags where tag=res)" else ""))
            prover
            ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
-         |> scope.unwrap_with Db.Rc.to_string
+         |> scope.unwrap_with Misc.err_of_db
        in
        let lines = CCList.map (fun p -> "", p, get_prover p) provers in
        { lines }
@@ -44,7 +44,7 @@ let combine (l:(_*t) list) : t =
 let of_file file : t or_error =
   try
     Db.with_db ~timeout:500 ~mode:`READONLY file of_db
-  with e -> E.of_exn_trace e
+  with e -> E.of_exn e
 
 let to_gp ~output self =
   Profile.with_ "plot.gnuplot" @@ fun () ->

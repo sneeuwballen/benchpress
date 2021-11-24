@@ -7,7 +7,7 @@
  (libraries containers containers.unix containers-thread re
    re.perl csv iter printbox logs logs.cli gnuplot ptime ptime.clock.os
    decoders uuidm sqlite3 sqlite3_utils cmdliner pp_loc)
- (flags :standard -warn-error -a+8 -strict-sequence))
+ (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 
 (rule
   (targets builtin_config.ml)

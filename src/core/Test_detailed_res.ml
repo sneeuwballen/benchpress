@@ -41,7 +41,7 @@ let list_keys ?(offset=0) ?(page_size=500)
       " and res in ('sat', 'unsat') and not (file_expect in ('sat','unsat'))"
   in
   Misc.err_with
-    ~map_err:(Printf.sprintf "when listing detailed results: %s")
+    ~map_err:(Error.wrap "listing detailed results")
     (fun scope ->
        let tags = Prover.tags_of_db db in
        (* count total number of results *)
@@ -53,8 +53,7 @@ let list_keys ?(offset=0) ?(page_size=500)
               filter_expect)
            ~ty:Db.Ty.(p3 text text text, p1 int, id) ~f:Db.Cursor.get_one_exn
            filter_prover filter_res filter_pb
-         |> E.map_err
-           (fun e -> Printf.sprintf "sqlite error: %s" (Db.Rc.to_string e))
+         |> CCResult.map_err Misc.err_of_db
          |> scope.unwrap
        in
        (* ask for [limit+1] entries *)
@@ -74,8 +73,7 @@ let list_keys ?(offset=0) ?(page_size=500)
                         {prover;file;res;file_expect;rtime})
            ~f:Db.Cursor.to_list_rev
            filter_prover filter_res filter_pb (page_size+1) offset
-         |> E.map_err
-           (fun e -> Printf.sprintf "sqlite error: %s" (Db.Rc.to_string e))
+         |> CCResult.map_err Misc.err_of_db
          |> scope.unwrap
        in
        if List.length l > page_size then (
@@ -89,7 +87,7 @@ let list_keys ?(offset=0) ?(page_size=500)
 let get_res db prover file : _ or_error =
   Profile.with_ "detailed-res" ~args:["prover",prover] @@ fun () ->
   Misc.err_with
-    ~map_err:(Printf.sprintf "in get_res for '%s' on '%s':\n%s" prover file)
+    ~map_err:(Error.wrapf "getting results for '%s' on '%s'" prover file)
     (fun scope ->
        let tags = Prover.tags_of_db db in
        let res: Prover.name Run_result.t =
@@ -107,12 +105,11 @@ let get_res db prover file : _ or_error =
                       fun x1 x2 x3 x4 x5 x6 x7 x8 x9 ->
                         Logs.info (fun k->k "got results");
                         x1,x2,x3,x4,x5,x6,x7,x8,x9)
-         |> E.map_err
-           (fun e -> Printf.sprintf "sqlite error: %s" (Db.Rc.to_string e))
+         |> CCResult.map_err Misc.err_of_db
          |> scope.unwrap
          |> CCOpt.to_result_lazy
            (fun () ->
-              Printf.sprintf
+              Error.makef
                 "expected a non-empty result for prover='%s', file='%s'"
                 prover file)
          |> scope.unwrap

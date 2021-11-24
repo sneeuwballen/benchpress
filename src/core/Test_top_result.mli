@@ -7,6 +7,8 @@
 open Misc
 open Test
 
+type 'a or_error = 'a Or_error.t
+
 type t = {
   meta: Test_metadata.t;
   provers: Prover.t list;
@@ -88,11 +90,11 @@ val db_to_table :
   ?provers:string list ->
   ?filter_pb:string ->
   ?filter_res:tr_filter ->
-  Db.t -> table
+  Db.t -> table or_error
 val to_table :
   ?offset:int -> ?page_size:int ->
   ?provers:string list ->
-  t -> table
+  t -> table or_error
 
 val table_to_csv : table -> Csv.t
 
@@ -106,25 +108,25 @@ val to_printbox_stat : t -> PrintBox.t
 val to_printbox_table :
   ?offset:int -> ?page_size:int ->
   ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
-  t -> PrintBox.t
+  t -> PrintBox.t or_error
 
 val db_to_printbox_table :
   ?offset:int -> ?page_size:int ->
   ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
   ?filter_pb:string ->
   ?filter_res:tr_filter ->
-  Db.t -> PrintBox.t
+  Db.t -> PrintBox.t or_error
 
 val to_printbox_bad : t -> (string * PrintBox.t) list
 val to_printbox_errors : t -> (string * PrintBox.t) list
 
-val db_to_csv : ?provers:string list -> Db.t -> Csv.t
-val to_csv : ?provers:string list -> t -> Csv.t
+val db_to_csv : ?provers:string list -> Db.t -> Csv.t or_error
+val to_csv : ?provers:string list -> t -> Csv.t or_error
 
 val to_csv_chan : ?provers:string list -> out_channel -> t -> unit
 
-val db_to_csv_string : ?provers:string list -> Db.t -> string
-val to_csv_string : ?provers:string list -> t -> string
+val db_to_csv_string : ?provers:string list -> Db.t -> string or_error
+val to_csv_string : ?provers:string list -> t -> string or_error
 
 val to_csv_file : ?provers:string list -> string -> t -> unit
 (** Write as CSV into given file *)

@@ -2,18 +2,19 @@
 
 (** {1 Definitions} *)
 
-module E = CCResult
+module E = Or_error
 module Fmt = CCFormat
 module Str_map = Misc.Str_map
 
 type path = string
-type 'a or_error = ('a, string) result
+type 'a or_error = 'a Or_error.t
+type 'a with_loc = 'a With_loc.t
 
 open E.Infix
 
 type def =
-  | D_prover of Prover.t
-  | D_task of Task.t
+  | D_prover of Prover.t with_loc
+  | D_task of Task.t with_loc
 
 (** All known definitions *)
 type t = {
@@ -31,11 +32,11 @@ let empty : t =
     option_j=None; option_progress=None; config_file=None;
   }
 
-let add_prover (p:Prover.t) self : t =
-  { self with defs=Str_map.add (Prover.name p) (D_prover p) self.defs}
+let add_prover (p:Prover.t with_loc) self : t =
+  { self with defs=Str_map.add (Prover.name p.view) (D_prover p) self.defs}
 
-let add_task (t:Task.t) self : t =
-  { self with defs=Str_map.add t.Task.name (D_task t) self.defs}
+let add_task (t:Task.t with_loc) self : t =
+  { self with defs=Str_map.add t.view.Task.name (D_task t) self.defs}
 
 let add_dir (d:Dir.t) self : t =
   { self with dirs=d::self.dirs }
@@ -44,6 +45,17 @@ let option_j self = self.option_j
 let option_progress self = self.option_progress
 let custom_tags self = self.tags
 
+module Def = struct
+  type t = def
+  let loc = function
+    | D_prover p -> p.loc
+    | D_task t -> t.loc
+  let pp out = function
+    | D_prover p -> Prover.pp out p.view
+    | D_task t -> Task.pp out t.view
+end
+
+let to_iter self : _ Iter.t = Str_map.to_iter self.defs
 let all_provers self : _ list =
   Str_map.values self.defs
   |> Iter.filter_map (function D_prover p -> Some p | _ -> None)
@@ -70,17 +82,20 @@ let get_version ?(binary="") (v:Stanza.version_field) : Prover.version =
     | Stanza.Version_exact v -> v
   end
 
-let find_prover self name : Prover.t or_error =
+let find_prover self name : Prover.t with_loc or_error =
   match Str_map.get name self.defs with
   | Some (D_prover p) -> Ok p
-  | Some _ -> E.fail_fprintf "%S is not a prover" name
-  | _ -> E.fail_fprintf "prover %S not defined" name
+  | Some _ -> E.failf "%S is not a prover" name
+  | _ -> E.failf "prover %S not defined" name
 
-let find_task self name : Task.t or_error =
+let find_task self name : Task.t with_loc or_error =
   match Str_map.get name self.defs with
   | Some (D_task p) -> Ok p
-  | Some _ -> E.fail_fprintf "%S is not a task" name
-  | _ -> E.fail_fprintf "task %S is not defined" name
+  | Some _ -> E.failf "%S is not a task" name
+  | _ -> E.failf "task %S is not defined" name
+
+let find_prover' self name = E.map With_loc.view @@ find_prover self name
+let find_task' self name = E.map With_loc.view @@ find_task self name
 
 let norm_path ~cur_dir s =
   let f s = match s with
@@ -108,17 +123,20 @@ let mk_subdir self path : Subdir.t or_error =
     (fun dir ->
        Logs.debug (fun k->k"check prefix dir=%S for %S" dir.Dir.path path);
        if is_parent dir.Dir.path path
-       then Some {Subdir.path; inside=dir}
+       then Some {Subdir.path; loc=dir.loc; inside=dir}
        else None)
     self.dirs
   |> CCOpt.to_result_lazy
-    (fun () -> Printf.sprintf "no known directory contains path %S" path)
+    (fun () -> Error.makef "no known directory contains path %S" path)
 
 let rec conv_expect self = function
   | Stanza.E_const r -> Ok (Dir.E_const r)
   | Stanza.E_program {prover} ->
-    find_prover self prover >|= fun p -> Dir.E_program {prover=p}
-  | Stanza.E_try l -> E.map_l (conv_expect self) l >|= fun l -> Dir.E_try l
+    let+ p = find_prover self prover in
+    Dir.E_program {prover=p.view}
+  | Stanza.E_try l ->
+    let+ l = E.map_l (conv_expect self) l in
+    Dir.E_try l
 
 let mk_limits ?timeout ?memory ?stack () =
   (* Timeouts are expressed in seconds in the config files *)
@@ -133,21 +151,27 @@ let mk_limits ?timeout ?memory ?stack () =
   Limit.All.mk ?time ?memory ?stack ()
 
 
-let mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~paths ~provers (self:t) : _ or_error =
-  E.map_l (find_prover self) provers >>= fun provers ->
+let mk_run_provers
+    ?j ?timeout ?memory ?stack ?pattern ~paths ~provers ~loc
+    (self:t) : _ or_error =
+  E.map_l (find_prover' self) provers >>= fun provers ->
   E.map_l (mk_subdir self) paths >>= fun dirs ->
   let limits = mk_limits ?timeout ?memory ?stack () in
-  let act = { Action.j; limits; dirs; provers; pattern; } in
+  let act = { Action.j; limits; dirs; provers; pattern; loc } in
   Ok act
 
 let rec mk_action (self:t) (a:Stanza.action) : _ or_error =
   match a with
-  | Stanza.A_run_provers {provers; memory; dirs; timeout; stack; pattern } ->
-    mk_run_provers ?timeout ?memory ?stack ?pattern ~paths:dirs ~provers self
-    >|= fun a -> Action.Act_run_provers a
+  | Stanza.A_run_provers {provers; memory; dirs; timeout; stack; pattern; loc } ->
+    let+ a =
+      mk_run_provers
+        ?timeout ?memory ?stack ?pattern ~loc:(Some loc) ~paths:dirs ~provers self
+    in
+    Action.Act_run_provers a
   | Stanza.A_progn l ->
-    E.map_l (mk_action self) l >|= fun l -> Action.Act_progn l
-  | Stanza.A_git_checkout {dir;ref;fetch_first} ->
+    let+ l = E.map_l (mk_action self) l in
+    Action.Act_progn l
+  | Stanza.A_git_checkout {dir;ref;fetch_first;loc} ->
     let dir = norm_path ~cur_dir:self.cur_dir dir in
     if Sys.file_exists dir && Sys.is_directory dir then (
       let fetch_first =
@@ -155,12 +179,12 @@ let rec mk_action (self:t) (a:Stanza.action) : _ or_error =
             | Stanza.GF_fetch -> Action.Git_fetch
             | GF_pull -> Action.Git_pull) fetch_first
       in
-      E.return @@ Action.Act_git_checkout {dir; ref; fetch_first}
+      E.return @@ Action.Act_git_checkout {dir; ref; loc; fetch_first}
     ) else (
-      E.fail_printf "%s is not an existing directory" (Filename.quote dir)
+      E.failf "%s is not an existing directory" (Filename.quote dir)
     )
-  | Stanza.A_run_cmd s ->
-    E.return @@ Action.Act_run_cmd s
+  | Stanza.A_run_cmd {cmd; loc} ->
+    E.return @@ Action.Act_run_cmd {cmd; loc}
 
 (* conversion from stanzas *)
 let add_stanza (st:Stanza.t) self : t or_error =
@@ -171,19 +195,19 @@ let add_stanza (st:Stanza.t) self : t or_error =
     Ok { self with
          cur_dir=Misc.mk_abs_path (Filename.dirname file);
          config_file=Some file; }
-  | St_dir {path;expect;pattern} ->
+  | St_dir {path;expect;pattern;loc} ->
     let path = norm_path ~cur_dir:self.cur_dir path in
     (if Sys.file_exists path && Sys.is_directory path then Ok ()
-     else E.fail_fprintf "%S is not a directory" path) >>= fun () ->
+     else E.failf ~loc "%S is not a directory" path) >>= fun () ->
     begin match expect with
       | None -> Ok Dir.E_comment
       | Some e -> conv_expect self e
     end >>= fun expect ->
-    let d = {Dir.path; expect; pattern} in
+    let d = {Dir.path; expect; loc; pattern} in
     Ok (add_dir d self)
   | St_prover {
       name; cmd; sat; unsat; timeout; unknown; memory;
-      version; binary; binary_deps; custom; ulimits;
+      version; binary; binary_deps; custom; ulimits; loc;
     } ->
     (* add prover *)
     let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
@@ -211,20 +235,20 @@ let add_stanza (st:Stanza.t) self : t or_error =
       binary; binary_deps; version=get_version ~binary version;
       custom; defined_in=self.config_file;
     } in
-    Ok (add_prover p self)
-  | St_task {name; synopsis; action; } ->
+    Ok (add_prover (With_loc.make ~loc p) self)
+  | St_task {name; synopsis; action; loc;} ->
     mk_action self action >>= fun action ->
     let t = {Task.name; synopsis; action; defined_in=self.config_file;} in
-    Ok (add_task t self)
-  | St_set_options {progress; j} ->
+    Ok (add_task (With_loc.make ~loc t) self)
+  | St_set_options {progress; j; loc=_} ->
     let open CCOpt.Infix in
     Ok {self with
         option_j = j <+> self.option_j;
         option_progress = progress <+> self.option_progress;
        }
-  | St_declare_custom_tag t ->
+  | St_declare_custom_tag {tag=t;loc} ->
     if List.mem t self.tags then (
-      E.fail_fprintf "tag %s already declared" t
+      E.failf ~loc "tag %s already declared" t
     ) else (
       Ok { self with tags = t :: self.tags }
     )
@@ -234,3 +258,18 @@ let add_stanza_l (l:Stanza.t list) self : t or_error =
 
 let of_stanza_l l = add_stanza_l l empty
 
+let completions (self:t) ?before_pos (str:string) : def list =
+  to_iter self
+  |> Iter.filter_map
+    (fun (name,d) ->
+       if CCString.prefix ~pre:str name then Some d else None)
+  |> (match before_pos with
+      | None -> (fun i->i)
+      | Some query_pos ->
+        Iter.filter
+          (fun d ->
+             (* keep [d] if it comes before [query_pos] *)
+             let loc = Def.loc d in
+             Loc.Pos.(loc.stop <= query_pos))
+    )
+  |> Iter.to_rev_list

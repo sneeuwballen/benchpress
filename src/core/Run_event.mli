@@ -4,7 +4,7 @@
 
 module Db = Sqlite3_utils
 
-type 'a or_error = ('a, string) CCResult.t
+type 'a or_error = 'a Or_error.t
 
 type prover  = Prover.t
 type checker = unit

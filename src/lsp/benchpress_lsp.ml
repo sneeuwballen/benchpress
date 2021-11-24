@@ -1,6 +1,8 @@
 
 module Loc = Benchpress.Loc
 module Stanza = Benchpress.Stanza
+module Or_error = Benchpress.Or_error
+module Error = Benchpress.Error
 
 module Lock = CCLock
 
@@ -11,7 +13,9 @@ module Log = (val Logs.src_log Logs.Src.(create "lsp"))
 
 type loc = Loc.t
 
-type processed_buf = (Stanza.t list, string * loc list) result
+type processed_buf = {
+  stanzas: Stanza.t list Or_error.t;
+}
 
 let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
   let mk_pos_ p =
@@ -19,27 +23,41 @@ let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
   Lsp.Types.Range.create ~start:(mk_pos_ l.start) ~end_:(mk_pos_ l.stop)
 
 let diagnostics ~uri (p:processed_buf) : _ list =
-  match p with
+  match p.stanzas with
   | Ok _l ->
     Log.debug (fun k->k"in %s: ok, %d stanzas" uri (List.length _l));
     []
-  | Error (msg,loc::locs) ->
-    Log.debug (fun k->k"in %s: err %s" uri msg);
-    let tr_loc loc =
+  | Error e0 ->
+    Log.debug (fun k->k"in %s: err %s" uri (Error.show e0));
+    let e, ctx = Error.unwrap_ctx e0 in
+
+    let errs =
+      (e :: ctx)
+      |> CCList.filter_map
+        (fun e -> match Error.loc e with
+           | None -> None
+           |Some loc -> Some (Error.msg e, loc))
+    in
+
+    let tr_ctx_err_ (msg,loc) =
       LT.DiagnosticRelatedInformation.create
         ~location:(LT.Location.create ~uri ~range:(range_of_loc_ loc))
-        ~message:"Related position"
+        ~message:msg
     in
-    let d =
-      LT.Diagnostic.create ~severity:LT.DiagnosticSeverity.Error
-        ~range:(range_of_loc_ loc) ~message:msg
-        ~relatedInformation:(List.map tr_loc locs)
-        ()
-    in
-    [d]
-  | Error (msg, []) ->
-    Log.err (fun k->k"in %s: err %s (no loc)" uri msg);
-    [] (* TODO: log it? *)
+
+    begin match errs with
+      | [] ->
+        Log.err (fun k->k"in %s: err with no loc:@ %a" uri Error.pp e0);
+        []
+      | (msg0, loc0) :: ctx_errs ->
+        let d =
+          LT.Diagnostic.create ~severity:LT.DiagnosticSeverity.Error
+            ~range:(range_of_loc_ loc0) ~message:msg0
+            ~relatedInformation:(List.map tr_ctx_err_ ctx_errs)
+            ()
+        in
+        [d]
+    end
 
 class blsp = object(self)
   inherit L.server
@@ -68,8 +86,9 @@ class blsp = object(self)
       (uri:Lsp.Types.DocumentUri.t) (contents:string) =
     Log.debug (fun k->k"on doc %s" uri);
     let r = Stanza.parse_string ~filename:uri contents in
-    Lock.with_lock buffers (fun b -> Hashtbl.replace b uri r);
-    let diags = diagnostics ~uri r in
+    let pdoc = {stanzas=r} in
+    Lock.with_lock buffers (fun b -> Hashtbl.replace b uri pdoc);
+    let diags = diagnostics ~uri pdoc in
     Log.debug (fun k->k"send diags for %s" uri);
     notify_back#send_diagnostic diags
 

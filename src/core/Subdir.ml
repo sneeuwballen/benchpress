@@ -7,6 +7,7 @@ module Fmt = CCFormat
 type t = {
   path: string;
   inside: Dir.t;
+  loc: Loc.t;
 }
 
 let pp out (self:t) =

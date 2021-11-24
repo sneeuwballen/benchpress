@@ -3,11 +3,11 @@
 (** {1 Run Prover} *)
 
 module Fmt = CCFormat
-module E = CCResult
 module Db = Sqlite3_utils
-type 'a or_error = ('a, string) E.t
+type 'a or_error = 'a Or_error.t
 
 let src_log = Logs.Src.create "prover"
+module Log = (val Logs.src_log src_log)
 
 type version =
   | Tag of string
@@ -91,7 +91,7 @@ module Version = struct
   let ser_sexp v = Sexp_loc.to_string @@ to_sexp v
   let deser_sexp s =
     Sexp_loc.D.decode_string sexp_decode s
-    |> E.map_err Sexp_loc.D.string_of_error
+    |> CCResult.map_err (fun e -> Error.make @@ Sexp_loc.D.string_of_error e)
 end
 
 let pp out self =
@@ -199,7 +199,7 @@ let run_proc cmd =
       end
   in
   let errcode = p#errcode in
-  Logs.debug ~src:src_log
+  Log.debug
     (fun k->k "(@[prover.run.done errcode: %d@ cmd %a@]" errcode Misc.Pp.pp_str cmd);
   (* Compute time used by the prover *)
   let rtime = Unix.gettimeofday () -. start in
@@ -207,12 +207,12 @@ let run_proc cmd =
   let stime = 0. in
   let stdout = p#stdout in
   let stderr = p#stderr in
-  Logs.debug ~src:src_log
+  Log.debug
     (fun k->k "stdout:\n%s\nstderr:\n%s" stdout stderr);
   { Proc_run_result. stdout; stderr; errcode; rtime; utime; stime; }
 
 let run ?env ~limits ~file (self:t) : Proc_run_result.t =
-  Logs.debug ~src:src_log
+  Log.debug
     (fun k->k "(@[Prover.run %s %a@])" self.name Limit.All.pp limits);
   let cmd = make_command ?env ~limits self ~file in
   (* Give one more second to the ulimit timeout to account for the startup
@@ -270,7 +270,7 @@ let db_prepare (db:Db.t) : unit or_error =
       unique (prover_name,tag) on conflict fail
     );
   |}
-  |> Misc.db_err ~ctx:"creating prover table"
+  |> Misc.db_err_with ~ctx:"creating prover table"
 
 let to_db db (self:t) : unit or_error =
   let str_or = CCOpt.get_or ~default:"" in
@@ -291,7 +291,7 @@ let to_db db (self:t) : unit or_error =
       (self.ulimits.time |> string_of_bool)
       (self.ulimits.memory |> string_of_bool)
       (self.ulimits.stack |> string_of_bool)
-    |> Misc.db_err ~ctx:"prover.to-db" |> scope.unwrap;
+    |> Misc.db_err_with ~ctx:"prover.to-db" |> scope.unwrap;
     if self.custom <> [] then (
       List.iter
         (fun (tag,re) ->
@@ -301,7 +301,7 @@ let to_db db (self:t) : unit or_error =
              |}
              ~ty:Db.Ty.(p3 text text text)
              self.name tag re
-           |> Misc.db_err ~ctx:"prover.to-db.add tag" |> scope.unwrap)
+           |> Misc.db_err_with ~ctx:"prover.to-db.add tag" |> scope.unwrap)
         self.custom;
       ))
 
@@ -310,13 +310,13 @@ let tags_of_db db : _ list =
         {| select distinct tag from custom_tags ; |}
         ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
   with e ->
-    Logs.err
+    Log.err
       (fun k->k "cannot find custom tags: %s" (Printexc.to_string e));
     []
 
 let of_db db name : t or_error =
   Misc.err_with
-    ~map_err:(Printf.sprintf "while parsing prover %s: %s" name)
+    ~map_err:(Error.wrapf "parsing prover %s" name)
     (fun scope ->
        let nonnull s = if s="" then None else Some s in
        let custom =
@@ -326,7 +326,7 @@ let of_db db name : t or_error =
              ~ty:Db.Ty.(p1 text, p2 any_str any_str, mkp2) ~f:Db.Cursor.to_list
              name
          with e ->
-           Logs.err
+           Log.err
              (fun k->k "prover.of_db: could not find tags: %s"(Printexc.to_string e));
            []
        in
@@ -343,8 +343,8 @@ let of_db db name : t or_error =
                           let stack = bool_of_string stack in
                           Ulimit.mk ~time ~memory ~stack)
          with _ ->
-           Logs.debug (fun k -> k
-                          "prover.of_db: not ulimit_* fields, assuming defaults");
+           Log.debug (fun k -> k
+                         "prover.of_db: not ulimit_* fields, assuming defaults");
            { time = true;
              memory = true;
              stack = false; }
@@ -370,8 +370,8 @@ let of_db db name : t or_error =
                       let memory = nonnull memory in
                       { name; cmd; binary_deps=[]; defined_in=None; custom;
                         version; binary; ulimits; unsat;sat;unknown;timeout;memory})
-       |> scope.unwrap_with Db.Rc.to_string
-       |> CCOpt.to_result "expected a result"
+       |> scope.unwrap_with Misc.err_of_db
+       |> CCOpt.to_result (Error.make "expected a result")
        |> scope.unwrap
     )
 
@@ -379,4 +379,4 @@ let db_names db : _ list or_error =
   Db.exec_no_params db
     {| select distinct name from prover order by name; " |}
     ~ty:Db.Ty.(p1 text,id) ~f:Db.Cursor.to_list_rev
-  |> Misc.db_err ~ctx:"listing provers"
+  |> Misc.db_err_with ~ctx:"listing provers"

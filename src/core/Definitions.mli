@@ -3,24 +3,34 @@
 
 (** {1 Definitions} *)
 
-module E = CCResult
+module E = Or_error
 module Fmt = CCFormat
 type path = string
-type 'a or_error = ('a, string) CCResult.t
+type 'a or_error = 'a Or_error.t
+type 'a with_loc = 'a With_loc.t
 
 type t
 
 type def =
-  | D_prover of Prover.t
-  | D_task of Task.t
+  | D_prover of Prover.t with_loc
+  | D_task of Task.t with_loc
 
 val empty : t
 
-val find_prover : t -> string -> Prover.t or_error
-val find_task : t -> string -> Task.t or_error
-val all_provers : t -> Prover.t list
-val all_tasks : t -> Task.t list
+val find_prover : t -> string -> Prover.t with_loc or_error
+val find_prover' : t -> string -> Prover.t or_error
+val find_task : t -> string -> Task.t with_loc or_error
+val find_task' : t -> string -> Task.t or_error
+val to_iter : t -> (string * def) Iter.t
+val all_provers : t -> Prover.t with_loc list
+val all_tasks : t -> Task.t with_loc list
 val custom_tags : t -> string list
+
+module Def : sig
+  type t = def
+  val loc : t -> Loc.t
+  val pp : t Fmt.printer
+end
 
 val option_j : t -> int option
 val option_progress : t -> bool option
@@ -41,12 +51,16 @@ val mk_run_provers :
   ?pattern:string ->
   paths:path list ->
   provers:string list ->
+  loc:Loc.t option ->
   t ->
   Action.run_provers or_error
 (** Build a "run" action from the given prover names
     and directory paths.
     All the provers must be defined, and the paths must be contained
     in declared [dir]. *)
+
+val completions : t -> ?before_pos:Loc.pos -> string -> def list
+(** Find possible completions *)
 
 (* TODO:
    val pp : t Fmt.printer *)

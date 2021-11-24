@@ -2,11 +2,11 @@
 
 (** {1 Event Stored on Disk or Transmitted on Network} *)
 
-module E = CCResult
+module E = Or_error
 module Db = Sqlite3_utils
 module Fmt = CCFormat
 
-type 'a or_error = ('a, string) CCResult.t
+type 'a or_error = 'a Or_error.t
 
 type prover  = Prover.t
 type checker = unit
@@ -47,7 +47,7 @@ let db_prepare (db:Db.t) : unit or_error =
     create index if not exists pr_prover_res on prover_res(prover,res,file_expect);
     create index if not exists pr_file on prover_res(file);
     |}
-  |> Misc.db_err ~ctx:"run-event.db-prepare"
+  |> Misc.db_err_with ~ctx:"run-event.db-prepare"
 
 let to_db_prover_result (db:Db.t) (self:Prover.name Run_result.t) : _ or_error =
   Db.exec_no_cursor db
@@ -66,13 +66,13 @@ let to_db_prover_result (db:Db.t) (self:Prover.name Run_result.t) : _ or_error =
     self.raw.rtime
     self.raw.utime
     self.raw.stime
-  |> Misc.db_err ~ctx:"run-event.to-db-prover-result"
+  |> Misc.db_err_with ~ctx:"run-event.to-db-prover-result"
 
 let to_db db self : _ or_error =
   match self with
   | Prover_run r -> to_db_prover_result db r
   | Checker_run _ ->
-    Error "not implemented: conversion of checker res to DB" (* TODO *)
+    Error (Error.make "not implemented: conversion of checker res to DB") (* TODO *)
 
 let of_db_map db ~f : _ list or_error =
   let tags = Prover.tags_of_db db in
@@ -95,7 +95,7 @@ let of_db_map db ~f : _ list or_error =
            in
            f p))
     ~f:Db.Cursor.to_list_rev
-  |> Misc.db_err ~ctx:"run-event.of-db-map"
+  |> Misc.db_err_with ~ctx:"run-event.of-db-map"
 
 let of_db_l db : Prover.name Run_result.t list or_error =
   of_db_map ~f:(fun x->x) db

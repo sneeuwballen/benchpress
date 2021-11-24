@@ -79,17 +79,17 @@ type t = {
 
 let int1_cursor ~ctx (scope: _ Misc.try_scope) c =
   Db.Cursor.next c
-  |> CCOpt.to_result ("expected a result in "^ctx)
+  |> CCOpt.to_result (Error.makef "expected a result in %s" ctx)
   |> scope.unwrap
 
 let get1_int (scope: _ Misc.try_scope) db ~ctx q ~ty p =
   Db.exec db q ~ty p ~f:(int1_cursor ~ctx scope)
-  |> scope.unwrap_with Db.Rc.to_string
+  |> scope.unwrap_with Misc.err_of_db
 
 let of_db_for ?(full=false) (db:Db.t) ~prover : t or_error =
   let tags = Prover.tags_of_db db in
   Misc.err_with
-    ~map_err:(Printf.sprintf "while reading analyze(%s) from DB: %s" prover)
+    ~map_err:(Error.wrapf "reading analyze(%s) from DB" prover)
     (fun scope ->
        let get1_int = get1_int scope db in
        let ok =
@@ -136,7 +136,7 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t or_error =
                          Problem.make file (Res.of_string ~tags expected),
                          Res.of_string ~tags res, t))
            ~f:Db.Cursor.to_list_rev
-         |> scope.unwrap_with Db.Rc.to_string
+         |> scope.unwrap_with Misc.err_of_db
        and errors =
          get1_int ~ctx:"get errors results"
            ~ty:Db.Ty.(p1 text, p1 int, id)
@@ -153,7 +153,7 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t or_error =
            {| select file, res, file_expect, rtime from prover_res where prover=?
               and res = 'error' ; |}
            prover ~f:Db.Cursor.to_list_rev
-         |> scope.unwrap_with Db.Rc.to_string
+         |> scope.unwrap_with Misc.err_of_db
        in
        { ok; disappoint; improved; bad; bad_full; errors; errors_full; total; })
 
@@ -164,7 +164,7 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t or_error =
 let of_db ?(full=false) db : _ list or_error =
   Profile.with_ "test.analyze" @@ fun () ->
   Misc.err_with
-    ~map_err:(Printf.sprintf "while reading top-res from DB: %s")
+    ~map_err:(Error.wrap "reading top-res from DB")
     (fun scope ->
        let provers = Test.list_provers db |> scope.unwrap in
        CCList.map (fun p -> p, of_db_for ~full db ~prover:p |> scope.unwrap) provers)
@@ -172,7 +172,7 @@ let of_db ?(full=false) db : _ list or_error =
 let of_db_n_bad (db:Db.t) : int or_error =
   Profile.with_ "test.analyze.n-bad" @@ fun () ->
   Misc.err_with
-    ~map_err:(Printf.sprintf "while computing n-bad from DB: %s")
+    ~map_err:(Error.wrap "computing n-bad from DB")
     (fun scope ->
        Db.exec db ~f:(int1_cursor ~ctx:"extracting n-bad" scope)
          ~ty:Db.Ty.(nil, p1 int, id)
@@ -180,13 +180,13 @@ let of_db_n_bad (db:Db.t) : int or_error =
               where res in ('sat','unsat')
               and res != file_expect
               and file_expect in ('sat','unsat'); |}
-       |> scope.unwrap_with Db.Rc.to_string)
+       |> scope.unwrap_with Misc.err_of_db)
 
 let of_db_dirs (db:Db.t) : string list or_error =
   Profile.with_ "test.analyze.dirs" @@ fun () ->
   (* use ocaml function *)
   Misc.err_with
-    ~map_err:(Printf.sprintf "while computing dirs from DB: %s")
+    ~map_err:(Error.wrap "computing dirs from DB")
     (fun scope ->
        let r = ref Summarize_dirs.init in
        let() = Db.exec db
@@ -194,7 +194,7 @@ let of_db_dirs (db:Db.t) : string list or_error =
          {| select distinct file from prover_res; |}
          ~f:(fun c ->
              Db.Cursor.iter c ~f:(fun d -> r := Summarize_dirs.merge_path1 !r d))
-               |> scope.unwrap_with Db.Rc.to_string
+               |> scope.unwrap_with Misc.err_of_db
        in
        match !r with
          | None -> []

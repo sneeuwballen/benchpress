@@ -1,5 +1,4 @@
 
-
 open Misc
 type filename = string
 
@@ -30,21 +29,21 @@ module Short = struct
 
   let make f1 f2 : (_ * t) list or_error =
     Misc.err_with
-      ~map_err:(Printf.sprintf "while comparing.short %S and %S: %s" f1 f2)
+      ~map_err:(Error.wrapf "comparing.short '%s' and '%s'" f1 f2)
       (fun scope ->
          let db = Sqlite3.db_open ":memory:" in
          Db.exec_no_cursor db "attach database ? as db1;"
            ~ty:Db.Ty.(p1 text) f1
-         |> scope.unwrap_with Db.Rc.to_string;
+         |> scope.unwrap_with Misc.err_of_db;
          Db.exec_no_cursor db "attach database ? as db2;"
            ~ty:Db.Ty.(p1 text) f2
-         |> scope.unwrap_with Db.Rc.to_string;
+         |> scope.unwrap_with Misc.err_of_db;
          let provers =
            Db.exec_no_params db
              {| select distinct * from (select prover from db1.prover_res UNION
               select prover from db2.prover_res) ;|}
              ~ty:Db.Ty.(p1 text,id) ~f:Db.Cursor.to_list_rev
-           |> scope.unwrap_with Db.Rc.to_string
+           |> scope.unwrap_with Misc.err_of_db
          in
          Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
          CCList.map
@@ -54,8 +53,8 @@ module Short = struct
                   ~ty:Db.Ty.(p1 text, p1 int, fun x->x)
                   ~f:(fun c -> scope.unwrap @@
                        match Db.Cursor.next c with
-                       | None -> E.fail "expected result" | Some x -> Ok x)
-                |> scope.unwrap_with Db.Rc.to_string
+                       | None -> Or_error.fail "expected result" | Some x -> Ok x)
+                |> scope.unwrap_with Misc.err_of_db
               in
               let appeared = get_n
                   {| select count(r2.file) from db2.prover_res r2

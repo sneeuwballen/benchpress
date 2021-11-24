@@ -1,9 +1,9 @@
 (* This file is free software. See file "license" for more details. *)
 
 module Fmt = CCFormat
-module E = CCResult
+open Misc
 
-type 'a or_error = ('a, string) CCResult.t
+type 'a or_error = 'a Or_error.t
 
 type path = string
 type t = {
@@ -47,12 +47,12 @@ module Exp_ = struct
         else if Re.Mark.test g m_unknown_ then E.return Res.Unknown
         else if Re.Mark.test g m_timeout_ then E.return Res.Timeout
         else if Re.Mark.test g m_error_ then E.return Res.Error
-        else E.fail_fprintf "could not parse the content of the `expect:` field in `%s`" file
+        else E.failf "could not parse the content of the `expect:` field in `%s`" file
       | None ->
         begin match default with
           | Some r -> E.return r
           | None ->
-            E.fail_fprintf "could not find the `expect:` field in `%s`" file
+            E.failf "could not find the `expect:` field in `%s`" file
         end
     end
 end
@@ -68,7 +68,7 @@ let find_expect ?default_expect ~expect file : Res.t or_error =
     | Dir.E_try l ->
       let rec try_ = function
         | [] ->
-          E.fail_fprintf "no method for finding expect succeeded on %S" file
+          E.failf "no method for finding expect succeeded on %S" file
         | e :: tl ->
           match loop e with
           | Error _ -> try_ tl
@@ -86,7 +86,7 @@ let find_expect ?default_expect ~expect file : Res.t or_error =
       | Some r, _ -> E.return r
       | None, Some r -> E.return r
       | None, None ->
-        E.fail_printf "cannot find expect for problem `%s`" file
+        E.failf "cannot find expect for problem `%s`" file
   in
   loop expect
 

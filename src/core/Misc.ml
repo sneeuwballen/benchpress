@@ -3,10 +3,10 @@
 module Fmt = CCFormat
 module Str_map = CCMap.Make(String)
 module Str_set = CCSet.Make(String)
-module E = CCResult
+module E = Or_error
 module Db = Sqlite3_utils
 module PB = PrintBox
-type 'a or_error = ('a, string) E.t
+type 'a or_error = 'a Or_error.t
 let spf = Printf.sprintf
 
 let _lock = CCLock.create()
@@ -214,9 +214,16 @@ let err_with (type err) ?(map_err=fun e -> e) f : (_,err) result =
   with
   | E.Local e -> Error (map_err e)
 
+let err_of_db (e:Db.Rc.t) : Error.t =
+  Error.makef "DB error: %s" @@ Db.Rc.to_string e
+
+let db_err (x:(_,Db.Rc.t) result) : _ or_error =
+  x |> CCResult.map_err err_of_db
+
 (** Turn the DB error into a normal string error *)
-let db_err ~ctx (x:(_,Db.Rc.t) result) : _ result =
-  E.map_err (fun e -> Printf.sprintf "DB error in %s: %s" ctx @@ Db.Rc.to_string e) x
+let db_err_with ~ctx (x:(_,Db.Rc.t) result) : _ or_error =
+  x |> db_err
+  |> CCResult.map_err (Error.wrap ctx)
 
 (** Parallel map *)
 module Par_map = struct

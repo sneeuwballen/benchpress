@@ -13,12 +13,12 @@ type t = {
 
 let of_db ?full db : t or_error =
   Profile.with_ "compact-res.of-db" @@ fun () ->
-  let open E.Infix in
+  let open Or_error.Infix in
   Db.transact db (fun _ ->
-    Test_metadata.of_db db >>= fun cr_meta ->
-    Test_stat.of_db db >>= fun cr_stat ->
-    Test_analyze.of_db ?full db >>= fun cr_analyze ->
-    Test_comparison_short.of_db db >>= fun cr_comparison ->
+    let* cr_meta = Test_metadata.of_db db in
+    let* cr_stat = Test_stat.of_db db in
+    let* cr_analyze = Test_analyze.of_db ?full db in
+    let* cr_comparison = Test_comparison_short.of_db db in
     Ok {cr_stat; cr_analyze; cr_comparison; cr_meta; })
 
 let pp out _self = Fmt.fprintf out "<compact result>"

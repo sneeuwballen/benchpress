@@ -1,9 +1,9 @@
 (* This file is free software. See file "license" for more details. *)
 
 module Fmt = CCFormat
-module E = CCResult
+module E = Or_error
 
-type 'a or_error = ('a, string) CCResult.t
+type 'a or_error = 'a Or_error.t
 type path = string
 type job_res= Prover.name Run_result.t
 
@@ -30,7 +30,7 @@ let run_exn_ ~limits prover pb =
 
 let run ~limits prover pb : _ E.t =
   try run_exn_ ~limits prover pb |> E.return
-  with e -> E.of_exn_trace e
+  with e -> E.of_exn e
 
 let pp_result ~w_prover ~w_pb out (res:Test.result): unit =
   let pp_res out () : unit =

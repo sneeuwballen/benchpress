@@ -1,9 +1,10 @@
 module T = Test
-module E = CCResult
+module E = Or_error
 module Db = Misc.Db
 module MStr = Misc.Str_map
 
-type 'a or_error = ('a, string) E.t
+open E.Infix
+type 'a or_error = 'a Or_error.t
 
 let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in
@@ -22,9 +23,10 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
       | Ok x ->
         begin match Definitions.add_stanza_l x Definitions.empty with
           | Ok x -> `Ok x
-          | Error s -> `Error (false, s)
+          | Error e -> `Error (false, Error.show e)
         end
-      | Error (e, _loc) -> `Error (false, e)
+      | Error e ->
+        `Error (false, Error.show e)
     end
   in
   let args =
@@ -45,7 +47,7 @@ let get_definitions () : Definitions.t or_error =
   let conf_files = List.map Xdg.interpolate_home conf_files in
   Logs.info (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
   let open E.Infix in
-  (Stanza.parse_files conf_files |> E.map_err fst) >>= fun l ->
+  let* l = Stanza.parse_files conf_files in
   (* combine configs *)
   Definitions.of_stanza_l l
 
@@ -80,7 +82,7 @@ let check_res_an notify a : unit or_error =
       List.fold_left (fun n (_,r) -> n + Test_analyze.num_bad r) 0 a
     in
     Notify.sendf notify "FAIL (%d failures)" n_fail;
-    E.fail_fprintf "FAIL (%d failures)" n_fail
+    E.failf "FAIL (%d failures)" n_fail
   )
 
 let check_compact_res notify (results:Test_compact_result.t) : unit or_error =
@@ -134,7 +136,7 @@ let mk_file_full (f:string) : string or_error =
   let dir = Filename.concat (Xdg.data_dir()) !(Xdg.name_of_project) in
   let file = Filename.concat dir f in
   if not @@ Sys.file_exists file then (
-    Error ("cannot find file " ^ f)
+    Error (Error.makef "cannot find file '%s'" f)
   ) else (
     Ok file
   )
@@ -149,7 +151,7 @@ let guess_uuid (f:string) =
     None
 
 (** Load file by name *)
-let load_file_full (f:string) : (string*Test_top_result.t, _) E.t =
+let load_file_full (f:string) : (string*Test_top_result.t) Or_error.t =
   try
     match mk_file_full f with
     | Error _ as e -> e
@@ -157,33 +159,33 @@ let load_file_full (f:string) : (string*Test_top_result.t, _) E.t =
       if Filename.check_suffix f ".sqlite" then (
         try
           Db.with_db ~timeout:1500 ~mode:`NO_CREATE file
-            (fun db -> Test_top_result.of_db db |> E.map (fun r->file,r))
+            (fun db ->
+               let+ r = Test_top_result.of_db db in
+               file, r)
         with e -> E.of_exn e
       ) else (
-        E.fail_fprintf "invalid name %S, expected a .sqlite file" f
+        E.failf "invalid name %S, expected a .sqlite file" f
       )
-  with e ->
-    E.of_exn_trace e
+  with e -> E.of_exn e
 
-let with_file_as_db ~map_err filename f : _ E.t =
+let with_file_as_db ~map_err filename f : _ result =
+  CCResult.map_err map_err @@
   Misc.err_with
-    ~map_err:(fun (e,code) ->
-        Printf.sprintf "while processing DB %s: %s" filename e,code)
+    ~map_err:(Error.wrapf "processing DB '%s'" filename)
     (fun scope ->
        let filename =
-         mk_file_full filename |> scope.unwrap_with (fun e->e,500) in
+         mk_file_full filename |> scope.unwrap in
        try
          Db.with_db ~timeout:500 ~mode:`READONLY filename
            (fun db -> f (scope, db))
        with
        | Db.RcError rc ->
-         scope.unwrap_with (fun c->Db.Rc.to_string c,500) (Error rc)
-       | e -> scope.unwrap (Error (Printexc.to_string e, 500)))
+         scope.unwrap_with Misc.err_of_db (Error rc)
+       | e -> scope.unwrap (E.of_exn e))
 
 let load_file f = E.map snd @@ load_file_full f
 
-let load_file_summary ?(full=false) (f:string) : (string * Test_compact_result.t,_) E.t =
-  let open E.Infix in
+let load_file_summary ?(full=false) (f:string) : (string * Test_compact_result.t) or_error =
   if Filename.check_suffix f ".sqlite" then (
     match mk_file_full f with
     | Error _ as e -> e
@@ -197,8 +199,3 @@ let load_file_summary ?(full=false) (f:string) : (string * Test_compact_result.t
     Test_top_result.to_compact_result res >>= fun cr ->
     E.return (f, cr)
   )
-
-let lift_err = function
-  | Ok x -> Ok x
-  | Error s -> Error (s, [])
-

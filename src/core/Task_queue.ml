@@ -4,7 +4,7 @@
 module Fmt = CCFormat
 module M = CCLock
 
-let src_log = Logs.Src.create "task-queue"
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.task-queue"))
 
 type job = {
   j_uuid: string;
@@ -82,7 +82,7 @@ let loop self =
     Profile.with_ "task-queue.job" @@ fun () ->
     job.j_started_time <- Unix.gettimeofday();
     M.set self.cur (Some job);
-    Logs.info ~src:src_log (fun k->k "run job for task %s" job.j_task.Task.name);
+    Log.info (fun k->k "run job for task %s" job.j_task.Task.name);
     let defs = M.get self.defs in
     (* run the job *)
     begin
@@ -98,11 +98,11 @@ let loop self =
       with
       | Ok () -> ()
       | Error e ->
-        Logs.err ~src:src_log
-          (fun k->k "error while running job %s: %s" job.j_task.Task.name e);
+        Log.err
+          (fun k->k "error while running job %s:@ %a" job.j_task.Task.name Error.pp e);
       | exception e ->
-        Logs.err ~src:src_log
-          (fun k->k "error while running job %s: %s"
+        Log.err
+          (fun k->k "error while running job %s:@ %s"
               job.j_task.Task.name (Printexc.to_string e));
     end;
     Hashtbl.remove self.jobs_tbl job.j_uuid; (* cleanup *)

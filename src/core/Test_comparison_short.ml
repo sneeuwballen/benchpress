@@ -17,11 +17,10 @@ let of_db db : t or_error =
   (* get a single integer *)
   let db_get db s x1 x2 =
     Db.exec db s x1 x2 ~ty:Db.Ty.(p2 text text, p1 int, id) ~f:Db.Cursor.to_list_rev
-    |> Misc.db_err ~ctx:"extract comparison"
-    |> E.flat_map (function [x] -> Ok x | _ -> Error "expected a single integer")
+    |> Misc.db_err_with ~ctx:"extract comparison"
+    |> CCResult.flat_map (function [x] -> Ok x | _ -> Error (Error.make "expected a single integer"))
   in
-  Misc.err_with
-    ~map_err:(Printf.sprintf "comparison-short.of_db %s")
+  Misc.err_with ~map_err:(Error.wrap "comparison-short.of_db")
   @@ fun scope ->
   let provers = list_provers db |> scope.unwrap in
   (* TODO: make a single query and group-by? *)

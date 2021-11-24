@@ -2,7 +2,7 @@
 (* This file is free software. See file "license" for more details. *)
 
 module Fmt = CCFormat
-type 'a or_error = ('a, string) CCResult.t
+type 'a or_error = 'a Or_error.t
 
 type path = string
 type job_res = Prover.name Run_result.t

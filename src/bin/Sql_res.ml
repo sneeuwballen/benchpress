@@ -3,7 +3,8 @@
 module E = CCResult
 
 let run _defs files =
-  Misc.err_with (fun scope ->
+  Misc.err_with
+    (fun scope ->
       let res_l = List.map (fun x -> scope.unwrap @@ Bin_utils.load_file_full x) files in
       List.iter
         (fun (file, res) ->
@@ -13,7 +14,4 @@ let run _defs files =
            Logs.app (fun k->k "sql file is %S" file);
            Exec_action.dump_results_sqlite res
         ) res_l)
-  |> E.catch
-    ~ok:(fun () -> Ok ())
-    ~err:(fun e -> Error (Format.asprintf "error: %s@." e))
 

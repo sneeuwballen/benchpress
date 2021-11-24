@@ -38,14 +38,14 @@ let db_prepare (db:Db.t) : _ or_error =
         value blob
         );
       create index if not exists meta_k on meta(key);
-      |} |> Misc.db_err ~ctx:"top-res.db-prepare"
+      |} |> Misc.db_err_with ~ctx:"top-res.db-prepare"
 
-let get_meta db k : _ =
+let get_meta db k : _ or_error =
   Db.exec_exn db {|select value from meta where key=? ;|}
     k
     ~ty:Db.Ty.(p1 text, p1 (nullable any_str), id)
     ~f:Db.Cursor.next
-  |> CCOpt.to_result ("did not find metadata " ^ k)
+  |> CCOpt.to_result (Error.makef "did not find metadata '%s'" k)
 
 let to_db (db:Db.t) (self:t) : unit or_error =
   Db.exec_no_cursor db
@@ -55,25 +55,25 @@ let to_db (db:Db.t) (self:t) : unit or_error =
     (CCOpt.map string_of_float self.timestamp)
     (CCOpt.map string_of_float self.total_wall_time)
     (Uuidm.to_string self.uuid)
-  |> Misc.db_err ~ctx:"inserting metadata"
+  |> Misc.db_err_with ~ctx:"inserting metadata"
 
 let of_db db : t or_error =
   Profile.with_ "metadata.of-db" @@ fun () ->
   Misc.err_with
-    ~map_err:(Printf.sprintf "while reading metadata: %s")
+    ~map_err:(Error.wrap "while reading metadata")
     (fun scope ->
        let timestamp = get_meta db "timestamp" |> scope.unwrap in
        let total_wall_time = get_meta db "total-wall-time" |> scope.unwrap in
        let timestamp = CCOpt.map float_of_string timestamp in
        let uuid = get_meta db "uuid" |> scope.unwrap
                   |> CCOpt.flat_map Uuidm.of_string
-                  |> CCOpt.to_result "no uuid found in DB"
+                  |> CCOpt.to_result (Error.make "no uuid found in DB")
                   |> scope.unwrap in
        let total_wall_time = CCOpt.map float_of_string total_wall_time in
        let n_results =
          Db.exec_no_params_exn db "select count(*) from prover_res;"
            ~ty:Db.Ty.(p1 int,id) ~f:Db.Cursor.next
-         |> CCOpt.to_result "no prover results" |> scope.unwrap
+         |> CCOpt.to_result (Error.make "no prover results") |> scope.unwrap
        in
        let n_bad = Test_analyze.of_db_n_bad db |> scope.unwrap in
        let dirs = Test_analyze.of_db_dirs db |> scope.unwrap in

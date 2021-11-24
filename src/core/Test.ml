@@ -5,8 +5,9 @@
 open Misc
 
 type result = Prover.name Run_result.t
+type 'a or_error = 'a Or_error.t
 
-type 'a or_error = ('a, string) CCResult.t
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.test"))
 
 (** {2 URL providers} *)
 
@@ -61,6 +62,6 @@ let list_provers db : string list or_error =
   Db.exec_no_params db
     {| select distinct prover from prover_res ; |}
     ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
-  |> Misc.db_err ~ctx:"listing provers"
+  |> Misc.db_err_with ~ctx:"listing provers"
 
 

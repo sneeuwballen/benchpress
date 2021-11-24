@@ -42,7 +42,7 @@ module Exec_run_provers : sig
     uuid:Uuidm.t ->
     save:bool ->
     expanded ->
-    (Test_top_result.t lazy_t * Test_compact_result.t) or_error
+    (Test_top_result.t or_error lazy_t * Test_compact_result.t) or_error
     (** Run the given prover(s) on the given problem set, obtaining results
         after all the problems have been dealt with.
         @param on_solve called whenever a single problem is solved
@@ -102,7 +102,8 @@ end = struct
            res)
       |> E.flatten_l
     with e ->
-      E.of_exn_trace e |> E.add_ctxf "expand_subdir of_dir %a" Subdir.pp s
+      E.of_exn e
+      |> E.map_err (Error.wrapf "expand_subdir of_dir %a" Subdir.pp s)
 
   (* Expand options into concrete choices *)
   let expand ?j ?(dyn=false) ?limits ?interrupted (self:t) : expanded or_error =
@@ -121,7 +122,7 @@ end = struct
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_done = _nop)
       ?(interrupted=fun _->false)
       ~uuid ~save
-      (self:expanded) : _ E.t =
+      (self:expanded) : _ or_error =
     let open E.Infix in
     let start = now_s() in
     (* prepare DB *)
@@ -144,7 +145,7 @@ end = struct
     Test_metadata.to_db db
       {Test_metadata.timestamp=Some timestamp; uuid; total_wall_time=None; n_bad=0;
        n_results=0; dirs=[]; provers=[]} >>= fun () ->
-    Misc.err_with ~map_err:(Printf.sprintf "while inserting provers: %s")
+    Misc.err_with ~map_err:(Error.wrap "inserting provers into DB")
       (fun scope -> List.iter (fun p -> Prover.to_db db p |> scope.unwrap) self.provers)
     >>= fun () ->
     on_start self;
@@ -171,15 +172,17 @@ end = struct
                on_solve result; (* callback *)
                result
              end
-             |> E.add_ctxf "(@[running :prover %a :on %a@])"
-               Prover.pp_name prover Problem.pp pb)
+             |> E.map_err
+               (Error.wrapf "(@[running :prover %a :on %a@])"
+                  Prover.pp_name prover Problem.pp pb)
+           )
         )
         jobs
       |> E.flatten_l
     end
     >>= fun res_l ->
     if interrupted() then (
-      Error "interrupted"
+      E.fail "interrupted"
     ) else (
       let total_wall_time = now_s() -. start in
       let uuid = uuid in
@@ -197,7 +200,6 @@ end = struct
       let top_res = lazy (
         let provers = CCList.map fst jobs in
         Test_top_result.make ~meta ~provers res_l
-        |> E.get_or_failwith
       ) in
       Test_compact_result.of_db db >>= fun r ->
       on_done r;
@@ -324,7 +326,7 @@ let dump_results_sqlite (results:Test_top_result.t) : unit =
      with
      | Ok () -> ()
      | Error e ->
-       Logs.err (fun k->k"error when saving to %s:@ %s" dump_file e);
+       Logs.err (fun k->k"error when saving to %s:@ %a" dump_file Error.pp e);
    with e ->
      Logs.err (fun k->k"error when saving to %s:@ %s"
                   dump_file (Printexc.to_string e));
@@ -347,23 +349,24 @@ let run_cmd s : unit or_error =
   try
     let c = Sys.command s in
     if c=0 then Ok ()
-    else Error (Printf.sprintf "command %S returned with error code %d" s c)
+    else E.failf "command %S returned with error code %d" s c
   with e ->
-    E.of_exn_trace e
+    E.of_exn e
 
 module Git_checkout = struct
   type t = Action.git_checkout
 
   let run (self:t) : unit or_error =
     Misc.err_with
-      ~map_err:(Printf.sprintf "while running action git-checkout: %s")
+      ~map_err:(Error.wrapf "running action git-checkout '%s'" self.ref)
       (fun scope ->
-         let {Action.dir; ref; fetch_first} = self in
-         begin match fetch_first with
-           | Some Git_fetch -> run_cmd "git fetch" |> scope.unwrap
-           | Some Git_pull -> run_cmd "git pull --ff-only" |> scope.unwrap
-           | _ -> ()
-         end;
+         let {Action.dir; ref; fetch_first; loc} = self in
+         let r = match fetch_first with
+           | Some Git_fetch -> run_cmd "git fetch"
+           | Some Git_pull -> run_cmd "git pull --ff-only"
+           | _ -> Ok ()
+         in
+         scope.unwrap (E.wrap ~loc "running" r);
          with_chdir dir
            (fun () -> run_cmd ("git checkout " ^ ref))
          |> scope.unwrap)
@@ -373,7 +376,7 @@ end
 let rec run ?(save=true) ?interrupted ?cb_progress
     (defs:Definitions.t) (a:Action.t) : unit or_error =
   Misc.err_with
-    ~map_err:(fun e -> Printf.sprintf "while running action: %s" e)
+    ~map_err:(Error.wrapf "running action %a" Action.pp a)
     (fun scope ->
        begin match a with
          | Action.Act_run_provers r ->
@@ -400,13 +403,14 @@ let rec run ?(save=true) ?interrupted ?cb_progress
            List.iter (fun a -> run ~save ?interrupted defs a |> scope.unwrap) l
          | Action.Act_git_checkout git ->
            Git_checkout.run git |> scope.unwrap
-         | Action.Act_run_cmd s ->
+         | Action.Act_run_cmd {cmd; loc} ->
            (try
-              let c = Sys.command s in
+              let c = Sys.command cmd in
               if c=0 then Ok ()
-              else Error (Printf.sprintf "command %S returned with error code %d" s c)
+              else E.failf ~loc "command %S returned with error code %d" cmd c
             with e ->
-              E.of_exn_trace e) |> scope.unwrap
+              E.of_exn ~loc e
+           ) |> scope.unwrap
        end
     )
 
