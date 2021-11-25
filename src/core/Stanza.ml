@@ -184,88 +184,29 @@ let pp_l out l =
 
 (** {2 Decoding} *)
 
-let fail_f fmt = Format.kasprintf (fun s -> Se.D.fail s) fmt
-let fail_sexp_f fmt =
-  Format.kasprintf
-    (fun s ->
-       let open Se.D in
-       value >>= fun sexp ->
-       fail_with
-        (Decoders.Decode.Decoder_error (s, Some sexp)))
-    fmt
+module SD = Sexp_decode
+module D_fields = SD.Fields
+open SD.Infix
 
-module D_fields = struct
-  module Str_map = CCMap.Make(CCString)
-  type t = {
-    mutable m: (Se.t * Se.t) Str_map.t;
-    value: Se.t;
-  }
-
-  let decode_sub v d =
-    Se.D.from_result (Se.D.decode_value d v)
-
-  let get : t Se.D.decoder =
-    let open Se.D in
-    let* self = value in
-    let+ l = key_value_pairs_seq' value
-        (fun k_val ->
-           let+ k = decode_sub k_val string
-           and+ v = value in
-           k, (k_val, v))
-    in
-    let m =
-      List.fold_left
-        (fun m (k,v) -> Str_map.add k v m) Str_map.empty l
-    in
-    {m; value=self}
-
-  let check_no_field_left (self:t) : unit Se.D.decoder =
-    let open Se.D in
-    match Str_map.choose_opt self.m with
-    | None -> succeed ()
-    | Some (k, (k_val,_)) ->
-      fail_with
-        (Decoders.Decode.Decoder_error
-           (Printf.sprintf "unknown key '%s'" k, Some k_val))
-
-  let field (self:t) key d : _ Se.D.decoder =
-    let open Se.D in
-    match Str_map.get key self.m with
-    | None ->
-      fail_with
-        (Decoders.Decode.Decoder_error
-           (Printf.sprintf "key not found: '%s'" key, Some self.value))
-    | Some (_,v) ->
-      self.m <- Str_map.remove key self.m;
-      decode_sub v d
-
-  let field_opt (self:t) key d : _ Se.D.decoder =
-    let open Se.D in
-    match Str_map.get key self.m with
-    | None -> succeed None
-    | Some (_,v) ->
-      self.m <- Str_map.remove key self.m;
-      let+ x = decode_sub v d in
-      Some x
-end
+let fail_f = SD.failf
 
 let dec_res tags =
-  let open Se.D in
-  string >>= fun s ->
-  (try succeed (Res.of_string ~tags s)
-   with _ -> fail_sexp_f "expected a `Res.t`, not %S" s)
+  let open SD in
+  let* s = atom in
+  (try return (Res.of_string ~tags s)
+   with _ -> failf "expected a `Res.t`, not %S" s)
 
-let dec_regex : regex Se.D.decoder =
+let dec_regex : regex SD.t =
   let valid_re s =
     try ignore (Re.Perl.compile_pat s); true
     with _ -> false
   in
-  let open Se.D in
-  string >>= fun s ->
-  if valid_re s then succeed s else fail "expected a valid Perl regex"
+  let open SD in
+  let* s = atom in
+  if valid_re s then return s else fail "expected a valid Perl regex"
 
-let dec_expect tags : _ Se.D.decoder =
-  let open Se.D in
+let dec_expect tags : _ SD.t =
+  let open SD in
   fix (fun self ->
       string >>:: function
       | "const" -> list1 (dec_res tags) >|= fun r -> E_const r
@@ -273,11 +214,11 @@ let dec_expect tags : _ Se.D.decoder =
       | "try" -> list self >|= fun e -> E_try e
       | s -> fail_sexp_f "expected `expect` stanzas (constructors: const|run|try, not %S)" s)
 
-let dec_version : _ Se.D.decoder =
-  let open Se.D in
+let dec_version : _ SD.t =
+  let open SD in
   let str =
     string >>= fun s ->
-    succeed @@ if CCString.prefix ~pre:"git:" s then (
+    return @@ if CCString.prefix ~pre:"git:" s then (
       Version_git {dir=snd @@ CCString.Split.left_exn ~by:":" s}
     ) else if CCString.prefix ~pre:"cmd:" s then (
       Version_cmd {cmd=snd @@ CCString.Split.left_exn ~by:":" s}
@@ -297,19 +238,19 @@ let dec_version : _ Se.D.decoder =
       | s -> fail_sexp_f "invalid `version` constructor: %s" s);
   ]
 
-let dec_ulimits : _ Se.D.decoder =
-  let open Se.D in
+let dec_ulimits : _ SD.t =
+  let open SD in
   let no_limits = Ulimit.mk ~time:false ~memory:false ~stack:false in
   let none =
     string >>= function
-    | "none" -> succeed no_limits
+    | "none" -> return no_limits
     | _ -> fail_sexp_f {|expected "none"|}
   in
   let single_limit acc =
     string >>= function
-    | "time" -> succeed { acc with Ulimit.time = true; }
-    | "memory" -> succeed { acc with Ulimit.memory = true; }
-    | "stack" -> succeed { acc with Ulimit.stack = true; }
+    | "time" -> return { acc with Ulimit.time = true; }
+    | "memory" -> return { acc with Ulimit.memory = true; }
+    | "stack" -> return { acc with Ulimit.stack = true; }
     | s -> fail_sexp_f "expected 'ulimit' stanzas (constructors: time|memory|stack, not %S)" s
   in
   one_of [
@@ -318,7 +259,7 @@ let dec_ulimits : _ Se.D.decoder =
   ]
 
 let list_or_singleton d =
-  let open Se.D in
+  let open SD in
   value >>= fun s ->
   (* turn atoms into lists *)
   let l = match s.Se.view with
@@ -328,23 +269,23 @@ let list_or_singleton d =
   from_result (decode_value (list d) l)
 
 let dec_fetch_first =
-  let open Se.D in
+  let open SD in
   string >>= function
-  | "fetch" -> succeed GF_fetch
-  | "pull" -> succeed GF_pull
+  | "fetch" -> return GF_fetch
+  | "pull" -> return GF_pull
   | _ -> fail_f "expected `fetch` or `pull`"
 
-let dec_stack_limit : _ Se.D.decoder =
-  let open Se.D in
+let dec_stack_limit : _ SD.t =
+  let open SD in
   one_of [
-    "int", int >>= (fun s -> succeed (Limited s));
+    "int", int >>= (fun s -> return (Limited s));
     "unlimited", string >>= function
-      | "unlimited" -> succeed Unlimited
+      | "unlimited" -> return Unlimited
       | _ -> fail_sexp_f "expect 'unlimited' or an integer"
   ]
 
-let dec_action : action Se.D.decoder =
-  let open Se.D in
+let dec_action : action SD.t =
+  let open SD in
   fix (fun self ->
       let* sexp = value in
       let loc = sexp.Se.loc in
@@ -373,8 +314,8 @@ let dec_action : action Se.D.decoder =
         fail_sexp_f "unknown config stanza %s" s)
 
 (* TODO: carry definitions around? *)
-let dec tags : (_ list * t) Se.D.decoder =
-  let open Se.D in
+let dec tags : (_ list * t) SD.t =
+  let open SD in
   let* sexp = value in
   let loc = sexp.Se.loc in
   string >>:: function
@@ -390,11 +331,11 @@ let dec tags : (_ list * t) Se.D.decoder =
       | "tag" ->
         string >>:: fun name ->
         if List.mem name tags then (
-          dec_regex >>:: fun re -> succeed @@ Some (name,re)
+          dec_regex >>:: fun re -> return @@ Some (name,re)
         ) else (
           fail_f "tag '%s' was not declared, use a `custom-tag` stanza" name
         )
-      | _ -> succeed None
+      | _ -> return None
     in
     let* m = D_fields.get in
     D_fields.field m "name" string >>= fun name ->
