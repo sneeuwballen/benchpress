@@ -22,6 +22,7 @@ val find_prover' : t -> string -> Prover.t or_error
 val find_task : t -> string -> Task.t with_loc or_error
 val find_task' : t -> string -> Task.t or_error
 val find : t -> string -> def option
+val errors : t -> Error.t list
 val to_iter : t -> (string * def) Iter.t
 val all_provers : t -> Prover.t with_loc list
 val all_tasks : t -> Task.t with_loc list

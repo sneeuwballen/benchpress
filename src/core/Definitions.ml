@@ -20,6 +20,7 @@ type def =
 type t = {
   defs: def Str_map.t;
   dirs: Dir.t list; (* list of directories *)
+  errors: Error.t list;
   cur_dir: string; (* for relative paths *)
   config_file: string option;
   tags: string list;
@@ -30,6 +31,7 @@ type t = {
 let empty : t =
   { defs= Str_map.empty; dirs=[]; cur_dir=Sys.getcwd(); tags=[];
     option_j=None; option_progress=None; config_file=None;
+    errors=[];
   }
 
 let add_prover (p:Prover.t with_loc) self : t =
@@ -41,6 +43,7 @@ let add_task (t:Task.t with_loc) self : t =
 let add_dir (d:Dir.t) self : t =
   { self with dirs=d::self.dirs }
 
+let errors self = self.errors
 let option_j self = self.option_j
 let option_progress self = self.option_progress
 let custom_tags self = self.tags
@@ -255,6 +258,9 @@ let add_stanza (st:Stanza.t) self : t or_error =
     ) else (
       Ok { self with tags = t :: self.tags }
     )
+  | St_error {err;loc=_} ->
+    let error = Sexp_decode.Err.to_error err in
+    Ok {self with errors = error :: self.errors }
 
 let add_stanza_l (l:Stanza.t list) self : t or_error =
   E.fold_l (fun self st -> add_stanza st self) self l

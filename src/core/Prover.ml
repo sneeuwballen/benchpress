@@ -77,21 +77,25 @@ module Version = struct
       ]
 
   let sexp_decode =
-    let open Sexp_loc.D in
-    one_of [
-      ("atom", string >|= fun s -> Tag s);
-      ("list", string >>:: function
-        | "git" ->
-          field "branch" string >>= fun branch ->
-          field "commit" string >>= fun commit ->
-          succeed (Git{branch;commit})
-        | _ -> fail "constructor should be 'git'")
+    let open Sexp_decode in
+    try_l ~msg:"expected version" [
+      (is_atom, let+ s = string in Tag s);
+      (is_applied "git",
+       let* m = applied1 "git" fields in
+       let* branch = Fields.field m "branch" string in
+       let* commit = Fields.field m "commit" string in
+       let+ () = Fields.check_no_field_left m in
+       Git{branch; commit})
     ]
 
   let ser_sexp v = Sexp_loc.to_string @@ to_sexp v
   let deser_sexp s =
-    Sexp_loc.D.decode_string sexp_decode s
-    |> CCResult.map_err (fun e -> Error.make @@ Sexp_loc.D.string_of_error e)
+    match Sexp_loc.parse_string ~filename:"<from db>" s with
+    | Error e ->
+      Error (Error.make ~loc:Loc.none e)
+    | Ok s ->
+      Sexp_decode.run' sexp_decode s
+      |> CCResult.map_err Error.make
 end
 
 let pp out self =

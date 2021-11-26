@@ -45,7 +45,7 @@ end = struct
             let input = !cur_input_ in
             let file = if file="" then !cur_file_ else file in
             let loc = {Loc.file; input; start={line=l1;col=c1};stop={line=l2;col=c2}} in
-            Logs.debug (fun k->k"make_loc %d:%d - %d:%d@ res %a" l1 c1 l2 c2 Loc.pp loc);
+            (*Logs.debug (fun k->k"make_loc %S %d:%d - %d:%d@ res %a" file l1 c1 l2 c2 Loc.pp loc);*)
             loc)
 
       let atom_with_loc ~loc s : t= {loc; view=Atom s}
@@ -83,66 +83,3 @@ end = struct
 end
 
 include Sexp0
-
-(** {2 Decoder} *)
-
-module D = struct
-  include Decoders.Decode.Make(struct
-      type value = t
-      let to_list l = list l
-      let pp = pp
-      let of_string s = parse_string ~filename:"<string>" s
-      let of_file = parse_file
-      let get_string s = match s.view with Atom s -> Some s | List _ -> None
-      let get_ ~f s = match s.view with
-        | Atom s -> (try Some (f s) with _ -> None)
-        | List _ -> None
-      let get_int s = get_ ~f:int_of_string s
-      let get_float s = get_ ~f:float_of_string s
-      let get_bool s = get_ ~f:bool_of_string s
-      let get_null s = match s.view with Atom "null" | List [] -> Some () | _ -> None
-      let get_list s = match s.view with List l -> Some l | Atom _ -> None
-
-      let get_key_value_pairs s = match s.view with
-        | List l ->
-          (try
-             Some
-               (List.map
-                  (fun kv -> match kv.view with
-                     | List [k;v] -> k, v
-                     | List (k :: vs) -> k, list_with_loc ~loc:kv.loc vs (* support "(foo a b c)" *)
-                     | _ -> raise Exit)
-                  l)
-           with Exit -> None)
-        | Atom _ -> None
-    end)
-
-  let (>>::) e f = uncons f e
-  let list0 = list value >>= function [] -> succeed () | _ -> fail "need empty list"
-  let list1 s = list s >>= function [x] -> succeed x | _ -> fail "need unary list"
-  let list2 s1 s2 =
-    list value >>= function
-    | [x;y] -> s1 x >>= fun x -> s2 y >|= fun y -> x,y
-    | _ -> fail "need binary list"
-end
-
-let rec loc_of_err : D.error -> Loc.t list =
-  function
-  | Decoders.Decode.Decoder_error (_, s) ->
-    begin match s with Some s -> [s.loc] | None -> [] end
-  | Decoders.Decode.Decoder_errors l -> CCList.flat_map loc_of_err l
-  | Decoders.Decode.Decoder_tag (_, e) -> loc_of_err e
-
-(** {2 Encoder} *)
-
-module E = Decoders.Encode.Make(struct
-    type value = t
-    let to_string = to_string
-    let of_string = atom
-    let of_int = of_int
-    let of_float = of_float
-    let of_bool = of_bool
-    let of_list = of_list
-    let null = of_list []
-    let of_key_value_pairs l = of_list (List.map (fun (k,v) -> of_list [k;v]) l)
-  end)

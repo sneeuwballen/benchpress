@@ -45,7 +45,7 @@ let pp out (self:t) =
       | None -> ()
       | Some e ->
         pp_rec_ out e;
-        Fmt.fprintf out "@,%s@,Context:@," (String.make 60 '-');
+        Fmt.fprintf out "@,%s@,@{<Blue>Context@}:@," (String.make 60 '-');
     end;
     pp_self_ out self
   in

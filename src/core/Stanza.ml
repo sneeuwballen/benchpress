@@ -4,6 +4,7 @@
 open Common
 module E = Or_error
 module Se = Sexp_loc
+module SD = Sexp_decode
 
 type loc = Loc.t
 type 'a or_error = 'a Or_error.t
@@ -99,6 +100,10 @@ type t =
       tag: string;
       loc: Loc.t
     }
+  | St_error of {
+      err: Sexp_decode.err;
+      loc: Loc.t;
+    }
 
 (** {2 Printers} *)
 
@@ -178,23 +183,19 @@ let pp out =
       (pp_opt "j" Fmt.int) j
   | St_declare_custom_tag {tag=t;loc=_} ->
     Fmt.fprintf out "(custom-tag %s)" t
+  | St_error {err; loc=_} ->
+    Fmt.fprintf out "(@[error %a@])" Error.pp (SD.Err.to_error err)
 
 let pp_l out l =
   Fmt.fprintf out "@[<v>%a@]" (Misc.pp_list pp) l
 
 (** {2 Decoding} *)
 
-module SD = Sexp_decode
-module D_fields = SD.Fields
-open SD.Infix
-
-let fail_f = SD.failf
-
 let dec_res tags =
   let open SD in
   let* s = atom in
   (try return (Res.of_string ~tags s)
-   with _ -> failf "expected a `Res.t`, not %S" s)
+   with _ -> failf (fun k->k"expected a `Res.t`, not %S" s))
 
 let dec_regex : regex SD.t =
   let valid_re s =
@@ -207,17 +208,17 @@ let dec_regex : regex SD.t =
 
 let dec_expect tags : _ SD.t =
   let open SD in
-  fix (fun self ->
-      string >>:: function
-      | "const" -> list1 (dec_res tags) >|= fun r -> E_const r
-      | "run" -> list1 string >|= fun prover -> E_program {prover}
-      | "try" -> list self >|= fun e -> E_try e
-      | s -> fail_sexp_f "expected `expect` stanzas (constructors: const|run|try, not %S)" s)
+  fix @@ fun self ->
+  try_l ~msg:"expect stanzas tag (constructors: const|run|try)"
+    [ is_applied "const", (let+ r = applied1 "const" (dec_res tags) in E_const r);
+      is_applied "run", (let+ prover = applied1 "run" atom in E_program {prover});
+      is_applied "try", (let+ e = applied "try" self in E_try e);
+    ]
 
 let dec_version : _ SD.t =
   let open SD in
   let str =
-    string >>= fun s ->
+    atom >>= fun s ->
     return @@ if CCString.prefix ~pre:"git:" s then (
       Version_git {dir=snd @@ CCString.Split.left_exn ~by:":" s}
     ) else if CCString.prefix ~pre:"cmd:" s then (
@@ -226,164 +227,163 @@ let dec_version : _ SD.t =
       Version_exact (Prover.Tag s)
     )
   in
-  one_of [
-    "atom", str;
-    "list", (string >>:: function
-      | "git" ->
-        let* m = D_fields.get in
-        let* branch = D_fields.field m "branch" string in
-        let* commit = D_fields.field m "commit" string in
-        let+ () = D_fields.check_no_field_left m in
-        Version_exact (Prover.Git {branch; commit})
-      | s -> fail_sexp_f "invalid `version` constructor: %s" s);
+  try_l ~msg:"expected version" [
+    (is_atom, str);
+    (is_applied "git",
+     let* m = applied_fields "git" in
+     let* branch = Fields.field m "branch" atom in
+     let* commit = Fields.field m "commit" atom in
+     let+ () = Fields.check_no_field_left m in
+     Version_exact (Prover.Git {branch; commit})
+    );
   ]
 
 let dec_ulimits : _ SD.t =
   let open SD in
   let no_limits = Ulimit.mk ~time:false ~memory:false ~stack:false in
   let none =
-    string >>= function
-    | "none" -> return no_limits
-    | _ -> fail_sexp_f {|expected "none"|}
+    let* s = atom in
+    if s="none" then return no_limits
+    else fail {|expected "none"|}
   in
-  let single_limit acc =
-    string >>= function
+  let single_limit acc (s:string) =
+    match s with
     | "time" -> return { acc with Ulimit.time = true; }
     | "memory" -> return { acc with Ulimit.memory = true; }
     | "stack" -> return { acc with Ulimit.stack = true; }
-    | s -> fail_sexp_f "expected 'ulimit' stanzas (constructors: time|memory|stack, not %S)" s
+    | s -> failf (fun k->k"expected 'ulimit' stanzas (constructors: time|memory|stack, not %S)" s)
   in
-  one_of [
-    "atom", none;
-    "list", list_fold_left single_limit no_limits;
+  try_l ~msg:"expected ulimit" [
+    is_atom, none;
+    (is_list,
+     let* l = list_of atom in
+     fold_l single_limit no_limits l);
   ]
-
-let list_or_singleton d =
-  let open SD in
-  value >>= fun s ->
-  (* turn atoms into lists *)
-  let l = match s.Se.view with
-    | Atom _ -> Se.of_list [s]
-    | List _ -> s
-  in
-  from_result (decode_value (list d) l)
 
 let dec_fetch_first =
   let open SD in
-  string >>= function
-  | "fetch" -> return GF_fetch
-  | "pull" -> return GF_pull
-  | _ -> fail_f "expected `fetch` or `pull`"
+  keyword ~msg:"expected fetch_first"
+    ["fetch", GF_fetch;
+     "pull", GF_pull;
+    ]
 
 let dec_stack_limit : _ SD.t =
   let open SD in
-  one_of [
-    "int", int >>= (fun s -> return (Limited s));
-    "unlimited", string >>= function
-      | "unlimited" -> return Unlimited
-      | _ -> fail_sexp_f "expect 'unlimited' or an integer"
+  try_l ~msg:{|expected stack_limit ("unlimited" or an integer)|} [
+    (try_succeed @@ let+ x = int in (Limited x));
+    (is_atom, keyword ~msg:"unlimited" ["unlimited", Unlimited]);
   ]
 
 let dec_action : action SD.t =
   let open SD in
-  fix (fun self ->
-      let* sexp = value in
-      let loc = sexp.Se.loc in
-      string >>:: function
-      | "run_provers" ->
-        let* m = D_fields.get in
-        let* dirs = D_fields.field m "dirs" (list_or_singleton string) in
-        let* provers = D_fields.field m "provers" (list_or_singleton string) in
-        let* pattern = D_fields.field_opt m "pattern" dec_regex in
-        let* timeout = D_fields.field_opt m "timeout" int in
-        let* memory = D_fields.field_opt m "memory" int in
-        let* stack = D_fields.field_opt m "stack" dec_stack_limit in
-        let+ () = D_fields.check_no_field_left m in
-        let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
-        A_run_provers {dirs;provers;timeout;memory;stack;pattern;loc}
-      | "progn" -> list_or_singleton self >|= fun l -> A_progn l
-      | "run_cmd" -> list1 string >|= fun s -> A_run_cmd {cmd=s;loc}
-      | "git_checkout" ->
-        let* m = D_fields.get in
-        let* dir = D_fields.field m "dir" string in
-        let* ref = D_fields.field m "ref" string in
-        let* fetch_first = D_fields.field_opt m "fetch_first" dec_fetch_first in
-        let+ () = D_fields.check_no_field_left m in
-        A_git_checkout {dir; ref; fetch_first;loc}
-      | s ->
-        fail_sexp_f "unknown config stanza %s" s)
+  fix @@ fun self ->
+  let* loc = value_loc in
+  try_l ~msg:"expected an action" [
+    (is_applied "run_provers",
+     let* m = applied_fields "run_provers" in
+     let* dirs = Fields.field m "dirs" atom_or_atom_list in
+     let* provers = Fields.field m "provers" atom_or_atom_list in
+     let* pattern = Fields.field_opt m "pattern" dec_regex in
+     let* timeout = Fields.field_opt m "timeout" int in
+     let* memory = Fields.field_opt m "memory" int in
+     let* stack = Fields.field_opt m "stack" dec_stack_limit in
+     let+ () = Fields.check_no_field_left m in
+     let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
+     A_run_provers {dirs;provers;timeout;memory;stack;pattern;loc}
+    );
+    (is_applied "progn",
+     let+ l = applied "progn" self in
+     A_progn l
+    );
+    (is_applied "run_cmd",
+     let+ cmd = applied1 "run_cmd" string in
+     A_run_cmd {cmd; loc}
+    );
+    (is_applied "git_checkout",
+     let* m = applied_fields "git_checkout" in
+     let* dir = Fields.field m "dir" string in
+     let* ref = Fields.field m "ref" string in
+     let* fetch_first = Fields.field_opt m "fetch_first" dec_fetch_first in
+     let+ () = Fields.check_no_field_left m in
+     A_git_checkout {dir; ref; fetch_first;loc}
+    );
+  ]
 
 (* TODO: carry definitions around? *)
 let dec tags : (_ list * t) SD.t =
   let open SD in
-  let* sexp = value in
-  let loc = sexp.Se.loc in
-  string >>:: function
-  | "dir" ->
-    let* m = D_fields.get in
-    let* path = D_fields.field m "path" string in
-    let* expect = D_fields.field_opt m "expect" (dec_expect tags) in
-    let* pattern = D_fields.field_opt m "pattern" dec_regex in
-    let+ () = D_fields.check_no_field_left m in
-    (tags, St_dir {path;expect;pattern;loc})
-  | "prover" ->
-    let tag = string >>:: function
-      | "tag" ->
-        string >>:: fun name ->
-        if List.mem name tags then (
-          dec_regex >>:: fun re -> return @@ Some (name,re)
-        ) else (
-          fail_f "tag '%s' was not declared, use a `custom-tag` stanza" name
-        )
-      | _ -> return None
-    in
-    let* m = D_fields.get in
-    D_fields.field m "name" string >>= fun name ->
-    D_fields.field m "cmd" string >>= fun cmd ->
-    D_fields.field_opt m "version" dec_version >>= fun version ->
-    D_fields.field_opt m "sat" dec_regex >>= fun sat ->
-    D_fields.field_opt m "unsat" dec_regex >>= fun unsat ->
-    D_fields.field_opt m "unknown" dec_regex >>= fun unknown ->
-    D_fields.field_opt m "timeout" dec_regex >>= fun timeout ->
-    D_fields.field_opt m "memory" dec_regex >>= fun memory ->
-    D_fields.field_opt m "ulimit" dec_ulimits >>= fun ulimits ->
-    let* custom = list_filter tag in
-    let+ () = D_fields.check_no_field_left m in
-    (tags, St_prover {
-        name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
-        ulimits; loc;
-      binary=None;
-      binary_deps=[]; (* TODO *)
-    })
-  | "task" ->
-    let* m = D_fields.get in
-    Log.debug (fun k->k"task: loc %a sexp %a" Loc.pp m.value.Se.loc Se.pp m.value);
-    D_fields.field m "name" string >>= fun name ->
-    D_fields.field_opt m "synopsis" string >>= fun synopsis ->
-    D_fields.field m "action" dec_action >>= fun action ->
-    let+ () = D_fields.check_no_field_left m in
-    (tags, St_task {name;synopsis;action;loc})
-  | "set-options" ->
-    let* m = D_fields.get in
-    D_fields.field_opt m "progress" bool >>= fun progress ->
-    D_fields.field_opt m "j" int >>= fun j ->
-    let+ () = D_fields.check_no_field_left m in
-    (tags, St_set_options {progress; j; loc})
-  | "custom-tag" ->
-    let* m = D_fields.get in
-    D_fields.field m "name" string >>= fun s ->
-    let+ () = D_fields.check_no_field_left m in
-    (s::tags,St_declare_custom_tag {tag=s;loc})
-  | s ->
-    fail_sexp_f "unknown config stanzas %s" s
+  let* loc = value_loc in
+  try_l ~msg:"expected a stanza" [
+    (is_applied "dir",
+     let* m = applied_fields "dir" in
+     let* path = Fields.field m "path" string in
+     let* expect = Fields.field_opt m "expect" (dec_expect tags) in
+     let* pattern = Fields.field_opt m "pattern" dec_regex in
+     let+ () = Fields.check_no_field_left m in
+     (tags, St_dir {path;expect;pattern;loc})
+    );
+    (is_applied "prover",
+     let* m = applied_fields "prover" in
+     let dec_tag_name =
+       let* name = atom in
+       if List.mem name tags then return name
+       else failf (fun k->k"unknown tag %S, declare it with `cutom-tag`" name)
+     in
+     let dec_tags =
+       list_of (pair dec_tag_name dec_regex)
+     in
+     let* custom =
+       let+ l = Fields.field_opt m "tags" dec_tags in
+       CCOpt.get_or ~default:[] l
+     in
+     let* name = Fields.field m "name" string in
+     let* cmd = Fields.field m "cmd" string in
+     let* version = Fields.field_opt m "version" dec_version in
+     let* sat = Fields.field_opt m "sat" dec_regex in
+     let* unsat = Fields.field_opt m "unsat" dec_regex in
+     let* unknown = Fields.field_opt m "unknown" dec_regex in
+     let* timeout = Fields.field_opt m "timeout" dec_regex in
+     let* memory = Fields.field_opt m "memory" dec_regex in
+     let* ulimits = Fields.field_opt m "ulimit" dec_ulimits in
+     let+ () = Fields.check_no_field_left m in
+     (tags, St_prover {
+         name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
+         ulimits; loc;
+         binary=None;
+         binary_deps=[]; (* TODO *)
+       })
+    );
+    (is_applied "task",
+     let* m = applied_fields "task" in
+     let* name = Fields.field m "name" string in
+     let* synopsis = Fields.field_opt m "synopsis" string in
+     let* action = Fields.field m "action" dec_action in
+     let+ () = Fields.check_no_field_left m in
+     (tags, St_task {name;synopsis;action;loc})
+    );
+    (is_applied "set-options",
+     let* m = applied_fields "set-options" in
+      let* progress = Fields.field_opt m "progress" bool in
+      let* j = Fields.field_opt m "j" int in
+      let+ () = Fields.check_no_field_left m in
+      (tags, St_set_options {progress; j; loc})
+    );
+    (is_applied "custom-tag",
+     let* m = applied_fields "custom-tag" in
+     let* s = Fields.field m "name" string in
+     let+ () = Fields.check_no_field_left m in
+     (s::tags,St_declare_custom_tag {tag=s;loc})
+    );
+  ]
 
 exception Wrap of Error.t
 let fail_with_error e =  raise (Wrap e)
 let fail_with_error_f ?loc fmt = Format.kasprintf (fun s ->raise (Wrap (Error.make ?loc s))) fmt
 
-let parse_string_list_ str : _ list or_error =
+let parse_string_list_ ~filename str : _ list or_error =
   let module Se = Se.Sexp in
   let buf = Lexing.from_string ~with_positions:true str in
+  Lexing.set_filename buf filename;
   let d = Se.Decoder.of_lexbuf buf in
   let rec iter acc = match Se.Decoder.next d with
     | Se.End -> Result.Ok (List.rev acc)
@@ -402,23 +402,28 @@ let parse_string_list_ str : _ list or_error =
 
 (** Parse a list of files into a list of stanzas *)
 let parse_files, parse_string =
-  let decode_sexp_l l =
+  let decode_sexp_l ~reify_errors l =
     CCList.fold_map
       (fun tags s ->
-         match Se.D.decode_value (dec tags) s with
+         match Sexp_decode.run (dec tags) s with
          | Ok x -> x
          | Error e ->
-           let loc = Sexp_loc.loc_of_err e |> Loc.union_l in
-           fail_with_error_f ?loc "Error: %s" (Se.D.string_of_error e))
+           let loc = Sexp_decode.Err.loc e in
+           if reify_errors then (
+             let st = St_error {err=e; loc} in
+             tags, st
+           ) else (
+             raise (Wrap (Sexp_decode.Err.to_error e))
+           ))
       l
   in
   (* prelude? *)
-  let get_prelude ~builtin () =
+  let get_prelude ~reify_errors ~builtin () =
     let tags, prelude =
       if builtin then
-        match parse_string_list_ Builtin_config.config with
+        match parse_string_list_ ~filename:"builtin_config.sexp" Builtin_config.config with
         | Ok l ->
-          let tags, l = decode_sexp_l [] l in
+          let tags, l = decode_sexp_l ~reify_errors [] l in
           tags, St_enter_file "prelude" :: l
         | Error e ->
           fail_with_error @@ Error.wrap "Reading builtin config" e
@@ -426,36 +431,36 @@ let parse_files, parse_string =
     in
     tags, prelude
   in
-  let process_file tags file =
+  let process_file ~reify_errors tags file =
     let file = Misc.mk_abs_path file in
     match Se.parse_file_l file with
     | Error e -> fail_with_error_f ?loc:None "cannot parse file '%s':@ %s" file e
     | Ok l ->
-      let tags, l = decode_sexp_l tags l in
+      let tags, l = decode_sexp_l ~reify_errors tags l in
       tags, St_enter_file file :: l
-  and process_string ~filename tags s =
+  and process_string ~reify_errors ~filename tags s =
     match Se.parse_string_l ~filename s with
     | Error e -> fail_with_error_f ?loc:None "cannot parse file '%s':@ %s" filename e
     | Ok l ->
-      let tags, l = decode_sexp_l tags l in
+      let tags, l = decode_sexp_l ~reify_errors tags l in
       tags, St_enter_file filename :: l
   in
   let wrap_err_ f =
     try f ()
     with Wrap e -> Error e
   in
-  let parse_files ?(builtin=true) (files:string list) : t list or_error =
+  let parse_files ?(reify_errors=false) ?(builtin=true) (files:string list) : t list or_error =
     wrap_err_ @@ fun () ->
-    let tags, prelude = get_prelude ~builtin () in
-    CCList.fold_map process_file tags files
+    let tags, prelude = get_prelude ~reify_errors ~builtin () in
+    CCList.fold_map (process_file ~reify_errors) tags files
     |> snd
     |> CCList.cons prelude
     |> CCList.flatten
     |> E.return
-  and parse_string ?(builtin=true) ~filename (s:string) : t list or_error =
+  and parse_string ?(reify_errors=false) ?(builtin=true) ~filename (s:string) : t list or_error =
     wrap_err_ @@ fun () ->
-    let tags, prelude = get_prelude ~builtin () in
-    let _tags, l = process_string ~filename tags s in
+    let tags, prelude = get_prelude ~reify_errors ~builtin () in
+    let _tags, l = process_string ~reify_errors ~filename tags s in
     CCList.cons prelude [l]
     |> CCList.flatten
     |> E.return

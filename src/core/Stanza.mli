@@ -94,6 +94,10 @@ type t =
       tag: string;
       loc: Loc.t
     }
+  | St_error of {
+      err: Sexp_decode.err;
+      loc: Loc.t;
+    }
 
 val pp_expect : expect Fmt.printer
 val pp_version_field: version_field Fmt.printer
@@ -105,9 +109,16 @@ val pp_l : t list Fmt.printer
 
 (** {2 Decoding} *)
 
-val parse_files : ?builtin:bool -> string list -> t list or_error
+val parse_files :
+  ?reify_errors:bool -> ?builtin:bool ->
+  string list -> t list or_error
 (** Parse a list of files and return their concatenated stanzas.
-    @param builtin if true, add the builtin prelude before the files *)
+    @param builtin if true, add the builtin prelude before the files
+    @param reify_errors if true, parsing errors become {!St_error}
+*)
 
-val parse_string : ?builtin:bool -> filename:string -> string -> t list or_error
-(** Parse a string *)
+val parse_string :
+  ?reify_errors:bool -> ?builtin:bool ->
+  filename:string -> string -> t list or_error
+(** Parse a string. See {!parse_files} for the arguments.
+    @param filename name used in locations *)

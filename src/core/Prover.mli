@@ -61,9 +61,7 @@ module Version : sig
   val to_string_short : t -> string
 
   val to_sexp : t -> Sexp_loc.t
-  val sexp_decode : t Sexp_loc.D.decoder
   val ser_sexp : t -> string
-  val deser_sexp : string -> t or_error
 end
 
 val equal : t -> t -> bool

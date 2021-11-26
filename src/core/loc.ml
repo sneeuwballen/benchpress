@@ -116,10 +116,10 @@ let tr_loc (self:t) : Pp_loc.loc =
 
 let pp_compact out (self:t) =
   if self.start.line=self.stop.line then (
-    Format.fprintf out "In file %s, line %d at %d..%d"
+    Format.fprintf out "In file '%s', line %d columns %d..%d"
       self.file self.start.line self.start.col self.stop.col
   ) else (
-    Format.fprintf out "In file %s, line %d at %d to line %d at %d"
+    Format.fprintf out "In file '%s', line %d col %d to line %d col %d"
       self.file self.start.line self.start.col self.stop.line self.stop.col
   )
 
