@@ -107,6 +107,9 @@ val pp_action : action Fmt.printer
 val pp : t Fmt.printer
 val pp_l : t list Fmt.printer
 
+val as_error : t -> Error.t option
+val errors : t list -> Error.t list
+
 (** {2 Decoding} *)
 
 val parse_files :

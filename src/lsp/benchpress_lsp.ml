@@ -26,42 +26,45 @@ let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
     Lsp.Types.Position.create ~line:(p.Loc.line-1) ~character:p.col in
   Lsp.Types.Range.create ~start:(mk_pos_ l.start) ~end_:(mk_pos_ l.stop)
 
+let diag_of_error ~uri (e0:Error.t) : LT.Diagnostic.t list =
+  let e, ctx = Error.unwrap_ctx e0 in
+  let errs =
+    (e :: ctx)
+    |> CCList.filter_map
+      (fun e -> match Error.loc e with
+         | None -> None
+         | Some loc -> Some (Error.msg e, loc))
+  in
+
+  let tr_ctx_err_ (msg,loc) =
+    LT.DiagnosticRelatedInformation.create
+      ~location:(LT.Location.create ~uri ~range:(range_of_loc_ loc))
+      ~message:msg
+  in
+
+  begin match errs with
+    | [] ->
+      Log.err (fun k->k"in %s: err with no loc:@ %a" uri Error.pp e0);
+      []
+    | (msg0, loc0) :: ctx_errs ->
+      let d =
+        LT.Diagnostic.create ~severity:LT.DiagnosticSeverity.Error
+          ~range:(range_of_loc_ loc0) ~message:msg0
+          ~relatedInformation:(List.map tr_ctx_err_ ctx_errs)
+          ()
+      in
+      [d]
+  end
+
 let diagnostics ~uri (p:processed_buf) : _ list =
   match p.stanzas with
-  | Ok _l ->
-    Log.debug (fun k->k"in %s: ok, %d stanzas" uri (List.length _l));
-    []
+  | Ok l ->
+    let errors = Stanza.errors l in
+    Log.debug (fun k->k"in %s: ok, %d stanzas, %d errors" uri (List.length l) (List.length errors));
+    CCList.flat_map (diag_of_error ~uri) errors
+
   | Error e0 ->
-    Log.debug (fun k->k"in %s: err %s" uri (Error.show e0));
-    let e, ctx = Error.unwrap_ctx e0 in
-
-    let errs =
-      (e :: ctx)
-      |> CCList.filter_map
-        (fun e -> match Error.loc e with
-           | None -> None
-           |Some loc -> Some (Error.msg e, loc))
-    in
-
-    let tr_ctx_err_ (msg,loc) =
-      LT.DiagnosticRelatedInformation.create
-        ~location:(LT.Location.create ~uri ~range:(range_of_loc_ loc))
-        ~message:msg
-    in
-
-    begin match errs with
-      | [] ->
-        Log.err (fun k->k"in %s: err with no loc:@ %a" uri Error.pp e0);
-        []
-      | (msg0, loc0) :: ctx_errs ->
-        let d =
-          LT.Diagnostic.create ~severity:LT.DiagnosticSeverity.Error
-            ~range:(range_of_loc_ loc0) ~message:msg0
-            ~relatedInformation:(List.map tr_ctx_err_ ctx_errs)
-            ()
-        in
-        [d]
-    end
+    diag_of_error ~uri e0
 
 let find_atom_under_ (s:string) (pos:Loc.pos) : string option =
   let buf = Lexing.from_string ~with_positions:true s in
@@ -201,7 +204,7 @@ class blsp = object(self)
       (uri:Lsp.Types.DocumentUri.t) (contents:string) =
     Log.debug (fun k->k"on doc %s" uri);
     let open E.Infix in
-    let stanzas = Stanza.parse_string ~filename:uri contents in
+    let stanzas = Stanza.parse_string ~reify_errors:true ~filename:uri contents in
     let defs =
       let* stanzas = stanzas in
       Definitions.of_stanza_l stanzas

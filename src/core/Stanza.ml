@@ -105,6 +105,12 @@ type t =
       loc: Loc.t;
     }
 
+let as_error = function
+  | St_error {err;loc=_} -> Some (Sexp_decode.Err.to_error err)
+  | _ -> None
+
+let errors = CCList.filter_map as_error
+
 (** {2 Printers} *)
 
 let rec pp_expect out = function
