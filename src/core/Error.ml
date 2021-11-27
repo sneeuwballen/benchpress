@@ -30,25 +30,24 @@ let of_exn ?loc e =
 let wrap ?loc msg e = { msg; loc; ctx_of=Some e }
 let wrapf ?loc fmt = Fmt.kasprintf (wrap ?loc) fmt
 
+let hbar = String.make 60 '-'
+
 let pp out (self:t) =
-  let pp_self_ out self =
+  let pp_itself out self =
     let {msg; loc; ctx_of=_} = self in
     match loc with
-    | None ->
-      Fmt.fprintf out "@[@{<Red>Error@}:@ %a@]" Fmt.string_lines msg
+    | None -> Fmt.string_lines out msg
     | Some loc ->
-      Fmt.fprintf out "@[<v>%a@[@{<Red>Error@}:@ %a@]@]"
-        Loc.pp loc Fmt.string_lines msg
+      Fmt.fprintf out "@[<v>%a@,%a@]@]" Fmt.string_lines msg Loc.pp loc
   in
-  let rec pp_rec_ out self =
+  let rec loop out self =
     begin match self.ctx_of with
-      | None -> ()
+      | None -> Fmt.fprintf out "@[<v2>@{<Red>Error@}:@ %a@]" pp_itself self
       | Some e ->
-        pp_rec_ out e;
-        Fmt.fprintf out "@,%s@,@{<Blue>Context@}:@," (String.make 60 '-');
-    end;
-    pp_self_ out self
+        Fmt.fprintf out "%a@,%s@,@[<v2>@{<Blue>Context@}:@ %a@]"
+          loop e hbar pp_itself self
+    end
   in
-  Fmt.fprintf out "@[<v>%a@]" pp_rec_ self
+  Fmt.fprintf out "@[<v>%a@]" loop self
 
 let show = Fmt.to_string pp
