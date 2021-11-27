@@ -2,8 +2,7 @@
 
 (** {1 Run Prover} *)
 
-module Fmt = CCFormat
-module Db = Sqlite3_utils
+open Common
 type 'a or_error = 'a Or_error.t
 
 let src_log = Logs.Src.create "prover"
@@ -151,8 +150,9 @@ let make_command ?env ~limits prover ~file =
   try interpolate_cmd ?env prover.cmd
         ~subst:(subst ~binary ~file ~f:limit_subst ())
   with Subst_not_found s ->
-    failwith (Printf.sprintf
-                "cannot make command for prover %s: cannot find field %s" prover.name s)
+    Error.raise
+      (Error.makef
+         "cannot make command for prover %s: cannot find field %s" prover.name s)
 
 module Map_name = CCMap.Make(struct
     type t = t_
@@ -170,52 +170,7 @@ end
 module Map = CCMap.Make(As_key)
 module Set = CCSet.Make(As_key)
 
-let int_of_process_status = function
-  | Unix.WEXITED i
-  | Unix.WSIGNALED i
-  | Unix.WSTOPPED i -> i
-
-let run_proc cmd =
-  let start = Unix.gettimeofday () in
-  (* call process and block *)
-  let p =
-    try
-      let oc, ic, errc = Unix.open_process_full cmd (Unix.environment()) in
-      close_out ic;
-      (* read out and err *)
-      let err = ref "" in
-      let t_err = Thread.create (fun e -> err := CCIO.read_all e) errc in
-      let out = CCIO.read_all oc in
-      Thread.join t_err;
-      let status = Unix.close_process_full (oc, ic, errc) in
-      object
-        method stdout= out
-        method stderr= !err
-        method errcode=int_of_process_status status
-        method status=status
-      end
-    with e ->
-      object
-        method stdout=""
-        method stderr="process died: " ^ Printexc.to_string e
-        method errcode=1
-        method status=Unix.WEXITED 1
-      end
-  in
-  let errcode = p#errcode in
-  Log.debug
-    (fun k->k "(@[prover.run.done errcode: %d@ cmd %a@]" errcode Misc.Pp.pp_str cmd);
-  (* Compute time used by the prover *)
-  let rtime = Unix.gettimeofday () -. start in
-  let utime = 0. in
-  let stime = 0. in
-  let stdout = p#stdout in
-  let stderr = p#stderr in
-  Log.debug
-    (fun k->k "stdout:\n%s\nstderr:\n%s" stdout stderr);
-  { Proc_run_result. stdout; stderr; errcode; rtime; utime; stime; }
-
-let run ?env ~limits ~file (self:t) : Proc_run_result.t =
+let run ?env ~limits ~file (self:t) : Run_proc_result.t =
   Log.debug
     (fun k->k "(@[Prover.run %s %a@])" self.name Limit.All.pp limits);
   let cmd = make_command ?env ~limits self ~file in
@@ -225,9 +180,9 @@ let run ?env ~limits ~file (self:t) : Proc_run_result.t =
       Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits
     ) in
   let cmd = Ulimit.prefix_cmd ?prefix ~cmd () in
-  run_proc cmd
+  Run_proc.run cmd
 
-let analyze_p_opt (self:t) (r:Proc_run_result.t) : Res.t option =
+let analyze_p_opt (self:t) (r:Run_proc_result.t) : Res.t option =
   (* find if [re: re option] is present in [stdout] *)
   let find_ re =
     let re = Re.Perl.compile_pat ~opts:[`Multiline] re in

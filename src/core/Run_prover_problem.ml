@@ -22,7 +22,7 @@ let run_exn_ ~limits prover pb =
   in
   Logs.debug
     (fun k->
-       let open Proc_run_result in
+       let open Run_proc_result in
        k "output for %s/%s: `%s`, `%s`, errcode %d"
          prover.Prover.binary pb.Problem.name
          raw.stdout raw.stderr raw.errcode);

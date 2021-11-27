@@ -79,6 +79,15 @@ type t =
       memory  : regex option;  (** regex for "out of memory" *)
       custom  : (string * regex) list; (** regex for custom results *)
     }
+  | St_proof_checker of {
+      name: string;
+      loc: Loc.t;
+      cmd: string;
+
+      (* results *)
+      valid : regex; (** regex for valid proofs *)
+      invalid : regex; (** regex for invalid proofs *)
+    }
   | St_dir of {
       path: string;
       expect: expect option;
@@ -178,6 +187,12 @@ let pp out =
       (pp_opt "timeout" pp_regex) timeout
       (pp_opt "memory" pp_regex) memory
       (pp_l1 pp_custom) custom
+  | St_proof_checker {name; cmd; loc=_; valid; invalid } ->
+    Fmt.fprintf out "(@[<hv>proof-checker%a%a%a%a@])"
+      (pp_f "name" pp_str) name
+      (pp_f "cmd" pp_str) cmd
+      (pp_f "valid" pp_regex) valid
+      (pp_f "invalid" pp_regex) invalid
   | St_task { name; synopsis; action; loc=_; } ->
     Fmt.fprintf out "(@[<v>task%a%a%a@])"
       (pp_f "name" pp_str) name

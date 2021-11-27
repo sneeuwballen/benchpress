@@ -14,6 +14,7 @@ type t
 type def =
   | D_prover of Prover.t with_loc
   | D_task of Task.t with_loc
+  | D_proof_checker of Proof_checker.t with_loc
 
 val empty : t
 

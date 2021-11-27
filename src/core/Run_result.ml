@@ -5,7 +5,7 @@ type +'a t = {
   problem : Problem.t;
   res : Res.t;
   timeout : Limit.Time.t;
-  raw : Proc_run_result.t;
+  raw : Run_proc_result.t;
 }
 
 let program e = e.program
@@ -31,14 +31,14 @@ let analyze_self_ (self:Prover.t t) =
 let analyze_self self =
   self |> analyze_self_ |> map ~f:Prover.name
 
-let make_from_prover (p:Prover.t) ~timeout problem (raw:Proc_run_result.t) : Prover.name t =
+let make_from_prover (p:Prover.t) ~timeout problem (raw:Run_proc_result.t) : Prover.name t =
   { program=p; problem; res=Res.Unknown; timeout; raw }
   |> analyze_self
 
-let make (p:Prover.name) ~timeout ~res problem (raw:Proc_run_result.t) : _ t =
+let make (p:Prover.name) ~timeout ~res problem (raw:Run_proc_result.t) : _ t =
   { program=p; problem; res; timeout; raw }
 
 let pp pp_prog out (self:_ t): unit =
   Format.fprintf out "(@[<hv2>:program %a@ :problem %a@ :raw %a@ :res %s@])"
-    pp_prog (program self) Problem.pp (problem self) Proc_run_result.pp (raw self)
+    pp_prog (program self) Problem.pp (problem self) Run_proc_result.pp (raw self)
     (Res.to_string self.res)

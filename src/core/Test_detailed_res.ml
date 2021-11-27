@@ -128,7 +128,7 @@ let get_res db prover file : _ or_error =
              let timeout = Limit.Time.mk ~s:timeout () in
              Run_result.make prover ~timeout ~res
                {Problem.name=file; expected}
-               { Proc_run_result.errcode;stdout;stderr;rtime;utime;stime})
+               { Run_proc_result.errcode;stdout;stderr;rtime;utime;stime})
        in
        Logs.info (fun k->k "try to get prover");
        let prover = Prover.of_db db prover |> scope.unwrap in

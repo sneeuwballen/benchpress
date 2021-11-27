@@ -15,6 +15,7 @@ open E.Infix
 type def =
   | D_prover of Prover.t with_loc
   | D_task of Task.t with_loc
+  | D_proof_checker of Proof_checker.t with_loc
 
 (** All known definitions *)
 type t = {
@@ -37,6 +38,9 @@ let empty : t =
 let add_prover (p:Prover.t with_loc) self : t =
   { self with defs=Str_map.add (Prover.name p.view) (D_prover p) self.defs}
 
+let add_proof_checker (p:Proof_checker.t with_loc) self : t =
+  { self with defs=Str_map.add p.view.name (D_proof_checker p) self.defs}
+
 let add_task (t:Task.t with_loc) self : t =
   { self with defs=Str_map.add t.view.Task.name (D_task t) self.defs}
 
@@ -53,9 +57,11 @@ module Def = struct
   let loc = function
     | D_prover p -> p.loc
     | D_task t -> t.loc
+    | D_proof_checker p -> p.loc
   let pp out = function
     | D_prover p -> Prover.pp out p.view
     | D_task t -> Task.pp out t.view
+    | D_proof_checker p -> Proof_checker.pp out p.view
   let show = Fmt.to_string pp
 end
 
@@ -201,6 +207,7 @@ let add_stanza (st:Stanza.t) self : t or_error =
     Ok { self with
          cur_dir=Misc.mk_abs_path (Filename.dirname file);
          config_file=Some file; }
+
   | St_dir {path;expect;pattern;loc} ->
     let path = norm_path ~cur_dir:self.cur_dir path in
     (if Sys.file_exists path && Sys.is_directory path then Ok ()
@@ -211,19 +218,16 @@ let add_stanza (st:Stanza.t) self : t or_error =
     end >>= fun expect ->
     let d = {Dir.path; expect; loc; pattern} in
     Ok (add_dir d self)
+
   | St_prover {
       name; cmd; sat; unsat; timeout; unknown; memory;
       version; binary; binary_deps; custom; ulimits; loc;
     } ->
     (* add prover *)
     let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
-    let binary =
-      match binary with
+    let binary = match binary with
       | Some b -> b
-      | None ->
-        let cmd = String.trim cmd in
-        (try fst @@ CCString.Split.left_exn ~by:" " cmd
-         with Not_found -> cmd)
+      | None -> Misc.get_binary_of_cmd cmd
     in
     let binary = Misc.str_replace ["cur_dir", self.cur_dir] binary in
     let version = match version with
@@ -242,22 +246,32 @@ let add_stanza (st:Stanza.t) self : t or_error =
       custom; defined_in=self.config_file;
     } in
     Ok (add_prover (With_loc.make ~loc p) self)
+
+  | St_proof_checker {name; cmd; valid; invalid; loc} ->
+    let pc = {
+      Proof_checker.name; cmd; valid; invalid
+    } in
+    Ok (add_proof_checker (With_loc.make ~loc pc) self)
+
   | St_task {name; synopsis; action; loc;} ->
     mk_action self action >>= fun action ->
     let t = {Task.name; synopsis; action; defined_in=self.config_file;} in
     Ok (add_task (With_loc.make ~loc t) self)
+
   | St_set_options {progress; j; loc=_} ->
     let open CCOpt.Infix in
     Ok {self with
         option_j = j <+> self.option_j;
         option_progress = progress <+> self.option_progress;
        }
+
   | St_declare_custom_tag {tag=t;loc} ->
     if List.mem t self.tags then (
       E.failf ~loc "tag %s already declared" t
     ) else (
       Ok { self with tags = t :: self.tags }
     )
+
   | St_error {err;loc=_} ->
     let error = Sexp_decode.Err.to_error err in
     Ok {self with errors = error :: self.errors }

@@ -173,21 +173,29 @@ let human_size (x:int) : string =
   else if x >= 1_000 then Printf.sprintf "%d.%dK" (x/1000) ((x/100) mod 10)
   else string_of_int x
 
-(* ensure [s] is not too long *)
+(** ensure [s] is not too long *)
 let truncate_left (n:int) (s:string) : string =
   if String.length s > n then "…" ^ String.sub s (String.length s-n+1) (n-1) else s
 let truncate_right (n:int) (s:string) : string =
   if String.length s > n then String.sub s 0 (n-1) ^ "…" else s
 
+(** Run command and get stdout *)
 let get_cmd_out cmd =
   Logs.debug (fun k->k "get-cmd-out %S" cmd);
   CCUnix.with_process_in cmd
     ~f:(fun ic -> CCIO.read_all ic |> String.trim)
 
+(** Extract the program part of a command *)
+let get_binary_of_cmd (cmd:string) : string =
+  let cmd = String.trim cmd in
+  (try fst @@ CCString.Split.left_exn ~by:" " cmd
+   with Not_found -> cmd)
+
 let mk_abs_path (s:string) : string =
   if Filename.is_relative s then Filename.concat (Sys.getcwd()) s
   else s
 
+(** Guess how many cores we have on the CPU *)
 let guess_cpu_count () =
   try get_cmd_out "grep -c processor /proc/cpuinfo" |> int_of_string
   with _ -> 2
@@ -195,6 +203,7 @@ let guess_cpu_count () =
 let mk_uuid () : Uuidm.t =
   Uuidm.v4_gen (Random.State.make_self_init()) ()
 
+(** Modify filename of a lexing buffer, for future locations *)
 let set_lexbuf_filename buf filename =
   let open Lexing in
   buf.lex_curr_p <- {buf.lex_curr_p with pos_fname = filename}

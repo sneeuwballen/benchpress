@@ -5,8 +5,7 @@
     Utils to run a theorem prover (or a similar tool) and extract its result
 *)
 
-module Fmt = CCFormat
-module Db = Sqlite3_utils
+open Common
 type 'a or_error = 'a Or_error.t
 
 (** {2 Prover configurations} *)
@@ -111,9 +110,9 @@ val run :
   limits:Limit.All.t ->
   file:string ->
   t ->
-  Proc_run_result.t
+  Run_proc_result.t
 
-val analyze_p_opt : t -> Proc_run_result.t -> Res.t option
+val analyze_p_opt : t -> Run_proc_result.t -> Res.t option
 (** Analyze raw result to look for the result *)
 
 (** Map by name *)

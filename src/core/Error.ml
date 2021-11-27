@@ -7,6 +7,9 @@ type t = {
   ctx_of: t option;
 }
 
+exception E of t
+let raise x = raise (E x)
+
 let msg self = self.msg
 let loc self = self.loc
 let ctx_of self = self.ctx_of
@@ -51,3 +54,7 @@ let pp out (self:t) =
   Fmt.fprintf out "@[<v>%a@]" loop self
 
 let show = Fmt.to_string pp
+
+let () =
+  Printexc.register_printer
+    (function E e -> Some (show e) | _ -> None)

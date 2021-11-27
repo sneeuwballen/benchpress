@@ -5,6 +5,10 @@ open Common
 
 type t
 
+exception E of t
+
+val raise : t -> 'a
+
 val make : ?loc:Loc.t -> string -> t
 val makef : ?loc:Loc.t -> ('a, Format.formatter, unit, t) format4 -> 'a
 val of_exn : ?loc:Loc.t -> exn -> t

@@ -5,12 +5,12 @@ type +'a t = private {
   problem : Problem.t;
   res : Res.t;
   timeout : Limit.Time.t;
-  raw : Proc_run_result.t;
+  raw : Run_proc_result.t;
 }
 
 val program : 'a t -> 'a
 val problem : _ t -> Problem.t
-val raw : _ t -> Proc_run_result.t
+val raw : _ t -> Run_proc_result.t
 
 val map : f:('a -> 'b) -> 'a t -> 'b t
 
@@ -18,7 +18,7 @@ val make_from_prover :
   Prover.t ->
   timeout:Limit.Time.t ->
   Problem.t ->
-  Proc_run_result.t ->
+  Run_proc_result.t ->
   Prover.name t
 (** Analyze result *)
 
@@ -29,7 +29,7 @@ val make:
   timeout:Limit.Time.t ->
   res:Res.t ->
   Problem.t ->
-  Proc_run_result.t ->
+  Run_proc_result.t ->
   Prover.name t
 
 val pp : 'a Fmt.printer -> 'a t Fmt.printer

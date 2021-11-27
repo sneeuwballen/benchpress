@@ -183,6 +183,7 @@ class blsp = object(self)
                    let name, label = match d with
                      | Definitions.D_prover p -> p.view.name, "prover"
                      | Definitions.D_task t -> t.view.name , "task"
+                     | Definitions.D_proof_checker t -> t.view.name , "proof-checker"
                    in
                    LT.CompletionItem.create ~label
                      ~detail:(Definitions.Def.show d)

@@ -73,6 +73,15 @@ type t =
       memory  : regex option;  (** regex for "out of memory" *)
       custom  : (string * regex) list; (** regex for custom results *)
     }
+  | St_proof_checker of {
+      name: string;
+      loc: Loc.t;
+      cmd: string;
+
+      (* results *)
+      valid : regex; (** regex for valid proofs *)
+      invalid : regex; (** regex for invalid proofs *)
+    }
   | St_dir of {
       path: string;
       expect: expect option;
