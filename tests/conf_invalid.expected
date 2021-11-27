@@ -1,13 +1,10 @@
-
 [31;1mError[0m:
   expected a valid Perl regex
-
   12 | 
   13 | ...... "))) ^SATISFIABLE".
   ------------------------------------------------------------
 [34;1mContext[0m:
   expected a stanza
-
    9 | 
   10 | (prover
   ...

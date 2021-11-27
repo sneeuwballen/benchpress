@@ -1,4 +1,9 @@
 
+(executable
+  (name cleanup)
+  (libraries containers)
+  (flags :standard -warn-error -a+8))
+
 (rule
   (targets conf_invalid.out)
   (deps (:conf conf_invalid.sexp))
@@ -10,9 +15,7 @@
         (with-outputs-to
           %{targets}
           (run ../src/bin/benchpress_bin.exe check-config -v %{conf})))
-      (run sed -i "s/reading.*//g" %{targets})
-      (run sed -i "s/.*in file.*//g" %{targets})
-      )))
+      (run ./cleanup.exe %{targets}))))
 
 (rule
   (alias runtest)
