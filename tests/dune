@@ -4,9 +4,15 @@
   (deps (:conf conf_invalid.sexp))
   (package benchpress)
   (action
-    (with-accepted-exit-codes 1
-    (with-outputs-to %{targets}
-                     (run ../src/bin/benchpress_bin.exe check-config -v %{conf})))))
+    (progn
+      (with-accepted-exit-codes
+        1
+        (with-outputs-to
+          %{targets}
+          (run ../src/bin/benchpress_bin.exe check-config -v %{conf})))
+      (run sed -i "s/reading.*//g" %{targets})
+      (run sed -i "s/.*in file.*//g" %{targets})
+      )))
 
 (rule
   (alias runtest)
