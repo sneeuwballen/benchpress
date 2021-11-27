@@ -59,7 +59,7 @@ let list = {run=fun s ->
     | S.Atom _ -> fail_ (const "expected a list") s
   }
 
-let list_of d =
+let list_of ?what d =
   let exception E of err in
   { run=
       fun s ->
@@ -78,7 +78,11 @@ let list_of d =
             with E e ->
               Error e
           end
-        | Atom _ -> fail_ (const "expected list") s
+        | Atom _ ->
+          let msg() = match what with
+            | None -> "expected list"
+            | Some w -> spf "expected list of %s" w in
+          fail_ msg s
   }
 
 let ( let+ ) x f = {
@@ -146,6 +150,13 @@ let try_l (type x) ~msg decs = {
           (* wrap error *)
           fail_ (const msg) s ~ctx_of:e
       end
+}
+
+let with_msg ~msg d = {
+  run=fun s ->
+    match d.run s with
+    | Ok _ as x -> x
+    | Error (Err r) -> Error (Err {r with msg=const msg})
 }
 
 let sub self s = {

@@ -262,7 +262,7 @@ let dec_ulimits : _ SD.t =
   try_l ~msg:"expected ulimit" [
     is_atom, none;
     (is_list,
-     let* l = list_of atom in
+     let* l = list_of ~what:"names of resources to limit" atom in
      fold_l single_limit no_limits l);
   ]
 
@@ -336,7 +336,8 @@ let dec tags : (_ list * t) SD.t =
        else failf (fun k->k"unknown tag %S, declare it with `cutom-tag`" name)
      in
      let dec_tags =
-       list_of (pair dec_tag_name dec_regex)
+       list_of ~what:"pairs (tag regex)"
+         (with_msg ~msg:"expected pair (tag regex)" @@ pair dec_tag_name dec_regex)
      in
      let* custom =
        let+ l = Fields.field_opt m "tags" dec_tags in

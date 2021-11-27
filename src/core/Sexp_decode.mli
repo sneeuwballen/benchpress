@@ -22,7 +22,7 @@ val value : sexp t
 val value_loc : Loc.t t
 val atom : string t
 val list : sexp list t
-val list_of : 'a t -> 'a list t
+val list_of : ?what:string -> 'a t -> 'a list t
 val pair : 'a t -> 'b t -> ('a * 'b) t
 
 val string : string t
@@ -57,6 +57,10 @@ val try_l : msg:string -> (bool t * 'a t) list -> 'a t
     then this case wins, and [try_l l] behaves like the case's parser;
     if the recognizer fails, the case is discarded and the next case is tried.
     @param msg error message if no case recognizes the parser. *)
+
+val with_msg : msg:string -> 'a t -> 'a t
+(** [with_msg ~msg d] behaves like [d] but replaces
+    [d]'s errors with [msg] *)
 
 val map_l : ('a -> 'b t) -> 'a list -> 'b list t
 val fold_l : ('b -> 'a -> 'b t) -> 'b -> 'a list -> 'b t
