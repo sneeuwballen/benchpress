@@ -1,0 +1,16 @@
+reading /home/simon/w/benchpress/_build/default/tests/conf_invalid.sexp
+[31;1mError[0m:
+  expected a valid Perl regex
+  in file '/home/simon/w/benchpress/_build/default/tests/conf_invalid.sexp', line 13 columns 7..25
+  12 | 
+  13 | ...... "))) ^SATISFIABLE".
+  ------------------------------------------------------------
+[34;1mContext[0m:
+  expected a stanza
+  in file '/home/simon/w/benchpress/_build/default/tests/conf_invalid.sexp', line 10 col 1 to line 14 col 42
+   9 | 
+  10 | (prover
+  ...
+  13 |   (sat "))) ^SATISFIABLE")
+  14 |   (cmd "minisat -cpu-lim=$timeout $file"))
+  

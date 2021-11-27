@@ -8,6 +8,9 @@ all: build
 clean:
 	@dune clean
 
+test:
+	@dune runtest --no-buffer -f
+
 WATCH?= @all
 watch:
 	@dune build $(WATCH) -w
