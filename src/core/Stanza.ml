@@ -390,7 +390,7 @@ let fail_with_error_f ?loc fmt = Format.kasprintf (fun s ->raise (Wrap (Error.ma
 let parse_string_list_ ~filename str : _ list or_error =
   let module Se = Se.Sexp in
   let buf = Lexing.from_string ~with_positions:true str in
-  Lexing.set_filename buf filename;
+  Misc.set_lexbuf_filename buf filename;
   let d = Se.Decoder.of_lexbuf buf in
   let rec iter acc = match Se.Decoder.next d with
     | Se.End -> Result.Ok (List.rev acc)

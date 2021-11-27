@@ -195,6 +195,10 @@ let guess_cpu_count () =
 let mk_uuid () : Uuidm.t =
   Uuidm.v4_gen (Random.State.make_self_init()) ()
 
+let set_lexbuf_filename buf filename =
+  let open Lexing in
+  buf.lex_curr_p <- {buf.lex_curr_p with pos_fname = filename}
+
 (** A scope for {!err_with} *)
 type 'a try_scope = {
   unwrap: 'x. ('x,'a) result -> 'x;
