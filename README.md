@@ -137,7 +137,7 @@ A more complete example, taken from [mc2](https://github.com/c-cube/mc2):
   (action
    (run_provers
     (dirs "$HOME/workspace/smtlib")
-    (provers mc2 z3)
+    (provers (mc2 z3))
     ;(memory 100000000)  ; TODO: parse "10G"
     (timeout 10))))
 
@@ -147,7 +147,7 @@ A more complete example, taken from [mc2](https://github.com/c-cube/mc2):
   (action
     (run_provers
       (dirs "$HOME/workspace/smtlib/QF_UF")
-      (provers mc2 z3)
+      (provers (mc2 z3))
       (timeout 10))))
 ```
 
