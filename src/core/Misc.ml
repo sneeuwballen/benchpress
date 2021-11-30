@@ -228,6 +228,14 @@ let err_with (type err) ?(map_err=fun e -> e) f : (_,err) result =
   with
   | E.Local e -> Error (map_err e)
 
+(** Check whether the DB contains a table named [tbl] *)
+let db_has_table db (tbl:string) : bool =
+    try
+      CCResult.is_ok @@ Db.check_ret () @@
+      Sqlite3.finalize @@
+      Sqlite3.prepare db (Printf.sprintf "select count(*) from %s" tbl)
+    with _ -> false
+
 let err_of_db (e:Db.Rc.t) : Error.t =
   Error.makef "DB error: %s" @@ Db.Rc.to_string e
 

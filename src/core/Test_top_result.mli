@@ -42,7 +42,7 @@ val is_ok : t -> bool
 val make :
   meta:Test_metadata.t ->
   provers:Prover.t list ->
-  Prover.name Run_result.t list ->
+  Run_event.t list ->
   t or_error
 (** Make from a list of results *)
 

@@ -2,8 +2,9 @@
 open Common
 type 'a or_error = 'a Or_error.t
 
+type name = string
 type t = {
-  name: string;
+  name: name;
   cmd: string; (* take $proof_file and $problem *)
 
   valid: string;
@@ -23,14 +24,7 @@ val make_cmd :
     @raise Subst_not_found if a variable is found, that is not substituted
     into any of the parameters nor by [f] *)
 
-module Res : sig
-  type t =
-    | Valid
-    | Invalid
-    | Unknown of string
-
-  val pp : t Fmt.printer
-end
+module Res = Proof_check_res
 
 val run :
   problem:string -> proof_file:string ->

@@ -5,7 +5,7 @@ module Fmt = CCFormat
 type 'a or_error = 'a Or_error.t
 
 type path = string
-type job_res = Prover.name Run_result.t
+type job_res= (Prover.name, Res.t) Run_result.t
 
 val run :
   limits:Limit.All.t ->

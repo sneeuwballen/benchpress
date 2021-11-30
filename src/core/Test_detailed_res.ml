@@ -2,7 +2,7 @@
 open Misc
 open Test
 
-type t = Prover.t Run_result.t
+type t = (Prover.t, Res.t) Run_result.t
 
 type key = {
   prover: Prover.name;
@@ -90,7 +90,7 @@ let get_res db prover file : _ or_error =
     ~map_err:(Error.wrapf "getting results for '%s' on '%s'" prover file)
     (fun scope ->
        let tags = Prover.tags_of_db db in
-       let res: Prover.name Run_result.t =
+       let res: _ Run_result.t =
          Db.exec db
            {|select
                 res, file_expect, timeout, errcode, stdout, stderr,

@@ -170,7 +170,7 @@ end = struct
                    Run_event.to_db db (Run_event.mk_prover result))
                >|= fun () ->
                on_solve result; (* callback *)
-               result
+               Run_event.mk_prover result
              end
              |> E.map_err
                (Error.wrapf "(@[running :prover %a :on %a@])"
@@ -181,6 +181,9 @@ end = struct
       |> E.flatten_l
     end
     >>= fun res_l ->
+
+    (* TODO: proof check the "unsat" results *)
+
     if interrupted() then (
       E.fail "interrupted"
     ) else (

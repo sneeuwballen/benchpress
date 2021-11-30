@@ -3,8 +3,9 @@
 open Common
 type 'a or_error = 'a Or_error.t
 
+type name = string
 type t = {
-  name: string;
+  name: name;
   cmd: string; (* take $proof_file and $problem *)
 
   valid: string;
@@ -21,17 +22,7 @@ let pp out self =
     (pp_f "valid" pp_regex) valid
     (pp_f "invalid" pp_regex) invalid
 
-module Res = struct
-  type t =
-    | Valid
-    | Invalid
-    | Unknown of string
-
-  let pp out = function
-    | Valid -> Fmt.string out "valid"
-    | Invalid -> Fmt.string out "invalid"
-    | Unknown s -> Fmt.fprintf out "(invalid %s)" s
-end
+module Res = Proof_check_res
 
 exception Subst_not_found of string
 

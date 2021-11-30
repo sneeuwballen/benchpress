@@ -4,7 +4,7 @@
 open Misc
 open Test
 
-type t = Prover.t Run_result.t
+type t = (Prover.t, Res.t) Run_result.t
 (** Detailed result *)
 
 type key = {

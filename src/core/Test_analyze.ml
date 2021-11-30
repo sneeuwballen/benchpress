@@ -72,6 +72,8 @@ type t = {
   disappoint: int;
   bad       : int; (* mismatch *)
   bad_full  : (Problem.t * Res.t * float) list; (* always materialized *)
+  invalid_proof: int;
+  invalid_proof_full: (Problem.t * Proof_check_res.t * float) list;
   errors    : int;
   errors_full : (Problem.t * Res.t * float) list;
   total     : int;
@@ -154,8 +156,35 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t or_error =
               and res = 'error' ; |}
            prover ~f:Db.Cursor.to_list_rev
          |> scope.unwrap_with Misc.err_of_db
+       and invalid_proof_full =
+         match
+           Db.exec db prover
+             {| select r.file, r.file_expect, p.rtime, p.res
+                from prover_res r, proof_check_res p
+                where r.prover=? and r.prover = p.prover and r.file = p.file
+                  and p.res = 'invalid';
+             |}
+             ~ty:Db.Ty.([text], [text;text;float;text],
+                        fun file expected rtime pres ->
+                          Problem.make file (Res.of_string ~tags expected),
+                          Proof_check_res.of_string pres |> scope.unwrap,
+                          rtime)
+             ~f:Db.Cursor.to_list_rev
+         with
+         | Ok l -> l
+         | Error db ->
+           Log.err (fun k->k"cannot list invalid-proofs: %a"
+                       Error.pp (Misc.err_of_db db));
+           []
+         | exception e ->
+           Log.err
+             (fun k->k"cannot list invalid-proofs: %s" (Printexc.to_string e));
+           []
        in
-       { ok; disappoint; improved; bad; bad_full; errors; errors_full; total; })
+       let invalid_proof = List.length invalid_proof_full in
+       { ok; disappoint; improved; bad; bad_full;
+         invalid_proof; invalid_proof_full;
+         errors; errors_full; total; })
 
 (* TODO: create a function for "better"
       Sqlite3.create_fun2

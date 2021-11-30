@@ -4,7 +4,7 @@
 
 open Misc
 
-type result = Prover.name Run_result.t
+type result = (Prover.name, Res.t) Run_result.t
 type 'a or_error = 'a Or_error.t
 
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.test"))

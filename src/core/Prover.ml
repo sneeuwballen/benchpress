@@ -265,13 +265,16 @@ let to_db db (self:t) : unit or_error =
       ))
 
 let tags_of_db db : _ list =
-  try Db.exec_no_params_exn db
-        {| select distinct tag from custom_tags ; |}
-        ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
-  with e ->
-    Log.err
-      (fun k->k "cannot find custom tags: %s" (Printexc.to_string e));
-    []
+  if not (Misc.db_has_table db "custom_tags") then []
+  else (
+    try Db.exec_no_params_exn db
+          {| select distinct tag from custom_tags ; |}
+          ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
+    with e ->
+      Log.err
+        (fun k->k "cannot find custom tags: %s" (Printexc.to_string e));
+      []
+  )
 
 let of_db db name : t or_error =
   Misc.err_with

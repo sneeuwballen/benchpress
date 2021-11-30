@@ -10,6 +10,8 @@ type t = {
   disappoint: int;
   bad       : int; (* mismatch *)
   bad_full  : (Problem.t * Res.t * float) list; (* always materialized *)
+  invalid_proof: int;
+  invalid_proof_full: (Problem.t * Proof_check_res.t * float) list;
   errors    : int;
   errors_full : (Problem.t * Res.t * float) list;
   total     : int;

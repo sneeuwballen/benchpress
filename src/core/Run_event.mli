@@ -7,22 +7,21 @@ module Db = Sqlite3_utils
 type 'a or_error = 'a Or_error.t
 
 type prover  = Prover.t
-type checker = unit
+type checker = Proof_checker.t
 
 type t =
-  | Prover_run of Prover.name Run_result.t
-  | Checker_run of checker Run_result.t
+  | Prover_run of (Prover.name, Res.t) Run_result.t
+  | Checker_run of (Prover.name * Proof_checker.name, Proof_check_res.t) Run_result.t
 
 type event = t
 
-val mk_prover : Prover.name Run_result.t -> t
-val mk_checker : checker Run_result.t -> t
+val mk_prover : (Prover.name, Res.t) Run_result.t -> t
+val mk_checker : (Prover.name * Proof_checker.name, Proof_check_res.t) Run_result.t -> t
 
 val pp : t CCFormat.printer
 
 val db_prepare : Db.t -> unit or_error
-val to_db_prover_result : Db.t -> Prover.name Run_result.t -> unit or_error
+val to_db_prover_result : Db.t -> (Prover.name, Res.t) Run_result.t -> unit or_error
 val to_db: Db.t -> t -> unit or_error
 
-val of_db_map : Db.t -> f:(Prover.name Run_result.t -> 'a) -> 'a list or_error
-val of_db_l : Db.t -> Prover.name Run_result.t list or_error
+val of_db_l : Db.t -> t list or_error

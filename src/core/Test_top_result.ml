@@ -306,12 +306,10 @@ let to_db (db:Db.t) (self:t) : unit or_error =
            List.iter (fun ev -> scope.unwrap @@ Run_event.to_db db ev) self.events);
        ())
 
-let make ~meta ~provers
-    (l:Prover.name Run_result.t list) : t or_error =
+let make ~meta ~provers (events:Run_event.t list) : t or_error =
   Misc.err_with
     ~map_err:(Error.wrap "reading top_res from DB")
     (fun scope ->
-       let events = List.rev_map Run_event.mk_prover l in
        (* create a temporary in-memory DB *)
        let db = Sqlite3.db_open ":memory:" in
        db_prepare db |> scope.unwrap;

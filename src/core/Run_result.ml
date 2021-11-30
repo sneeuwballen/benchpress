@@ -1,9 +1,9 @@
 module Fmt = CCFormat
 
-type +'a t = {
+type (+'a, 'res) t = {
   program : 'a;
   problem : Problem.t;
-  res : Res.t;
+  res : 'res;
   timeout : Limit.Time.t;
   raw : Run_proc_result.t;
 }
@@ -17,7 +17,7 @@ let map ~f e = { e with program = f e.program }
 let float_timeout self =
   Limit.Time.as_float Seconds self.timeout
 
-let analyze_self_ (self:Prover.t t) =
+let analyze_self_ (self:(Prover.t, Res.t) t) =
   let res =
     match Prover.analyze_p_opt self.program self.raw with
     | Some x -> x
@@ -31,14 +31,15 @@ let analyze_self_ (self:Prover.t t) =
 let analyze_self self =
   self |> analyze_self_ |> map ~f:Prover.name
 
-let make_from_prover (p:Prover.t) ~timeout problem (raw:Run_proc_result.t) : Prover.name t =
+let make_from_prover (p:Prover.t) ~timeout problem
+    (raw:Run_proc_result.t) : (Prover.name, Res.t) t =
   { program=p; problem; res=Res.Unknown; timeout; raw }
   |> analyze_self
 
-let make (p:Prover.name) ~timeout ~res problem (raw:Run_proc_result.t) : _ t =
+let make (p:_) ~timeout ~res problem (raw:Run_proc_result.t) : _ t =
   { program=p; problem; res; timeout; raw }
 
-let pp pp_prog out (self:_ t): unit =
-  Format.fprintf out "(@[<hv2>:program %a@ :problem %a@ :raw %a@ :res %s@])"
+let pp pp_prog pp_res out (self:_ t): unit =
+  Format.fprintf out "(@[<hv2>:program %a@ :problem %a@ :raw %a@ :res %a@])"
     pp_prog (program self) Problem.pp (problem self) Run_proc_result.pp (raw self)
-    (Res.to_string self.res)
+    pp_res self.res
