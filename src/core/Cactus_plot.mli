@@ -7,8 +7,8 @@ open Misc
 
 type t
 
-val of_db : Db.t -> t or_error
-val of_file : string -> t or_error
+val of_db : Db.t -> t
+val of_file : string -> t
 
 val combine : (string * t) list -> t
 

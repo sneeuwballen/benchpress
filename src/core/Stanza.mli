@@ -5,7 +5,6 @@ open Common
 module Se = Sexp_loc
 
 type loc = Loc.t
-type 'a or_error = 'a Or_error.t
 
 (** Result to expect for a problem *)
 type expect =
@@ -123,7 +122,7 @@ val errors : t list -> Error.t list
 
 val parse_files :
   ?reify_errors:bool -> ?builtin:bool ->
-  string list -> t list or_error
+  string list -> t list
 (** Parse a list of files and return their concatenated stanzas.
     @param builtin if true, add the builtin prelude before the files
     @param reify_errors if true, parsing errors become {!St_error}
@@ -131,6 +130,6 @@ val parse_files :
 
 val parse_string :
   ?reify_errors:bool -> ?builtin:bool ->
-  filename:string -> string -> t list or_error
+  filename:string -> string -> t list
 (** Parse a string. See {!parse_files} for the arguments.
     @param filename name used in locations *)

@@ -1,5 +1,5 @@
 
-open Misc
+open Common
 open Test
 
 type t = (Prover.t, Res.t) Run_result.t
@@ -21,7 +21,7 @@ type expect_filter =
 
 let list_keys ?(offset=0) ?(page_size=500)
     ?(filter_prover="") ?(filter_pb="") ?(filter_res="") ?filter_expect
-    db : (key list*_*_) or_error =
+    db : (key list*_*_) =
   let filter_prover = clean_s true filter_prover in
   let filter_pb = clean_s true filter_pb in
   (* no wildcard here, as "sat" would match "unsat"… *)
@@ -40,101 +40,93 @@ let list_keys ?(offset=0) ?(page_size=500)
     | Some TD_expect_improved ->
       " and res in ('sat', 'unsat') and not (file_expect in ('sat','unsat'))"
   in
-  Misc.err_with
-    ~map_err:(Error.wrap "listing detailed results")
-    (fun scope ->
-       let tags = Prover.tags_of_db db in
-       (* count total number of results *)
-       let n =
-         Db.exec db
-           (Printf.sprintf {|select count(*)
+  Error.guard (Error.wrap "listing detailed results") @@ fun() ->
+  let tags = Prover.tags_of_db db in
+  (* count total number of results *)
+  let n =
+    Db.exec db
+      (Printf.sprintf {|select count(*)
              from prover_res
              where prover like ? and res like ? %s and file like ?|}
-              filter_expect)
-           ~ty:Db.Ty.(p3 text text text, p1 int, id) ~f:Db.Cursor.get_one_exn
-           filter_prover filter_res filter_pb
-         |> CCResult.map_err Misc.err_of_db
-         |> scope.unwrap
-       in
-       (* ask for [limit+1] entries *)
-       let l =
-         Db.exec db
-           (Printf.sprintf {|select distinct prover, file, res, file_expect, rtime
+         filter_expect)
+      ~ty:Db.Ty.(p3 text text text, p1 int, id) ~f:Db.Cursor.get_one_exn
+      filter_prover filter_res filter_pb
+    |> Misc.unwrap_db (fun() -> spf "counting results of '%s' with '%s'" filter_prover filter_res)
+  in
+  (* ask for [limit+1] entries *)
+  let l =
+    Db.exec db
+      (Printf.sprintf {|select distinct prover, file, res, file_expect, rtime
              from prover_res
              where prover like ? and res like ? %s and file like ?
              order by file, prover desc
               limit ? offset ?
             ; |} filter_expect)
-           ~ty:Db.Ty.(p5 text text text int int,
-                      p5 text any_str text text float,
-                      fun prover file res file_expect rtime ->
-                        let res=Res.of_string ~tags res in
-                        let file_expect=Res.of_string ~tags file_expect in
-                        {prover;file;res;file_expect;rtime})
-           ~f:Db.Cursor.to_list_rev
-           filter_prover filter_res filter_pb (page_size+1) offset
-         |> CCResult.map_err Misc.err_of_db
-         |> scope.unwrap
-       in
-       if List.length l > page_size then (
-         (* there are more result, cut the last one *)
-         CCList.take page_size l, n, false
-       ) else (
-         l, n, true
-       )
-    )
+      ~ty:Db.Ty.([text;text;text;int;int],
+                 [text;any_str;text;text;float],
+                 fun prover file res file_expect rtime ->
+                   let res=Res.of_string ~tags res in
+                   let file_expect=Res.of_string ~tags file_expect in
+                   {prover;file;res;file_expect;rtime})
+      ~f:Db.Cursor.to_list_rev
+      filter_prover filter_res filter_pb (page_size+1) offset
+    |> Misc.unwrap_db (fun() -> spf "listing %d results of '%s' with '%s'"
+                          (page_size+1) filter_prover filter_res)
+  in
+  if List.length l > page_size then (
+    (* there are more result, cut the last one *)
+    CCList.take page_size l, n, false
+  ) else (
+    l, n, true
+  )
 
-let get_res db prover file : _ or_error =
+let get_res db prover file : _ =
   Profile.with_ "detailed-res" ~args:["prover",prover] @@ fun () ->
-  Misc.err_with
-    ~map_err:(Error.wrapf "getting results for '%s' on '%s'" prover file)
-    (fun scope ->
-       let tags = Prover.tags_of_db db in
-       let res: _ Run_result.t =
-         Db.exec db
-           {|select
+  Error.guard (Error.wrapf "getting results for '%s' on '%s'" prover file) @@ fun () ->
+  let tags = Prover.tags_of_db db in
+  let res: _ Run_result.t =
+    Db.exec db
+      {|select
                 res, file_expect, timeout, errcode, stdout, stderr,
                 rtime, utime, stime
              from prover_res where prover=? and file=? ; |}
-           prover file
-           ~f:Db.Cursor.next
-           ~ty:Db.Ty.(p2 text text,
-                      p2 any_str any_str @>>
-                      p4 int int (nullable blob) (nullable blob)
-                      @>> p3 float float float,
-                      fun x1 x2 x3 x4 x5 x6 x7 x8 x9 ->
-                        Logs.info (fun k->k "got results");
-                        x1,x2,x3,x4,x5,x6,x7,x8,x9)
-         |> CCResult.map_err Misc.err_of_db
-         |> scope.unwrap
-         |> CCOpt.to_result_lazy
-           (fun () ->
-              Error.makef
-                "expected a non-empty result for prover='%s', file='%s'"
-                prover file)
-         |> scope.unwrap
-         |> (fun (res, file_expect, timeout, errcode, stdout, stderr, rtime, utime, stime) ->
-             (* Still needed ?! *)
-             Gc.compact();
-             Gc.full_major();
-             Logs.info (fun k->k "got results 2");
-             let stdout=CCOpt.get_or ~default:"" stdout in
-             let stderr=CCOpt.get_or ~default:"" stderr in
-             Logs.debug (fun k->k"res.of_string tags=[%s]" (String.concat "," tags));
-             let expected = Res.of_string ~tags file_expect in
-             Logs.debug (fun k->k"got expected %a" Res.pp expected);
-             let res = Res.of_string ~tags res in
-             Logs.debug (fun k->k"got res %a" Res.pp res);
-             let timeout = Limit.Time.mk ~s:timeout () in
-             Run_result.make prover ~timeout ~res
-               {Problem.name=file; expected}
-               { Run_proc_result.errcode;stdout;stderr;rtime;utime;stime})
-       in
-       Logs.info (fun k->k "try to get prover");
-       let prover = Prover.of_db db prover |> scope.unwrap in
-       Logs.info (fun k->k "got prover");
-       Run_result.map ~f:(fun _ -> prover) res
-    )
+      prover file
+      ~f:Db.Cursor.next
+      ~ty:Db.Ty.([text;text],
+                 [any_str;any_str;int;int;nullable blob;nullable blob;
+                  float;float;float],
+                 fun x1 x2 x3 x4 x5 x6 x7 x8 x9 ->
+                   Logs.info (fun k->k "got results");
+                   x1,x2,x3,x4,x5,x6,x7,x8,x9)
+    |> Misc.unwrap_db (fun () -> spf "listing results")
+    |> Error.unwrap_opt'
+      (fun () ->
+         spf
+           "expected a non-empty result for prover='%s', file='%s'"
+           prover file)
+    |> (fun (res, file_expect, timeout, errcode, stdout, stderr, rtime, utime, stime) ->
+        (* Still needed ?! *)
+        Gc.compact();
+        Gc.full_major();
+        Logs.info (fun k->k "got results 2");
+        let stdout=CCOpt.get_or ~default:"" stdout in
+        let stderr=CCOpt.get_or ~default:"" stderr in
+        Logs.debug (fun k->k"res.of_string tags=[%s]" (String.concat "," tags));
+        let expected = Res.of_string ~tags file_expect in
+        Logs.debug (fun k->k"got expected %a" Res.pp expected);
+        let res = Res.of_string ~tags res in
+        Logs.debug (fun k->k"got res %a" Res.pp res);
+        let timeout = Limit.Time.mk ~s:timeout () in
+        Run_result.make prover ~timeout ~res
+          {Problem.name=file; expected}
+          { Run_proc_result.errcode;stdout;stderr;rtime;utime;stime})
+  in
+  Logs.info (fun k->k "try to get prover");
+  let prover = Prover.of_db db prover in
+  Logs.info (fun k->k "got prover");
+  Run_result.map ~f:(fun _ -> prover) res
+
+module PB = PrintBox
 
 let to_printbox ?link:(mk_link=default_pp_linker) (self:t) : PB.t*PB.t*string*string =
   let open PB in

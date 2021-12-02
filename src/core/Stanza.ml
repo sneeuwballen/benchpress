@@ -2,12 +2,10 @@
 (** {1 Configuration Stanzas} *)
 
 open Common
-module E = Or_error
 module Se = Sexp_loc
 module SD = Sexp_decode
 
 type loc = Loc.t
-type 'a or_error = 'a Or_error.t
 
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.stanzas"))
 
@@ -398,29 +396,22 @@ let dec tags : (_ list * t) SD.t =
     );
   ]
 
-exception Wrap of Error.t
-let fail_with_error e =  raise (Wrap e)
-let fail_with_error_f ?loc fmt = Format.kasprintf (fun s ->raise (Wrap (Error.make ?loc s))) fmt
-
-let parse_string_list_ ~filename str : _ list or_error =
+let parse_string_list_ ~filename str : _ list =
   let module Se = Se.Sexp in
   let buf = Lexing.from_string ~with_positions:true str in
   Misc.set_lexbuf_filename buf filename;
   let d = Se.Decoder.of_lexbuf buf in
   let rec iter acc = match Se.Decoder.next d with
-    | Se.End -> Result.Ok (List.rev acc)
+    | Se.End -> (List.rev acc)
     | Se.Yield x -> iter (x::acc)
     | Se.Fail msg ->
       (* FIXME: get location from Sexp_loc iself? *)
       let loc = Loc.of_lexbuf ~input:(Loc.Input.string str) buf in
       let err = Error.make ~loc msg in
       Log.debug (fun k->k"parse_string_list failed: %a" Error.pp err);
-      Result.Error err
+      Error.raise err
   in
-  try iter []
-  with e ->
-    CCResult.of_exn e
-    |> CCResult.map_err Error.make
+  iter []
 
 (** Parse a list of files into a list of stanzas *)
 let parse_files, parse_string =
@@ -435,56 +426,47 @@ let parse_files, parse_string =
              let st = St_error {err=e; loc} in
              tags, st
            ) else (
-             raise (Wrap (Sexp_decode.Err.to_error e))
+             Error.raise (Sexp_decode.Err.to_error e)
            ))
       l
   in
   (* prelude? *)
   let get_prelude ~reify_errors ~builtin () =
     let tags, prelude =
-      if builtin then
-        match parse_string_list_ ~filename:"builtin_config.sexp" Builtin_config.config with
-        | Ok l ->
-          let tags, l = decode_sexp_l ~reify_errors [] l in
-          tags, St_enter_file "prelude" :: l
-        | Error e ->
-          fail_with_error @@ Error.wrap "Reading builtin config" e
-      else [], []
+      Error.guard (Error.wrap "Reading builtin config") @@ fun () ->
+      if builtin then (
+        let l =
+          parse_string_list_ ~filename:"builtin_config.sexp" Builtin_config.config in
+        let tags, l = decode_sexp_l ~reify_errors [] l in
+        tags, St_enter_file "prelude" :: l
+      ) else [], []
     in
     tags, prelude
   in
   let process_file ~reify_errors tags file =
     let file = Misc.mk_abs_path file in
     match Se.parse_file_l file with
-    | Error e -> fail_with_error_f ?loc:None "cannot parse file '%s':@ %s" file e
+    | Error e -> Error.failf ?loc:None "cannot parse file '%s':@ %s" file e
     | Ok l ->
       let tags, l = decode_sexp_l ~reify_errors tags l in
       tags, St_enter_file file :: l
   and process_string ~reify_errors ~filename tags s =
     match Se.parse_string_l ~filename s with
-    | Error e -> fail_with_error_f ?loc:None "cannot parse file '%s':@ %s" filename e
+    | Error e -> Error.failf ?loc:None "cannot parse file '%s':@ %s" filename e
     | Ok l ->
       let tags, l = decode_sexp_l ~reify_errors tags l in
       tags, St_enter_file filename :: l
   in
-  let wrap_err_ f =
-    try f ()
-    with Wrap e -> Error e
-  in
-  let parse_files ?(reify_errors=false) ?(builtin=true) (files:string list) : t list or_error =
-    wrap_err_ @@ fun () ->
+  let parse_files ?(reify_errors=false) ?(builtin=true) (files:string list) : t list =
     let tags, prelude = get_prelude ~reify_errors ~builtin () in
     CCList.fold_map (process_file ~reify_errors) tags files
     |> snd
     |> CCList.cons prelude
     |> CCList.flatten
-    |> E.return
-  and parse_string ?(reify_errors=false) ?(builtin=true) ~filename (s:string) : t list or_error =
-    wrap_err_ @@ fun () ->
+  and parse_string ?(reify_errors=false) ?(builtin=true) ~filename (s:string) : t list =
     let tags, prelude = get_prelude ~reify_errors ~builtin () in
     let _tags, l = process_string ~reify_errors ~filename tags s in
     CCList.cons prelude [l]
     |> CCList.flatten
-    |> E.return
   in
   parse_files, parse_string

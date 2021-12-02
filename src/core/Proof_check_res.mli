@@ -7,5 +7,5 @@ type t =
 
 val pp : t Fmt.printer
 
-val of_string : string -> t Or_error.t
+val of_string : string -> t
 val to_string : t -> string

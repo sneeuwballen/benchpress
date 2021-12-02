@@ -1,8 +1,6 @@
 
-module Fmt = CCFormat
-module E = Or_error
+open Common
 module T = Test
-type 'a or_error = 'a Or_error.t
 type path = string
 
 (** {1 Actions} *)

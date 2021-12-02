@@ -1,5 +1,5 @@
 
-open Misc
+open Common
 type filename = string
 
 let pb_v_record = Test.pb_v_record
@@ -16,7 +16,7 @@ module Short = struct
   }
 
   let to_printbox (self:t) =
-    let open PB in
+    let open PrintBox in
     pb_v_record [
       "appeared", int self.appeared;
       "disappeared", int self.disappeared;
@@ -27,49 +27,48 @@ module Short = struct
     ]
 
 
-  let make f1 f2 : (_ * t) list or_error =
-    Misc.err_with
-      ~map_err:(Error.wrapf "comparing.short '%s' and '%s'" f1 f2)
-      (fun scope ->
-         let db = Sqlite3.db_open ":memory:" in
-         Db.exec_no_cursor db "attach database ? as db1;"
-           ~ty:Db.Ty.(p1 text) f1
-         |> scope.unwrap_with Misc.err_of_db;
-         Db.exec_no_cursor db "attach database ? as db2;"
-           ~ty:Db.Ty.(p1 text) f2
-         |> scope.unwrap_with Misc.err_of_db;
-         let provers =
-           Db.exec_no_params db
-             {| select distinct * from (select prover from db1.prover_res UNION
+  let make f1 f2 : (_ * t) list =
+    Error.guard (Error.wrapf "short comparison of '%s' and '%s'" f1 f2) @@ fun () ->
+    let db = Sqlite3.db_open ":memory:" in
+    Db.exec_no_cursor db "attach database ? as db1;"
+      ~ty:Db.Ty.(p1 text) f1
+    |> Misc.unwrap_db (fun() -> spf "attaching DB %S" f1);
+    Db.exec_no_cursor db "attach database ? as db2;"
+      ~ty:Db.Ty.(p1 text) f2
+    |> Misc.unwrap_db (fun() -> spf "attaching DB %S" f2);
+    let provers =
+      Db.exec_no_params db
+        {| select distinct * from (select prover from db1.prover_res UNION
               select prover from db2.prover_res) ;|}
-             ~ty:Db.Ty.(p1 text,id) ~f:Db.Cursor.to_list_rev
-           |> scope.unwrap_with Misc.err_of_db
+        ~ty:Db.Ty.(p1 text,id) ~f:Db.Cursor.to_list_rev
+    |> Misc.unwrap_db (fun() -> "listing all provers");
+    in
+    Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
+    CCList.map
+      (fun prover ->
+         let get_n q =
+           Db.exec db q prover
+             ~ty:Db.Ty.(p1 text, p1 int, fun x->x)
+             ~f:(fun c ->
+                  match Db.Cursor.next c with
+                  | None -> Error.failf "expected result for query\n%s" q
+                  | Some x -> x)
+           |> Misc.unwrap_db (fun() -> spf "while running\n%s" q);
          in
-         Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
-         CCList.map
-           (fun prover ->
-              let get_n q =
-                Db.exec db q prover
-                  ~ty:Db.Ty.(p1 text, p1 int, fun x->x)
-                  ~f:(fun c -> scope.unwrap @@
-                       match Db.Cursor.next c with
-                       | None -> Or_error.fail "expected result" | Some x -> Ok x)
-                |> scope.unwrap_with Misc.err_of_db
-              in
-              let appeared = get_n
-                  {| select count(r2.file) from db2.prover_res r2
+         let appeared = get_n
+             {| select count(r2.file) from db2.prover_res r2
                    where r2.prover = ?
                     and not exists (select file from db1.prover_res where
                     db1.prover_res.prover=r2.prover
                     and file = r2.file); |}
-              and disappeared = get_n
-                  {| select count(r1.file) from db1.prover_res r1
+         and disappeared = get_n
+             {| select count(r1.file) from db1.prover_res r1
                    where r1.prover = ?
                     and not exists (select file from db2.prover_res where
                     db2.prover_res.prover=r1.prover
                     and file = r1.file); |}
-              and same = get_n
-                  {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
+         and same = get_n
+             {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
                    where
                       r1.prover = ? and r1.prover = r2.prover
                       and r1.file = r2.file
@@ -78,27 +77,26 @@ module Short = struct
                          or
                          (not (r1.res in ('sat','unsat')) and not (r2.res in ('sat','unsat')))
                       ) ; |}
-              and mismatch = get_n
-                  {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
+         and mismatch = get_n
+             {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
                    where
                       (r1.res in ('sat', 'unsat') or r2.res in ('sat', 'unsat'))
                       and r1.prover = ? and r1.prover = r2.prover
                       and r1.file = r2.file and r1.res != r2.res; |}
-              and improved = get_n
-                  {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
+         and improved = get_n
+             {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
                    where not (r1.res in ('sat', 'unsat'))
                       and r2.res in ('sat', 'unsat')
                       and r1.prover = ? and r1.prover = r2.prover
                       and r1.file = r2.file ; |}
-              and regressed = get_n
-                  {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
+         and regressed = get_n
+             {| select count(r1.file) from db1.prover_res r1, db2.prover_res r2
                    where r1.res in ('sat', 'unsat')
                       and not (r2.res in ('sat', 'unsat'))
                       and r1.prover = ? and r1.prover = r2.prover
                       and r1.file = r2.file ; |}
-              in
-              let c = { appeared; disappeared; same; mismatch; improved; regressed } in
-              prover, c)
-           provers
-      )
+         in
+         let c = { appeared; disappeared; same; mismatch; improved; regressed } in
+         prover, c)
+      provers
 end

@@ -2,12 +2,9 @@
 
 (** {1 Event Stored on Disk or Transmitted on Network} *)
 
-module E = Or_error
-module Db = Sqlite3_utils
-module Fmt = CCFormat
-module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-event"))
+open Common
 
-type 'a or_error = 'a Or_error.t
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-event"))
 
 type prover  = Prover.t
 type checker = Proof_checker.t
@@ -28,9 +25,8 @@ let mk_prover r = Prover_run r
 let mk_checker r = Checker_run r
 
 (* main schema for results! *)
-let db_prepare (db:Db.t) : unit or_error =
-  let open E.Infix in
-  Prover.db_prepare db >>= fun () ->
+let db_prepare (db:Db.t) : unit =
+  Prover.db_prepare db;
   Db.exec0 db
     {|create table if not exists
       prover_res (
@@ -64,9 +60,9 @@ let db_prepare (db:Db.t) : unit or_error =
     create index if not exists prf_all on proof_check_res(prover,checker,file);
     create index if not exists prf_file on proof_check_res(file);
     |}
-  |> Misc.db_err_with ~ctx:"run-event.db-prepare"
+  |> Misc.unwrap_db (fun() -> "run-event.db-prepare")
 
-let to_db_prover_result (db:Db.t) (self:(Prover.name,_) Run_result.t) : _ or_error =
+let to_db_prover_result (db:Db.t) (self:(Prover.name,_) Run_result.t) : _ =
   Db.exec_no_cursor db
     {|insert into prover_res
     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -83,9 +79,9 @@ let to_db_prover_result (db:Db.t) (self:(Prover.name,_) Run_result.t) : _ or_err
     self.raw.rtime
     self.raw.utime
     self.raw.stime
-  |> Misc.db_err_with ~ctx:"run-event.to-db-prover-result"
+  |> Misc.unwrap_db (fun() -> "run-event.to-db-prover-result")
 
-let to_db_check_result (db:Db.t) (self:_ Run_result.t) : _ or_error =
+let to_db_check_result (db:Db.t) (self:_ Run_result.t) : _ =
   let p, c = self.program in
   Db.exec_no_cursor db
     {|insert into proof_check_res (prover, file, checker, res, rtime, stdout, stderr)
@@ -93,14 +89,14 @@ let to_db_check_result (db:Db.t) (self:_ Run_result.t) : _ or_error =
     ~ty:Db.Ty.([text; text; text; text; float; blob; blob])
     p self.problem.Problem.name c (Proof_check_res.to_string self.res)
     self.raw.rtime self.raw.stdout self.raw.stderr
-  |> Misc.db_err_with ~ctx:"run-event.to-db-checker-result"
+  |> Misc.unwrap_db (fun() -> "run-event.to-db-checker-result")
 
-let to_db db self : _ or_error =
+let to_db db self : _ =
   match self with
   | Prover_run r -> to_db_prover_result db r
   | Checker_run r -> to_db_check_result db r
 
-let of_db_provers_map db ~f : _ list or_error =
+let of_db_provers_map db ~f : _ list =
   let tags = Prover.tags_of_db db in
   Db.exec_no_params db {|
     select
@@ -121,9 +117,9 @@ let of_db_provers_map db ~f : _ list or_error =
            in
            f p))
     ~f:Db.Cursor.to_list_rev
-  |> Misc.db_err_with ~ctx:"run-event.of-db-map"
+  |> Misc.unwrap_db (fun () -> "run-event.of-db-map")
 
-let of_db_checker_map' db ~f (scope:_ Misc.try_scope) : _ list or_error =
+let of_db_checker_map' db ~f : _ list =
   let tags = Prover.tags_of_db db in
   Db.exec_no_params db {|
     select p.prover, p.file, e.file_expect, p.checker,
@@ -137,10 +133,7 @@ let of_db_checker_map' db ~f (scope:_ Misc.try_scope) : _ list or_error =
         fun prover file expected checker res rtime stdout stderr ->
           let pb =
             {Problem.name=file; expected=Res.of_string ~tags expected}
-          and res =
-            Proof_check_res.of_string res
-            |> CCResult.map_err (Error.wrap "parse proof check res") |> scope.unwrap
-          in
+          and res = Proof_check_res.of_string res in
           let p =
             Run_result.make (prover,checker) pb
               ~timeout:Limit.(Time.mk ~s:0 ()) ~res
@@ -148,20 +141,18 @@ let of_db_checker_map' db ~f (scope:_ Misc.try_scope) : _ list or_error =
           in
           f p)
     ~f:Db.Cursor.to_list_rev
-  |> Misc.db_err_with ~ctx:"run-event.of-db-checker-map"
+  |> Misc.unwrap_db (fun () ->"run-event.of-db-checker-map")
 
-let of_db_checker_map db ~f : _ list or_error =
-  Misc.err_with ~map_err:(Error.wrap "run-event.of-db") @@ fun scope ->
-
+let of_db_checker_map db ~f : _ list =
+  Error.guard (Error.wrap "run-event.of-db") @@ fun () ->
   if Misc.db_has_table db "proof_check_res" then (
-    of_db_checker_map' db ~f scope |> scope.unwrap
+    of_db_checker_map' db ~f
   ) else (
     Log.debug (fun k->k"no table proof_check_res found");
     []
   )
 
-let of_db_l db : t list or_error =
-  let open CCResult.Infix in
-  let* l1 = of_db_provers_map db ~f:(fun x->Prover_run x) in
-  let* l2 = of_db_checker_map db ~f:(fun x->Checker_run x) in
-  Ok (List.rev_append l1 l2)
+let of_db_l db : t list =
+  let l1 = of_db_provers_map db ~f:(fun x->Prover_run x) in
+  let l2 = of_db_checker_map db ~f:(fun x->Checker_run x) in
+  List.rev_append l1 l2

@@ -1,6 +1,5 @@
 
 open Common
-type 'a or_error = 'a Or_error.t
 
 type name = string
 type t = {
@@ -34,11 +33,11 @@ val run :
 val analyze_res :
   t -> Run_proc_result.t -> Res.t
 
-val db_prepare : Db.t -> unit or_error
+val db_prepare : Db.t -> unit
 
-val to_db : Db.t -> t -> unit or_error
+val to_db : Db.t -> t -> unit
 
-val of_db : Db.t -> string -> t or_error
+val of_db : Db.t -> string -> t
 
-val db_names : Db.t -> string list or_error
+val db_names : Db.t -> string list
 (** Names of checkers in this DB *)

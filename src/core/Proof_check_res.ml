@@ -18,10 +18,10 @@ let to_string = function
 
 let of_string s =
   match s with
-  | "valid" -> Ok Valid
-  | "invalid" -> Ok Invalid
+  | "valid" -> Valid
+  | "invalid" -> Invalid
   | s when CCString.prefix ~pre:"unknown:" s ->
     (match CCString.chop_prefix ~pre:"unknown:" s with
-     | Some x -> Ok (Unknown x)
+     | Some x -> Unknown x
      | None -> assert false)
-  | _ -> Error (Error.makef "unknown proof-check-res %S" s)
+  | _ -> Error.failf "unknown proof-check-res %S" s

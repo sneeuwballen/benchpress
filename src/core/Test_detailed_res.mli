@@ -1,7 +1,7 @@
 
 (** Detailed test results *)
 
-open Misc
+open Common
 open Test
 
 type t = (Prover.t, Res.t) Run_result.t
@@ -30,7 +30,7 @@ val list_keys :
   ?filter_pb:string ->
   ?filter_res:string ->
   ?filter_expect:expect_filter ->
-  Db.t -> (key list * int * bool) or_error
+  Db.t -> (key list * int * bool)
 (** List available results.
     @returns tuple [l, n, is_done], where [is_done] is true if there are
     no more results, and [n] is the total number of results (not just
@@ -39,5 +39,5 @@ val list_keys :
 val to_printbox : ?link:prover_path_linker -> t -> PrintBox.t * PrintBox.t * string * string
 (** Display an individual result + prover descr + stdout + stderr *)
 
-val get_res : Db.t -> Prover.name -> string -> t or_error
+val get_res : Db.t -> Prover.name -> string -> t
 (** Get an individual result *)

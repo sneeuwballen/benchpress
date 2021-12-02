@@ -1,8 +1,10 @@
 
 (** Basic stats on results *)
 
-open Misc
+open Common
 open Test
+
+module PB = PrintBox
 
 type t = {
   unsat: int;
@@ -21,7 +23,7 @@ val to_printbox_l :
   (string*t) list ->
   PB.t
 
-val of_db_for : prover:Prover.name -> Db.t -> t or_error
-val of_db : Db.t -> (Prover.name * t) list or_error
+val of_db_for : prover:Prover.name -> Db.t -> t
+val of_db : Db.t -> (Prover.name * t) list
 
 val pp : t Fmt.printer

@@ -3,7 +3,6 @@
 (** {1 Run Prover} *)
 
 open Common
-type 'a or_error = 'a Or_error.t
 
 let src_log = Logs.Src.create "prover"
 module Log = (val Logs.src_log src_log)
@@ -204,7 +203,7 @@ let analyze_p_opt (self:t) (r:Run_proc_result.t) : Res.t option =
       self.custom
   )
 
-let db_prepare (db:Db.t) : unit or_error =
+let db_prepare (db:Db.t) : unit =
   Db.exec0 db {|
   create table if not exists
     prover (
@@ -229,40 +228,39 @@ let db_prepare (db:Db.t) : unit or_error =
       unique (prover_name,tag) on conflict fail
     );
   |}
-  |> Misc.db_err_with ~ctx:"creating prover table"
+  |> Misc.unwrap_db (fun() -> "creating prover table")
 
-let to_db db (self:t) : unit or_error =
+let to_db db (self:t) : unit =
   let str_or = CCOpt.get_or ~default:"" in
-  Misc.err_with (fun scope ->
-    Db.exec_no_cursor db
-      {|insert into prover values (?,?,?,?,?,?,?,?,?,?,?) on conflict do nothing;
+  Db.exec_no_cursor db
+    {|insert into prover values (?,?,?,?,?,?,?,?,?,?,?) on conflict do nothing;
       |}
-      ~ty:Db.Ty.(p3 text text blob @>> text @>
-                 p4 text text text text @>> p3 text text text)
-      self.name
-      (Version.ser_sexp self.version)
-      self.binary
-      (self.unsat |> str_or)
-      (self.sat |> str_or)
-      (self.unknown |> str_or)
-      (self.timeout |> str_or)
-      (self.memory |> str_or)
-      (self.ulimits.time |> string_of_bool)
-      (self.ulimits.memory |> string_of_bool)
-      (self.ulimits.stack |> string_of_bool)
-    |> Misc.db_err_with ~ctx:"prover.to-db" |> scope.unwrap;
-    if self.custom <> [] then (
-      List.iter
-        (fun (tag,re) ->
-           Db.exec_no_cursor db
-             {|insert into custom_tags values (?,?,?)
+    ~ty:Db.Ty.(p3 text text blob @>> text @>
+               p4 text text text text @>> p3 text text text)
+    self.name
+    (Version.ser_sexp self.version)
+    self.binary
+    (self.unsat |> str_or)
+    (self.sat |> str_or)
+    (self.unknown |> str_or)
+    (self.timeout |> str_or)
+    (self.memory |> str_or)
+    (self.ulimits.time |> string_of_bool)
+    (self.ulimits.memory |> string_of_bool)
+    (self.ulimits.stack |> string_of_bool)
+  |> Misc.unwrap_db (fun() -> "prover.to-db");
+  if self.custom <> [] then (
+    List.iter
+      (fun (tag,re) ->
+         Db.exec_no_cursor db
+           {|insert into custom_tags values (?,?,?)
                on conflict do nothing ;
              |}
-             ~ty:Db.Ty.(p3 text text text)
-             self.name tag re
-           |> Misc.db_err_with ~ctx:"prover.to-db.add tag" |> scope.unwrap)
-        self.custom;
-      ))
+           ~ty:Db.Ty.(p3 text text text)
+           self.name tag re
+         |> Misc.unwrap_db (fun() -> "prover.to-db.add-tag"))
+      self.custom;
+  )
 
 let tags_of_db db : _ list =
   if not (Misc.db_has_table db "custom_tags") then []
@@ -276,69 +274,64 @@ let tags_of_db db : _ list =
       []
   )
 
-let of_db db name : t or_error =
-  Misc.err_with
-    ~map_err:(Error.wrapf "parsing prover %s" name)
-    (fun scope ->
-       let nonnull s = if s="" then None else Some s in
-       let custom =
-         try
-           Db.exec_exn db
-             {| select tag, regex from custom_tags where prover_name=?; |}
-             ~ty:Db.Ty.(p1 text, p2 any_str any_str, mkp2) ~f:Db.Cursor.to_list
-             name
-         with e ->
-           Log.err
-             (fun k->k "prover.of_db: could not find tags: %s"(Printexc.to_string e));
-           []
-       in
-       let ulimits =
-         try
-           Db.exec_exn db
-             {| select ulimit_time, ulimit_mem, ulimit_stack
+let of_db db name : t =
+  Error.guard (Error.wrapf "reading prover data for '%s'" name) @@ fun () ->
+  let nonnull s = if s="" then None else Some s in
+  let custom =
+    try
+      Db.exec_exn db
+        {| select tag, regex from custom_tags where prover_name=?; |}
+        ~ty:Db.Ty.(p1 text, p2 any_str any_str, mkp2) ~f:Db.Cursor.to_list
+        name
+    with e ->
+      Log.err
+        (fun k->k "prover.of_db: could not find tags: %s"(Printexc.to_string e));
+      []
+  in
+  let ulimits =
+    try
+      Db.exec_exn db
+        {| select ulimit_time, ulimit_mem, ulimit_stack
                 from prover where name=? ; |} name
-             ~f:Db.Cursor.get_one_exn
-             ~ty:Db.Ty.(p1 text, p3 any_str any_str any_str,
-                        fun time memory stack ->
-                          let time = bool_of_string time in
-                          let memory = bool_of_string memory in
-                          let stack = bool_of_string stack in
-                          Ulimit.mk ~time ~memory ~stack)
-         with _ ->
-           Log.debug (fun k -> k
-                         "prover.of_db: not ulimit_* fields, assuming defaults");
-           { time = true;
-             memory = true;
-             stack = false; }
-       in
-       Db.exec db
-         {|select
+        ~f:Db.Cursor.get_one_exn
+        ~ty:Db.Ty.(p1 text, p3 any_str any_str any_str,
+                   fun time memory stack ->
+                     let time = bool_of_string time in
+                     let memory = bool_of_string memory in
+                     let stack = bool_of_string stack in
+                     Ulimit.mk ~time ~memory ~stack)
+    with _ ->
+      Log.debug (fun k -> k
+                    "prover.of_db: not ulimit_* fields, assuming defaults");
+      { time = true;
+        memory = true;
+        stack = false; }
+  in
+  Db.exec db
+    {|select
             version, binary, unsat, sat, unknown, timeout, memory
            from prover where name=? ; |}
-         name
-         ~f:Db.Cursor.next
-         ~ty:Db.Ty.(p1 text,
-                    p2 any_str any_str
-                    @>> p5 any_str any_str any_str any_str any_str,
-                    fun version binary unsat sat unknown timeout memory ->
-                      let version =
-                        Version.deser_sexp version |> scope.unwrap
-                      in
-                      let cmd = "<unknown>" in
-                      let sat = nonnull sat in
-                      let unsat = nonnull unsat in
-                      let unknown = nonnull unknown in
-                      let timeout = nonnull timeout in
-                      let memory = nonnull memory in
-                      { name; cmd; binary_deps=[]; defined_in=None; custom;
-                        version; binary; ulimits; unsat;sat;unknown;timeout;memory})
-       |> scope.unwrap_with Misc.err_of_db
-       |> CCOpt.to_result (Error.make "expected a result")
-       |> scope.unwrap
-    )
+    name
+    ~f:Db.Cursor.next
+    ~ty:Db.Ty.([text],
+               [any_str; any_str; any_str; any_str; any_str; any_str; any_str],
+               fun version binary unsat sat unknown timeout memory ->
+                 let version =
+                   Version.deser_sexp version |> Error.unwrap
+                 in
+                 let cmd = "<unknown>" in
+                 let sat = nonnull sat in
+                 let unsat = nonnull unsat in
+                 let unknown = nonnull unknown in
+                 let timeout = nonnull timeout in
+                 let memory = nonnull memory in
+                 { name; cmd; binary_deps=[]; defined_in=None; custom;
+                   version; binary; ulimits; unsat;sat;unknown;timeout;memory})
+  |> Misc.unwrap_db (fun() -> spf "reading data for prover '%s'" name)
+  |> Error.unwrap_opt (spf "no prover by the name '%s'" name)
 
-let db_names db : _ list or_error =
+let db_names db : _ list =
   Db.exec_no_params db
     {| select distinct name from prover order by name; " |}
     ~ty:Db.Ty.(p1 text,id) ~f:Db.Cursor.to_list_rev
-  |> Misc.db_err_with ~ctx:"listing provers"
+  |> Misc.unwrap_db (fun() -> "listing provers")

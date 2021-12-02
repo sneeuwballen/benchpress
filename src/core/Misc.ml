@@ -3,10 +3,8 @@
 module Fmt = CCFormat
 module Str_map = CCMap.Make(String)
 module Str_set = CCSet.Make(String)
-module E = Or_error
 module Db = Sqlite3_utils
 module PB = PrintBox
-type 'a or_error = 'a Or_error.t
 let spf = Printf.sprintf
 
 let _lock = CCLock.create()
@@ -208,26 +206,6 @@ let set_lexbuf_filename buf filename =
   let open Lexing in
   buf.lex_curr_p <- {buf.lex_curr_p with pos_fname = filename}
 
-(** A scope for {!err_with} *)
-type 'a try_scope = {
-  unwrap: 'x. ('x,'a) result -> 'x;
-  unwrap_with: 'x 'b. ('b -> 'a) -> ('x,'b) result -> 'x;
-}
-
-
-(** Open a local block with an [unwrap] to unwrap results *)
-let err_with (type err) ?(map_err=fun e -> e) f : (_,err) result =
-  let module E = struct exception Local of err end in
-  let scope = {
-    unwrap=(function Ok x -> x | Error e -> raise (E.Local e));
-    unwrap_with=(fun ferr -> function Ok x -> x | Error e -> raise (E.Local (ferr e)));
-  } in
-  try
-    let res = f scope in
-    Ok res
-  with
-  | E.Local e -> Error (map_err e)
-
 (** Check whether the DB contains a table named [tbl] *)
 let db_has_table db (tbl:string) : bool =
     try
@@ -239,13 +217,19 @@ let db_has_table db (tbl:string) : bool =
 let err_of_db (e:Db.Rc.t) : Error.t =
   Error.makef "DB error: %s" @@ Db.Rc.to_string e
 
-let db_err (x:(_,Db.Rc.t) result) : _ or_error =
-  x |> CCResult.map_err err_of_db
+let unwrap_str msg (x:('a, string) result) : 'a =
+  match x with
+  | Ok x -> x
+  | Error e ->
+    let err = Error.make e |> Error.wrap (msg()) in
+    Error.raise err
 
-(** Turn the DB error into a normal string error *)
-let db_err_with ~ctx (x:(_,Db.Rc.t) result) : _ or_error =
-  x |> db_err
-  |> CCResult.map_err (Error.wrap ctx)
+let unwrap_db msg (x:('a,Db.Rc.t) result) : 'a =
+  match x with
+  | Ok x -> x
+  | Error e ->
+    let err = err_of_db e |> Error.wrap (msg()) in
+    Error.raise err
 
 (** Parallel map *)
 module Par_map = struct

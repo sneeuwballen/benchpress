@@ -1,4 +1,4 @@
-open Misc
+open Common
 
 type cb_progress = <
   on_progress: percent:int -> elapsed_time:float -> eta:float -> unit;
@@ -20,7 +20,7 @@ module Exec_run_provers : sig
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?interrupted:(unit -> bool) ->
-    t -> expanded or_error
+    t -> expanded
 
   val run :
     ?timestamp:float ->
@@ -31,7 +31,7 @@ module Exec_run_provers : sig
     uuid:Uuidm.t ->
     save:bool ->
     expanded ->
-    (Test_top_result.t or_error lazy_t * Test_compact_result.t) or_error
+    Test_top_result.t lazy_t * Test_compact_result.t
     (** Run the given prover(s) on the given problem set, obtaining results
         after all the problems have been dealt with.
         @param on_solve called whenever a single problem is solved
@@ -62,4 +62,4 @@ val dump_results_sqlite : Test_top_result.t -> unit
 val run :
   ?save:bool ->
   ?interrupted:(unit -> bool) ->
-  ?cb_progress:cb_progress -> Definitions.t -> Action.t -> unit or_error
+  ?cb_progress:cb_progress -> Definitions.t -> Action.t -> unit

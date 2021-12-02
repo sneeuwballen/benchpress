@@ -4,11 +4,13 @@
 
 open Common
 module T = Test
-module E = Or_error
 module Db = Sqlite3_utils
-open E.Infix
 
-type 'a or_error = 'a Or_error.t
+let catch_err f =
+  try f(); true
+  with Error.E e ->
+    Format.eprintf "%a@." Error.pp e;
+    false
 
 (** {2 Run} *)
 module Run = struct
@@ -16,7 +18,8 @@ module Run = struct
   let cmd =
     let open Cmdliner in
     let aux j pp_results dyn paths dir_file defs task timeout memory
-        meta provers csv summary no_color save : unit or_error =
+        meta provers csv summary no_color save =
+      catch_err @@ fun () ->
       if no_color then CCFormat.set_color_default false;
       let dyn = if dyn then Some true else None in
       Run_main.main ~pp_results ?dyn ~j ?timeout ?memory ?csv ~provers
@@ -61,18 +64,16 @@ module Run = struct
 end
 
 module List_files = struct
-  let main ?(abs=false) () =
-    try
-      let data_dir = Misc.data_dir() in
-      let entries = Bin_utils.list_entries data_dir in
-      List.iter
-        (fun (s,size) ->
-           let s = if abs then s else Filename.basename s in
-           Printf.printf "%s (%s)\n" s (Misc.human_size size))
-        entries;
-      Ok ()
-    with e ->
-      E.of_exn e
+  let main ?(abs=false) () : bool =
+    catch_err @@ fun () ->
+    let data_dir = Misc.data_dir() in
+    let entries = Bin_utils.list_entries data_dir in
+    List.iter
+      (fun (s,size) ->
+         let s = if abs then s else Filename.basename s in
+         Printf.printf "%s (%s)\n" s (Misc.human_size size))
+      entries;
+    ()
 
   (* sub-command to sample a directory *)
   let cmd =
@@ -105,7 +106,8 @@ module Show = struct
     and debug =
       Logs_cli.level ()
     in
-    let aux check bad csv summary no_color debug file : _ E.t =
+    let aux check bad csv summary no_color debug file : bool =
+      catch_err @@ fun () ->
       Misc.setup_logs debug;
       if no_color then CCFormat.set_color_default false;
       Show.main ~check ~bad ?csv ?summary file
@@ -118,19 +120,14 @@ end
 (** {2 plot results} *)
 
 module Plot = struct
-  let main file : unit or_error =
-    let open E.Infix in
+  let main file =
     Logs.debug (fun k->k "plot file %s" file);
-    (try
-      Bin_utils.mk_file_full file >>= fun file ->
-      Db.with_db ~timeout:500 ~mode:`READONLY file
-        (fun db ->
-           Cactus_plot.of_db db >>= fun p ->
-           Cactus_plot.show p;
-           Ok ())
-    with e ->
-      E.of_exn e
-    )
+    let file = Bin_utils.mk_file_full file in
+    Db.with_db ~timeout:500 ~mode:`READONLY file
+      (fun db ->
+         let p = Cactus_plot.of_db db in
+         Cactus_plot.show p;
+         ())
 
   (* sub-command for showing results *)
   let cmd =
@@ -141,7 +138,8 @@ module Plot = struct
     and debug =
       Logs_cli.level ()
     in
-    let aux debug file : _ E.t =
+    let aux debug file =
+      catch_err @@ fun () ->
       Misc.setup_logs debug;
       main file
     in
@@ -152,31 +150,21 @@ end
 
 (** {2 Sample} *)
 module Sample = struct
-  open E.Infix
-
-  let files_of_dir (p:string) : (string list, _) result =
-    try
-      CCIO.File.walk_l p
-      |> CCList.filter_map
-        (fun (kind,f) -> match kind with
-           | `File -> Some f
-           | _ -> None)
-      |> E.return
-    with e ->
-      E.of_exn e |> E.wrapf "expand_subdir of_dir %S" p
+  let files_of_dir (p:string) : string list =
+    Error.guard (Error.wrapf "expanding subdir of_dir %S" p) @@ fun () ->
+    CCIO.File.walk_l p
+    |> CCList.filter_map
+      (fun (kind,f) -> match kind with
+         | `File -> Some f
+         | _ -> None)
 
   let run ~n dirs =
-    E.map_l files_of_dir dirs
-    >|= List.flatten
-    >|= Array.of_list
-    >>= fun files ->
+    catch_err @@ fun () ->
+    let files = CCList.flat_map files_of_dir dirs |> Array.of_list in
     let len = Array.length files in
-    begin
-      if len < n
-      then E.failf "not enough files (need %d, got %d)" n len
-      else E.return ()
-    end
-    >>= fun () ->
+    if len < n then (
+      Error.failf "not enough files (need %d, got %d)" n len
+    );
     (* sample the list *)
     let sample_idx =
       CCRandom.sample_without_duplicates
@@ -186,7 +174,7 @@ module Sample = struct
     let sample = CCList.map (Array.get files) sample_idx in
     (* print sample *)
     Misc.synchronized (fun () -> List.iter (Printf.printf "%s\n%!") sample);
-    E.return ()
+    ()
 
   (* sub-command to sample a directory *)
   let cmd =
@@ -209,11 +197,12 @@ module Dir = struct
   let which_conv = Cmdliner.Arg.(enum ["config", Config; "state", State])
 
   let run c =
+    catch_err @@ fun () ->
     Format.printf "%s@."
       (match c with
        | Config -> Misc.config_dir()
        | State -> Misc.data_dir ());
-    Ok ()
+    ()
 
   (* sub-command for showing results *)
   let cmd =
@@ -231,17 +220,16 @@ end
 
 module Check_config = struct
   let run debug with_default f =
+    catch_err @@ fun () ->
     Misc.setup_logs debug;
     let default_file = Misc.default_config () in
     let f =
       if f=[] then (
         if Sys.file_exists default_file then [default_file] else []
       ) else if with_default && Sys.file_exists default_file then Misc.default_config() :: f else f in
-    match Stanza.parse_files f with
-    | Ok c ->
-      Format.printf "@[<v>%a@]@." Stanza.pp_l c;
-      Ok ()
-    | Error _ as e -> e
+    let l = Stanza.parse_files f in
+    Format.printf "@[<v>%a@]@." Stanza.pp_l l;
+    ()
 
   let cmd =
     let open Cmdliner in
@@ -261,11 +249,10 @@ end
 
 module Prover_show = struct
   let run defs names =
-    begin
-      let* l = E.map_l (Definitions.find_prover' defs) names in
-      Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
-      Ok ()
-    end
+    catch_err @@ fun () ->
+    let l = CCList.map (Definitions.find_prover' defs) names in
+    Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
+    ()
 
   let cmd =
     let open Cmdliner in
@@ -278,9 +265,10 @@ end
 
 module Prover_list = struct
   let run defs =
+    catch_err @@ fun () ->
     let l = Definitions.all_provers defs in
     Format.printf "@[<v>%a@]@." (Misc.pp_list @@ Fmt.map With_loc.view Prover.pp_name) l;
-    Ok ()
+    ()
 
   let cmd =
     let open Cmdliner in
@@ -292,12 +280,10 @@ end
 
 module Task_show = struct
   let run defs names =
-    begin
-      let open E.Infix in
-      E.map_l (Definitions.find_task' defs) names >>= fun l ->
-      Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
-      Ok ()
-    end
+    catch_err @@ fun () ->
+    let l = CCList.map (Definitions.find_task' defs) names in
+    Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
+    ()
 
   let cmd =
     let open Cmdliner in
@@ -310,9 +296,10 @@ end
 
 module Task_list = struct
   let run defs =
+    catch_err @@ fun () ->
     let l = Definitions.all_tasks defs in
     Format.printf "@[<v>%a@]@." (Misc.pp_list @@ Fmt.map With_loc.view Task.pp_name) l;
-    Ok ()
+    ()
 
   let cmd =
     let open Cmdliner in
@@ -324,6 +311,7 @@ end
 
 module Sql_convert = struct
   let run defs files =
+    catch_err @@ fun () ->
     Sql_res.run defs files
 
   (* sub-command for showing results *)
@@ -354,6 +342,7 @@ let parse_opt () =
     Term.(ret (pure (fun () -> `Help (`Pager, None)) $ pure ())),
     Term.info ~version:"dev" ~man ~doc "benchpress"
   in
+
   Cmdliner.Term.eval_choice help [
     Dir.cmd;
     Run.cmd;
@@ -374,7 +363,5 @@ let () =
   if Sys.getenv_opt "PROFILE"=Some "1" then Profile.enable();
   match parse_opt () with
   | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
-  | `Ok (Ok ()) | `Version | `Help -> ()
-  | `Ok (Error e) ->
-    Format.eprintf "%a@." Error.pp e;
-    exit 1
+  | `Ok true | `Version | `Help -> ()
+  | `Ok false -> exit 1

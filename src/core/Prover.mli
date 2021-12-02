@@ -6,7 +6,6 @@
 *)
 
 open Common
-type 'a or_error = 'a Or_error.t
 
 (** {2 Prover configurations} *)
 
@@ -122,12 +121,12 @@ module Map_name : CCMap.S with type key = t
 module Map : CCMap.S with type key = t
 module Set : CCSet.S with type elt = t
 
-val db_prepare : Db.t -> unit or_error
+val db_prepare : Db.t -> unit
 
-val to_db : Db.t -> t -> unit or_error
+val to_db : Db.t -> t -> unit
 
-val of_db : Db.t -> name -> t or_error
+val of_db : Db.t -> name -> t
 val tags_of_db : Db.t -> string list
 
-val db_names : Db.t -> name list or_error
+val db_names : Db.t -> name list
 (** Names of provers in this DB *)

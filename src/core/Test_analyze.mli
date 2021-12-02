@@ -1,7 +1,7 @@
 
 (** Analyze results of one file *)
 
-open Misc
+open Common
 open Test
 
 type t = {
@@ -17,11 +17,11 @@ type t = {
   total     : int;
 }
 
-val of_db_for : ?full:bool -> Db.t -> prover:Prover.name -> t or_error
-val of_db : ?full:bool -> Db.t -> (Prover.name * t) list or_error
+val of_db_for : ?full:bool -> Db.t -> prover:Prover.name -> t
+val of_db : ?full:bool -> Db.t -> (Prover.name * t) list
 
-val of_db_dirs : Db.t -> string list or_error
-val of_db_n_bad : Db.t -> int or_error
+val of_db_dirs : Db.t -> string list
+val of_db_n_bad : Db.t -> int
 (** Compute number of bad results *)
 
 val to_printbox_l : ?link:prover_string_linker ->

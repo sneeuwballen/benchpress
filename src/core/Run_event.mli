@@ -2,9 +2,7 @@
 
 (** {1 Event Stored on Disk or Transmitted on Network} *)
 
-module Db = Sqlite3_utils
-
-type 'a or_error = 'a Or_error.t
+open Common
 
 type prover  = Prover.t
 type checker = Proof_checker.t
@@ -20,8 +18,8 @@ val mk_checker : (Prover.name * Proof_checker.name, Proof_check_res.t) Run_resul
 
 val pp : t CCFormat.printer
 
-val db_prepare : Db.t -> unit or_error
-val to_db_prover_result : Db.t -> (Prover.name, Res.t) Run_result.t -> unit or_error
-val to_db: Db.t -> t -> unit or_error
+val db_prepare : Db.t -> unit
+val to_db_prover_result : Db.t -> (Prover.name, Res.t) Run_result.t -> unit
+val to_db: Db.t -> t -> unit
 
-val of_db_l : Db.t -> t list or_error
+val of_db_l : Db.t -> t list

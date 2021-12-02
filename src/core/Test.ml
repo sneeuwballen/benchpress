@@ -4,10 +4,9 @@
 
 open Misc
 
-type result = (Prover.name, Res.t) Run_result.t
-type 'a or_error = 'a Or_error.t
-
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.test"))
+
+type result = (Prover.name, Res.t) Run_result.t
 
 (** {2 URL providers} *)
 
@@ -58,10 +57,10 @@ let pb_int_color c n =
   else text_with_style (Style.set_bold true c) (string_of_int n)
 
 (* list provers from the main table *)
-let list_provers db : string list or_error =
+let list_provers db : string list =
   Db.exec_no_params db
     {| select distinct prover from prover_res ; |}
     ~ty:Db.Ty.(p1 text, id) ~f:Db.Cursor.to_list_rev
-  |> Misc.db_err_with ~ctx:"listing provers"
+  |> Misc.unwrap_db (fun() -> "listing provers")
 
 

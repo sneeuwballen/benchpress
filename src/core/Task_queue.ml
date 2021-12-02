@@ -1,7 +1,7 @@
 
 (** {1 Task queue for the server} *)
 
-module Fmt = CCFormat
+open Common
 module M = CCLock
 
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.task-queue"))
@@ -92,15 +92,14 @@ let loop self =
           job.j_eta <- eta;
         method on_done = ()
       end in
-      match
+      try
         Exec_action.run defs job.j_action ~cb_progress
           ~interrupted:(fun () -> Job.interrupted job)
       with
-      | Ok () -> ()
-      | Error e ->
+      | Error.E e ->
         Log.err
           (fun k->k "error while running job %s:@ %a" job.j_task.Task.name Error.pp e);
-      | exception e ->
+      | e ->
         Log.err
           (fun k->k "error while running job %s:@ %s"
               job.j_task.Task.name (Printexc.to_string e));

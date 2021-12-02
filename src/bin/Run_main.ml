@@ -1,7 +1,5 @@
+open Common
 module T = Test
-module E = Or_error
-open E.Infix
-type 'a or_error = 'a Or_error.t
 
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
 
@@ -9,24 +7,25 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
 let execute_run_prover_action
     ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid ~save
     (r:Action.run_provers)
-  : (_ * Test_compact_result.t) or_error =
+  : (_ * Test_compact_result.t) =
   begin
+    Error.guard (Error.wrapf "run prover action %a" Action.pp_run_provers r) @@ fun () ->
     let interrupted = CCLock.create false in
-    Exec_action.Exec_run_provers.expand ?dyn ?j ?limits r >>= fun r ->
+    let r = Exec_action.Exec_run_provers.expand ?dyn ?j ?limits r in
     let len = List.length r.problems in
     Notify.sendf notify "testing with %d provers, %d problems…"
       (List.length r.provers) len;
     let progress =
       Exec_action.Progress_run_provers.make ?pp_results ?dyn r in
     (* solve *)
-    let* result =
+    let result =
+      Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
       Exec_action.Exec_run_provers.run ~uuid ?timestamp
         ~interrupted:(fun () -> CCLock.get interrupted)
         ~on_solve:progress#on_res ~save ~on_done:(fun _ -> progress#on_done) r
-      |> E.wrapf "running %d tests" len
     in
-    E.return result
-  end |> E.wrap "running tests"
+    result
+  end
 
 type top_task =
   | TT_run_provers of Action.run_provers
@@ -34,7 +33,7 @@ type top_task =
 
 let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
     ?meta:_ ?summary ?task ?dir_file ?(save=true)
-    (defs:Definitions.t) paths () : unit or_error =
+    (defs:Definitions.t) paths () : unit =
   Log.info
     (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
   let timestamp = Unix.gettimeofday() in
@@ -47,33 +46,37 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       List.rev_append f_lines paths
   in
   (* parse config *)
-  begin match task with
+  let tt_task =
+    match task with
     | Some task_name ->
-      begin Definitions.find_task defs task_name >>= function
+      let t = Definitions.find_task defs task_name in
+      begin match t with
         | {view={Task.action=Action.Act_run_provers r;_};loc} ->
+          Error.guard (Error.wrap ~loc "running task 'run provers'") @@ fun () ->
           (* convert paths and provers *)
-          begin
-            E.map_l (Definitions.mk_subdir defs) paths >>= fun paths ->
-            E.map_l (Definitions.find_prover' defs) provers >>= fun provers ->
-            let provers =
-              provers @ r.provers
-              |> CCList.sort_uniq ~cmp:Prover.compare_by_name
-            in
-            let r = {r with provers; dirs=paths @ r.dirs} in
-            Ok (TT_run_provers r)
-          end |> E.wrap ~loc "running task 'run provers'"
+          let paths = CCList.map (Definitions.mk_subdir defs) paths in
+          let provers = CCList.map (Definitions.find_prover' defs) provers in
+          let provers =
+            provers @ r.provers
+            |> CCList.sort_uniq ~cmp:Prover.compare_by_name
+          in
+          let r = {r with provers; dirs=paths @ r.dirs} in
+          TT_run_provers r
+
         | {loc=_;view=t} ->
-          Ok (TT_other t.action)
+          TT_other t.action
       end
     | None ->
-      (match provers with
-       | [] -> E.fail "please provide at least one prover"
-       | l -> Ok l
-      ) >>= fun provers ->
+      let provers =
+        match provers with
+       | [] -> Error.fail "please provide at least one prover"
+       | l -> l
+      in
       let provers = CCList.sort_uniq ~cmp:Prover.compare_name provers in (* deduplicate *)
-      Definitions.mk_run_provers ~loc:None ?timeout ?memory ?j ~provers ~paths defs >>= fun r ->
-      Ok (TT_run_provers r)
-  end >>= fun tt_task ->
+      let r =
+        Definitions.mk_run_provers ~loc:None ?timeout ?memory ?j ~provers ~paths defs in
+      TT_run_provers r
+  in
   begin match tt_task with
     | TT_other a ->
       Exec_action.run ~save defs a
@@ -83,21 +86,20 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       let limits = run_provers_action.limits in
       (* run action here! *)
       let uuid = Misc.mk_uuid() in
-      execute_run_prover_action
-        ~uuid ?pp_results ?dyn:progress ~limits ?j ~notify ~timestamp ~save
-        run_provers_action
-      >>= fun (top_res, (results:Test_compact_result.t)) ->
-      let*() = if CCOpt.is_some csv then (
-          let+ res = Lazy.force top_res in
-          Bin_utils.dump_csv ~csv res;
-        ) else E.return ()
+
+      let (top_res, (results:Test_compact_result.t)) =
+        execute_run_prover_action
+          ~uuid ?pp_results ?dyn:progress ~limits ?j ~notify ~timestamp ~save
+          run_provers_action
       in
-      let* () =
-        if CCOpt.is_some summary then (
-          let+ res = Lazy.force top_res in
-          Bin_utils.dump_summary ~summary res
-        ) else E.return()
-      in
+      if CCOpt.is_some csv then (
+        let res = Lazy.force top_res in
+        Bin_utils.dump_csv ~csv res;
+      );
+      if CCOpt.is_some summary then (
+        let res = Lazy.force top_res in
+        Bin_utils.dump_summary ~summary res
+      );
       (* now fail if results were bad *)
       let r = Bin_utils.check_compact_res notify results in
       Notify.sync notify;

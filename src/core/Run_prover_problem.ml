@@ -1,14 +1,13 @@
 (* This file is free software. See file "license" for more details. *)
 
-module Fmt = CCFormat
-module E = Or_error
+open Common
 
-type 'a or_error = 'a Or_error.t
 type path = string
 type job_res= (Prover.name, Res.t) Run_result.t
 
 (* run one particular test *)
-let run_exn_ ~limits prover pb =
+let run ~limits prover pb =
+  Error.guard (Error.wrapf "run prover '%s' on problem '%s'" prover.Prover.name pb.Problem.name) @@ fun () ->
   Profile.with_ "run-prover" ~args:["prover",prover.Prover.name] @@ fun () ->
 
   let timeout = CCOpt.get_or ~default:Limit.Time.(mk ~s:30 ()) limits.Limit.All.time in
@@ -27,10 +26,6 @@ let run_exn_ ~limits prover pb =
          prover.Prover.binary pb.Problem.name
          raw.stdout raw.stderr raw.errcode);
   result
-
-let run ~limits prover pb : _ E.t =
-  try run_exn_ ~limits prover pb |> E.return
-  with e -> E.of_exn e
 
 let pp_result ~w_prover ~w_pb out (res:Test.result): unit =
   let pp_res out () : unit =

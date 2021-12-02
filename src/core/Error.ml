@@ -33,6 +33,25 @@ let of_exn ?loc e =
 let wrap ?loc msg e = { msg; loc; ctx_of=Some e }
 let wrapf ?loc fmt = Fmt.kasprintf (wrap ?loc) fmt
 
+let fail ?loc msg = raise (make ?loc msg)
+let failf ?loc fmt = Fmt.kasprintf (fail ?loc) fmt
+
+let guard wrap f =
+  try f()
+  with
+  | E e -> raise (wrap e)
+  | exn -> raise (wrap (of_exn exn))
+
+let unwrap = function
+  | Ok x -> x
+  | Error e -> raise e
+
+let unwrap_opt' ?loc msg = function
+  | Some x -> x
+  | None -> fail ?loc (msg())
+
+let unwrap_opt ?loc msg o = unwrap_opt' ?loc (fun()->msg) o
+
 let hbar = String.make 60 '-'
 
 let pp out (self:t) =

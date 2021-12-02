@@ -1,7 +1,6 @@
 (* This file is free software. See file "license" for more details. *)
 
-module Fmt = CCFormat
-type 'a or_error = 'a Or_error.t
+open Common
 
 type path = string
 type t = {
@@ -16,13 +15,13 @@ val find_expect :
   ?default_expect:Res.t ->
   expect:Dir.expect ->
   path ->
-  Res.t or_error
+  Res.t
 (** FInd the expected result for this given problem *)
 
 val make_find_expect :
   expect:Dir.expect ->
   path ->
-  t or_error
+  t
 (** [make_find_expect ~expect file] tries to find the expected
     result of [file] using [expect], and
     makes a problem if it finds the result

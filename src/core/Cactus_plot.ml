@@ -8,32 +8,29 @@ type t = {
 }
 
 let of_db db =
+  Error.guard (Error.wrap "producting cactus plot") @@ fun () ->
   Profile.with_ "plot.of-db" @@ fun () ->
-  Misc.err_with
-    ~map_err:(Error.wrapf "plotting DB")
-    (fun scope ->
-       let provers = list_provers db |> scope.unwrap in
-       Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
-       let has_custom_tags =
-         try ignore (Db.exec0_exn db "select 1 from custom_tags;"); true
-         with _ -> false
-       in
-       let get_prover prover =
-         Db.exec db
-           (Printf.sprintf {| select rtime from prover_res
+  let provers = list_provers db in
+  Logs.debug (fun k->k "provers: [%s]" (String.concat ";" provers));
+  let has_custom_tags =
+    try ignore (Db.exec0_exn db "select 1 from custom_tags;"); true
+    with _ -> false
+  in
+  let get_prover prover =
+    Db.exec db
+      (Printf.sprintf {| select rtime from prover_res
             where prover=? and
             (res in ('sat','unsat')
              %s
              )
             order by rtime|}
-              (if has_custom_tags then "or exists (select 1 from custom_tags where tag=res)" else ""))
-           prover
-           ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
-         |> scope.unwrap_with Misc.err_of_db
-       in
-       let lines = CCList.map (fun p -> "", p, get_prover p) provers in
-       { lines }
-    )
+         (if has_custom_tags then "or exists (select 1 from custom_tags where tag=res)" else ""))
+      prover
+      ~ty:Db.Ty.(p1 text, p1 float, id) ~f:Db.Cursor.to_list
+    |> Misc.unwrap_db (fun() -> spf "obtaining values for prover '%s'" prover)
+  in
+  let lines = CCList.map (fun p -> "", p, get_prover p) provers in
+  { lines }
 
 let combine (l:(_*t) list) : t =
   {lines=
@@ -41,12 +38,13 @@ let combine (l:(_*t) list) : t =
        List.map (fun (pre2,prover,line) -> pre1^pre2,prover,line) plot.lines) l
   }
 
-let of_file file : t or_error =
+let of_file file : t =
   try
     Db.with_db ~timeout:500 ~mode:`READONLY file of_db
-  with e -> E.of_exn e
+  with e -> Error.(raise @@ of_exn e)
 
 let to_gp ~output self =
+  Error.guard (Error.wrap "plot.gnuplot") @@ fun () ->
   Profile.with_ "plot.gnuplot" @@ fun () ->
   Gp.with_ (fun gp ->
       let series =

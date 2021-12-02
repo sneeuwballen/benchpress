@@ -1,10 +1,6 @@
 module T = Test
-module E = Or_error
 module Db = Misc.Db
 module MStr = Misc.Str_map
-
-open E.Infix
-type 'a or_error = 'a Or_error.t
 
 let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in
@@ -19,15 +15,12 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
     in
     let conf_files = List.map Xdg.interpolate_home conf_files in
     Logs.info (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
-    begin match Stanza.parse_files conf_files with
-      | Ok x ->
-        begin match Definitions.add_stanza_l x Definitions.empty with
-          | Ok x -> `Ok x
-          | Error e -> `Error (false, Error.show e)
-        end
-      | Error e ->
-        `Error (false, Error.show e)
-    end
+    try
+      let stanzas = Stanza.parse_files conf_files in
+      let defs = Definitions.add_stanza_l stanzas Definitions.empty in
+      `Ok defs
+    with
+    | Error.E err -> `Error (false, Error.show err)
   in
   let args =
     Arg.(value & opt_all (list ~sep:',' string) [] &
@@ -37,7 +30,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
   in
   Term.(ret (pure aux $ args $ debug))
 
-let get_definitions () : Definitions.t or_error =
+let get_definitions () : Definitions.t =
   let conf_files =
     let default_conf = Misc.default_config () in
     (* always add default config file if it exists *)
@@ -46,8 +39,7 @@ let get_definitions () : Definitions.t or_error =
   in
   let conf_files = List.map Xdg.interpolate_home conf_files in
   Logs.info (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
-  let open E.Infix in
-  let* l = Stanza.parse_files conf_files in
+  let l = Stanza.parse_files conf_files in
   (* combine configs *)
   Definitions.of_stanza_l l
 
@@ -72,23 +64,22 @@ let dump_summary ~summary results : unit =
            Format.fprintf out "%a@." Test_top_result.pp_compact results);
   end
 
-let check_res_an notify a : unit or_error =
+let check_res_an notify a : unit =
   if List.for_all (fun (_,r) -> Test_analyze.is_ok r) a
   then (
     Notify.send notify "OK";
-    E.return ()
   ) else (
     let n_fail =
       List.fold_left (fun n (_,r) -> n + Test_analyze.num_bad r) 0 a
     in
     Notify.sendf notify "FAIL (%d failures)" n_fail;
-    E.failf "FAIL (%d failures)" n_fail
+    Error.failf "FAIL (%d failures)" n_fail
   )
 
-let check_compact_res notify (results:Test_compact_result.t) : unit or_error =
+let check_compact_res notify (results:Test_compact_result.t) : unit =
   check_res_an notify (results.Test_compact_result.cr_analyze)
 
-let check_res notify (results:Test_top_result.t) : unit or_error =
+let check_res notify (results:Test_top_result.t) : unit =
   let a = Test_top_result.analyze results in
   check_res_an notify a
 
@@ -132,13 +123,13 @@ let list_entries data_dir =
   |> List.sort (fun x y->CCOrd.(pair CCString.compare_natural int) y x)
 
 (* find absolute path of [f] in the data dir *)
-let mk_file_full (f:string) : string or_error =
+let mk_file_full (f:string) : string =
   let dir = Filename.concat (Xdg.data_dir()) !(Xdg.name_of_project) in
   let file = Filename.concat dir f in
   if not @@ Sys.file_exists file then (
-    Error (Error.makef "cannot find file '%s'" f)
+    Error.failf "cannot find file '%s'" f
   ) else (
-    Ok file
+    file
   )
 
 let guess_uuid (f:string) =
@@ -151,51 +142,40 @@ let guess_uuid (f:string) =
     None
 
 (** Load file by name *)
-let load_file_full (f:string) : (string*Test_top_result.t) Or_error.t =
-  try
-    match mk_file_full f with
-    | Error _ as e -> e
-    | Ok file ->
-      if Filename.check_suffix f ".sqlite" then (
-        try
-          Db.with_db ~timeout:1500 ~mode:`NO_CREATE file
-            (fun db ->
-               let+ r = Test_top_result.of_db db in
-               file, r)
-        with e -> E.of_exn e
-      ) else (
-        E.failf "invalid name %S, expected a .sqlite file" f
-      )
-  with e -> E.of_exn e
-
-let with_file_as_db ~map_err filename f : _ result =
-  CCResult.map_err map_err @@
-  Misc.err_with
-    ~map_err:(Error.wrapf "processing DB '%s'" filename)
-    (fun scope ->
-       let filename =
-         mk_file_full filename |> scope.unwrap in
-       try
-         Db.with_db ~timeout:500 ~mode:`READONLY filename
-           (fun db -> f (scope, db))
-       with
-       | Db.RcError rc ->
-         scope.unwrap_with Misc.err_of_db (Error rc)
-       | e -> scope.unwrap (E.of_exn e))
-
-let load_file f = E.map snd @@ load_file_full f
-
-let load_file_summary ?(full=false) (f:string) : (string * Test_compact_result.t) or_error =
-  if Filename.check_suffix f ".sqlite" then (
-    match mk_file_full f with
-    | Error _ as e -> e
-    | Ok file ->
-      Db.with_db ~timeout:500 ~mode:`READONLY file
-        (fun db ->
-           Test_compact_result.of_db ~full db >>= fun cr ->
-           E.return (file, cr))
+let load_file_full (file:string) : string*Test_top_result.t =
+  let file = mk_file_full file in
+  if Filename.check_suffix file ".sqlite" then (
+    Error.guard (Error.wrapf "load_file_full '%s'" file) @@ fun () ->
+    Db.with_db ~timeout:1500 ~mode:`NO_CREATE file
+      (fun db ->
+         let r = Test_top_result.of_db db in
+         file, r)
   ) else (
-    load_file_full f >>= fun (f,res) ->
-    Test_top_result.to_compact_result res >>= fun cr ->
-    E.return (f, cr)
+    Error.failf "invalid name %S, expected a .sqlite file" file
+  )
+
+let with_file_as_db ~map_err filename file : _ =
+  Error.guard map_err @@ fun () ->
+  Error.guard (Error.wrapf "processing DB '%s'" filename) @@ fun () ->
+  let filename = mk_file_full filename in try
+    Db.with_db ~timeout:500 ~mode:`READONLY filename file
+  with
+  | Error.E _ as e -> raise e
+  | Db.RcError rc -> Error.raise (Misc.err_of_db rc)
+  | e -> Error.raise (Error.of_exn e)
+
+let load_file f = snd @@ load_file_full f
+
+let load_file_summary ?(full=false)
+    (file:string) : string * Test_compact_result.t =
+  if Filename.check_suffix file ".sqlite" then (
+    let file = mk_file_full file in
+    Db.with_db ~timeout:500 ~mode:`READONLY file
+      (fun db ->
+         let cr = Test_compact_result.of_db ~full db in
+         file, cr)
+  ) else (
+    let file', res = load_file_full file in
+    let cr = Test_top_result.to_compact_result res in
+    file', cr
   )

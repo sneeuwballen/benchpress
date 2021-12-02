@@ -3,10 +3,8 @@
 
 (** {1 Definitions} *)
 
-module E = Or_error
-module Fmt = CCFormat
+open Common
 type path = string
-type 'a or_error = 'a Or_error.t
 type 'a with_loc = 'a With_loc.t
 
 type t
@@ -18,10 +16,10 @@ type def =
 
 val empty : t
 
-val find_prover : t -> string -> Prover.t with_loc or_error
-val find_prover' : t -> string -> Prover.t or_error
-val find_task : t -> string -> Task.t with_loc or_error
-val find_task' : t -> string -> Task.t or_error
+val find_prover : t -> string -> Prover.t with_loc
+val find_prover' : t -> string -> Prover.t
+val find_task : t -> string -> Task.t with_loc
+val find_task' : t -> string -> Task.t
 val find : t -> string -> def option
 val errors : t -> Error.t list
 val to_iter : t -> (string * def) Iter.t
@@ -39,13 +37,13 @@ end
 val option_j : t -> int option
 val option_progress : t -> bool option
 
-val add_stanza : Stanza.t -> t -> t or_error
+val add_stanza : Stanza.t -> t -> t
 
-val add_stanza_l : Stanza.t list -> t -> t or_error
+val add_stanza_l : Stanza.t list -> t -> t
 
-val of_stanza_l : Stanza.t list -> t or_error
+val of_stanza_l : Stanza.t list -> t
 
-val mk_subdir : t -> string -> Subdir.t or_error
+val mk_subdir : t -> string -> Subdir.t
 
 val mk_run_provers :
   ?j:int ->
@@ -57,7 +55,7 @@ val mk_run_provers :
   provers:string list ->
   loc:Loc.t option ->
   t ->
-  Action.run_provers or_error
+  Action.run_provers
 (** Build a "run" action from the given prover names
     and directory paths.
     All the provers must be defined, and the paths must be contained

@@ -1,7 +1,7 @@
 
 (** Task queue for the server *)
 
-module Fmt = CCFormat
+open Common
 
 module Job : sig
   type t

@@ -1,7 +1,6 @@
 
 
 open Common
-type 'a or_error = 'a Or_error.t
 
 type name = string
 type t = {
@@ -67,7 +66,7 @@ let analyze_res (self:t) (res:Run_proc_result.t) : Res.t =
     Res.Unknown "no match"
   )
 
-let db_prepare (db:Db.t) : unit or_error =
+let db_prepare (db:Db.t) : unit =
   Db.exec0 db {|
   create table if not exists
     proof_checker (
@@ -77,33 +76,27 @@ let db_prepare (db:Db.t) : unit or_error =
       invalid text not null
     );
     |}
-  |> Misc.db_err_with ~ctx:"creating prover table"
+  |> Misc.unwrap_db (fun() -> "creating proof checker table")
 
-let to_db db (self:t) : unit or_error =
-  Misc.err_with @@ fun scope ->
+let to_db db (self:t) : unit =
   Db.exec_no_cursor db
     {|insert into proof_checker values (?,?,?,?) on conflict do nothing;
       |}
     ~ty:Db.Ty.([text; text; blob; blob])
     self.name self.cmd self.valid self.invalid
-  |> Misc.db_err_with ~ctx:"proof_checker.to-db" |> scope.unwrap;
-  ()
+  |> Misc.unwrap_db (fun() -> "proof_checker.to-db")
 
-let db_names db : string list or_error =
+let db_names db : string list =
   Db.exec_no_params db
     {| select unique name from proof_checker ; |}
     ~f:Db.Cursor.to_list_rev ~ty:Db.Ty.([text], fun x->x)
-  |> CCResult.map_err Misc.err_of_db
-  |> CCResult.map_err (Error.wrap "obtaining list of proof checkers")
+  |> Misc.unwrap_db (fun() -> "obtaining list of proof checkers")
 
-let of_db db (name:string) : t or_error =
-  Misc.err_with
-    ~map_err:(Error.wrapf "parsing prover %s" name) @@ fun scope ->
+let of_db db (name:string) : t =
   Db.exec db
     {|select cmd, valid, invalid from proof_checker where name=? ; |}
     name ~f:Db.Cursor.next
     ~ty:Db.Ty.([text], [text;blob;blob],
                fun cmd valid invalid -> {name; cmd; valid; invalid})
-  |> scope.unwrap_with Misc.err_of_db
-  |> CCOpt.to_result (Error.make "expected a result")
-  |> scope.unwrap
+  |> Misc.unwrap_db (fun() -> spf "parsing proof checker %s" name)
+  |> Error.unwrap_opt (spf "expected a result when parsing proof checker %s" name)

@@ -1,6 +1,8 @@
 
-open Misc
+open Common
 open Test
+
+module PB = PrintBox
 
 type single = {
   better: int;
@@ -13,16 +15,19 @@ type t = {
   tbl: (Prover.name * Prover.name * single) list;
 }
 
-let of_db db : t or_error =
+let of_db db : t =
   (* get a single integer *)
   let db_get db s x1 x2 =
-    Db.exec db s x1 x2 ~ty:Db.Ty.(p2 text text, p1 int, id) ~f:Db.Cursor.to_list_rev
-    |> Misc.db_err_with ~ctx:"extract comparison"
-    |> CCResult.flat_map (function [x] -> Ok x | _ -> Error (Error.make "expected a single integer"))
+    let l =
+      Db.exec db s x1 x2 ~ty:Db.Ty.(p2 text text, p1 int, id) ~f:Db.Cursor.to_list_rev
+      |> Misc.unwrap_db (fun() -> "extract comparison-short from DB")
+    in
+    match l with
+    | [x] -> x
+    | _ -> Error.failf "expected a single integer, got %a" Fmt.(Dump.list int) l
   in
-  Misc.err_with ~map_err:(Error.wrap "comparison-short.of_db")
-  @@ fun scope ->
-  let provers = list_provers db |> scope.unwrap in
+  Error.guard (Error.wrap "comparison-short.of_db") @@ fun () ->
+  let provers = list_provers db in
   (* TODO: make a single query and group-by? *)
   let tbl =
     CCList.diagonal provers
@@ -34,19 +39,19 @@ let of_db db : t or_error =
              {|select count(r1.file) from prover_res r1, prover_res r2
                   where r1.prover=? and r2.prover=? and r1.file=r2.file
                   and r1.res in ('sat','unsat') and not (r2.res in ('sat','unsat')); |}
-             p1 p2 |> scope.unwrap
+             p1 p2
          and worse =
            db_get db
              {|select count(r1.file) from prover_res r1, prover_res r2
                   where r1.prover=? and r2.prover=? and r1.file=r2.file
                   and not (r1.res in ('sat','unsat')) and (r2.res in ('sat','unsat')); |}
-             p1 p2 |> scope.unwrap
+             p1 p2
          and same =
            db_get db
              {|select count(r1.file) from prover_res r1, prover_res r2
                   where r1.prover=? and r2.prover=? and r1.file=r2.file
                   and r1.res in ('sat','unsat') and (r2.res in ('sat','unsat')); |}
-             p1 p2 |> scope.unwrap
+             p1 p2
          in
          p1, p2, {better; worse; same}
       )

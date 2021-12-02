@@ -1,6 +1,8 @@
 
-open Misc
+open Common
 open Test
+
+module PB = PrintBox
 
 type t = {
   unsat: int;
@@ -75,49 +77,43 @@ let to_printbox_l ?to_link l : PB.t =
   PB.grid_l ~bars:true (header::rows)
 
 (* obtain stats for this prover *)
-let of_db_for ~(prover:Prover.name) (db:Db.t) : t or_error =
-  Misc.err_with
-    ~map_err:(Error.wrapf "reading stat(%s) from DB" prover)
-    (fun scope ->
-       let f c = Db.Cursor.next c
-                 |> CCOpt.to_result (Error.make "no result") |> scope.unwrap in
-       let custom = Prover.tags_of_db db in
-       let get_res r =
-         Logs.debug (fun k->k "get-res %s" r);
-         Db.exec db
-           {| select count(*) from prover_res where prover=? and res=?; |}
-           prover r ~ty:Db.Ty.(p2 text text, p1 (nullable int), CCOpt.get_or ~default:0) ~f
-         |> scope.unwrap_with Misc.err_of_db
-       in
-       let sat = get_res "sat" in
-       let unsat = get_res "unsat" in
-       let unknown = get_res "unknown" in
-       let timeout = get_res "timeout" in
-       let memory = get_res "memory" in
-       let errors = get_res "error" in
-       let custom = CCList.map (fun tag -> tag, get_res tag) custom in
-       let total =
-         sat + unsat + unknown + timeout + memory + errors
-         + List.fold_left (fun n (_,i) -> n+i) 0 custom in
-       let total_time =
-         Db.exec db {|
+let of_db_for ~(prover:Prover.name) (db:Db.t) : t =
+  Error.guard (Error.wrapf "reading stat(%s) from DB" prover) @@ fun () ->
+  let f c = Db.Cursor.next c |> Error.unwrap_opt "no result" in
+  let custom = Prover.tags_of_db db in
+  let get_res r =
+    Logs.debug (fun k->k "get-res %s" r);
+    Db.exec db
+      {| select count(*) from prover_res where prover=? and res=?; |}
+      prover r ~ty:Db.Ty.(p2 text text, p1 (nullable int), CCOpt.get_or ~default:0) ~f
+    |> Misc.unwrap_db (fun() -> spf "problems with result %s" r)
+  in
+  let sat = get_res "sat" in
+  let unsat = get_res "unsat" in
+  let unknown = get_res "unknown" in
+  let timeout = get_res "timeout" in
+  let memory = get_res "memory" in
+  let errors = get_res "error" in
+  let custom = CCList.map (fun tag -> tag, get_res tag) custom in
+  let total =
+    sat + unsat + unknown + timeout + memory + errors
+    + List.fold_left (fun n (_,i) -> n+i) 0 custom in
+  let total_time =
+    Db.exec db {|
         select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
           |} prover
-           ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.) ~f
-         |> scope.unwrap_with Misc.err_of_db
-       in
-       { sat; unsat; timeout; memory; unknown; errors; custom; total; total_time; }
-    )
+      ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.) ~f
+    |> Misc.unwrap_db (fun() -> spf "obtaining total time for %s" prover)
+  in
+  { sat; unsat; timeout; memory; unknown; errors; custom; total; total_time; }
 
-let of_db (db:Db.t) : (Prover.name * t) list or_error =
+let of_db (db:Db.t) : (Prover.name * t) list =
   Profile.with_ "stat.of-db" @@ fun () ->
-  Misc.err_with
-    ~map_err:(Error.wrap "reading stats from DB")
-    (fun scope ->
-       let provers = list_provers db |> scope.unwrap in
-       CCList.map
-         (fun p -> p, of_db_for db ~prover:p |> scope.unwrap)
-         provers)
+  Error.guard (Error.wrap "reading statistics from DB") @@ fun () ->
+  let provers = list_provers db in
+  CCList.map
+    (fun p -> p, of_db_for db ~prover:p)
+    provers
 
 let pp out (s:t) : unit =
   Fmt.fprintf out

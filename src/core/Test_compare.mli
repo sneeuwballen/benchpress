@@ -1,7 +1,7 @@
 
 (** Compare two result files *)
 
-open Misc
+open Common
 type filename = string
 
 module Short : sig
@@ -16,7 +16,7 @@ module Short : sig
 
   val to_printbox : t -> PrintBox.t
 
-  val make : filename -> filename -> (Prover.name * t) list or_error
+  val make : filename -> filename -> (Prover.name * t) list
 end
 
 (* TODO

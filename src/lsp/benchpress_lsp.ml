@@ -1,12 +1,14 @@
 
 module Loc = Benchpress.Loc
 module Stanza = Benchpress.Stanza
-module E = Benchpress.Or_error
 module Error = Benchpress.Error
 module Definitions = Benchpress.Definitions
 module Sexp_loc = Benchpress.Sexp_loc
 
 module Lock = CCLock
+
+type 'a or_error = ('a, Error.t) result
+module E = CCResult
 
 module IO = Linol.Blocking_IO
 module L = Linol.Jsonrpc2.Make(IO)
@@ -17,8 +19,8 @@ type loc = Loc.t
 
 type processed_buf = {
   text: string;
-  stanzas: Stanza.t list E.t;
-  defs: Definitions.t E.t;
+  stanzas: Stanza.t list or_error;
+  defs: Definitions.t or_error;
 }
 
 let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
@@ -87,6 +89,10 @@ let find_atom_under_ (s:string) (pos:Loc.pos) : string option =
   | Exit -> None
   | E s -> Some s
 ;;
+
+let catch_e f =
+  try Ok (f())
+  with Error.E e -> Error e
 
 class blsp = object(self)
   inherit L.server
@@ -205,9 +211,13 @@ class blsp = object(self)
       (uri:Lsp.Types.DocumentUri.t) (contents:string) =
     Log.debug (fun k->k"on doc %s" uri);
     let open E.Infix in
-    let stanzas = Stanza.parse_string ~reify_errors:true ~filename:uri contents in
+    let stanzas =
+      catch_e @@ fun () ->
+      Stanza.parse_string ~reify_errors:true ~filename:uri contents
+    in
     let defs =
       let* stanzas = stanzas in
+      catch_e @@ fun () ->
       Definitions.of_stanza_l stanzas
     in
     let pdoc = {stanzas; defs; text=contents} in

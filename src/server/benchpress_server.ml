@@ -1,6 +1,6 @@
 (* run tests, or compare results *)
+open Common
 module T = Test
-module E = CCResult
 
 module H = Tiny_httpd
 module U = Tiny_httpd_util
@@ -218,37 +218,44 @@ let uri_show_csv file = spf "/show_csv/%s" (U.percent_encode file)
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
 
+exception E of Error.t * int
+
+let fail code e = raise (E(e,code))
+let failf code fmt = Fmt.kasprintf (fun s -> fail code (Error.make s)) fmt
+
+let guardf code wrap f =
+  try f()
+  with
+  | Error.E err -> raise (E (wrap err, code))
+  | E (err,code) -> raise (E (wrap err, code))
+
 (* wrap the query to turn results into failed queries
    @param f takes a chrono and a [scope] for failing *)
-let query_wrap mkctx
-    (f:(Misc.Chrono.t * (string*int) Misc.try_scope) -> _) =
+let query_wrap wrap (f:(Misc.Chrono.t -> _)) : H.Response.t =
   Profile.with_ "query" @@ fun () ->
   let chrono = Misc.Chrono.start () in
-  let f' scope =
-    try f (chrono, scope)
+  let f' () =
+    try f chrono
     with Sqlite3_utils.Type_error d ->
-      scope.unwrap @@
-      Error (spf "db type error on %s" (Sqlite3_utils.Data.to_string_debug d), 500)
+      failf 500 "db type error on %s" (Sqlite3_utils.Data.to_string_debug d)
   in
-  Misc.err_with f'
-    ~map_err:(fun (e,code) -> spf "in %s:\n%s" (mkctx()) e, code)
-  |> E.catch
-    ~ok:(fun h ->
-        let code = h.H.Response.code in
-        let succ = code >= 200 && code < 300 in
-        let duration = Misc.Chrono.elapsed chrono in
-        Log.debug
-          (fun k->k
-              "%s (code %d) after %.3fs for %s"
-              (if succ then "successful reply" else "failure") code duration
-              (mkctx())
-            );
-        h)
-    ~err:(fun (e,code) ->
-        let duration = Misc.Chrono.elapsed chrono in
-        Log.err (fun k->k "error after %.3fs in %s (code %d):\n%s"
-                    duration (mkctx()) code e);
-        H.Response.fail ~code "internal error for %s:\n%s" (mkctx()) e)
+
+  match guardf 500 wrap f' with
+  | h ->
+    let code = h.H.Response.code in
+    let succ = code >= 200 && code < 300 in
+    let duration = Misc.Chrono.elapsed chrono in
+    Log.debug
+      (fun k->k
+          "%s (code %d) after %.3fs"
+          (if succ then "successful reply" else "failure") code duration);
+    h
+  | exception E (e,code) ->
+    let duration = Misc.Chrono.elapsed chrono in
+    let err = wrap e in
+    Log.err (fun k->k "error after %.3fs (code %d):\n%a"
+                duration code Error.pp err);
+    H.Response.fail ~code "internal error after %.3fs:\n%s" duration (Error.show err)
 
 let to_str_with_errcode i err = Error.show err, i
 let add_errcode i err = err, i
@@ -258,11 +265,9 @@ let handle_show (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ chrono, scope = query_wrap (fun()-> uri_show file) in
+  let@@ chrono = query_wrap (Error.wrapf "serving %s" @@ uri_show file) in
   Log.info (fun k->k "----- start show %s -----" file);
-  let _file_full, cr =
-    Bin_utils.load_file_summary ~full:false file
-    |> scope.unwrap_with (to_str_with_errcode 404) in
+  let _file_full, cr = Bin_utils.load_file_summary ~full:false file in
   Log.info (fun k->k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
   let box_meta =
     (* link to the prover locally *)
@@ -354,12 +359,10 @@ let handle_prover_in (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "prover-in" @/ string_urlencoded @/ string_urlencoded @/ return)
   @@ fun file p_name _req ->
-  let@@ _chrono, scope = query_wrap (fun() -> spf "prover-in-file/%s/%s" file p_name) in
+  let@@ _chrono = query_wrap (Error.wrapf "prover-in-file/%s/%s" file p_name) in
   Log.info (fun k->k "----- start prover-in %s %s -----" file p_name);
-  scope.unwrap @@
-  let@@ scope, db =
-    Bin_utils.with_file_as_db ~map_err:(fun e -> Error.show e, 500) file in
-  let prover = Prover.of_db db p_name |> scope.unwrap in
+  let@@ db = Bin_utils.with_file_as_db ~map_err:(Error.wrapf "reading file '%s'" file) file in
+  let prover = Prover.of_db db p_name in
   let open Html in
   let h = mk_page ~title:"prover"
       [
@@ -384,38 +387,28 @@ let handle_show_gp (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-gp" @/ string_urlencoded @/ return)
   @@ fun q_arg _req ->
-  let@@ chrono, scope = query_wrap (fun() -> spf "show-gp/%s" q_arg) in
+  let@@ chrono = query_wrap (Error.wrapf "serving /show-gp/%s" q_arg) in
   Log.info (fun k->k "----- start show-gp %s -----" q_arg);
   let files = CCString.split_on_char ',' q_arg |> List.map String.trim in
   let files_full =
-    files
-    |> List.map
-      (fun file ->
-        Bin_utils.mk_file_full file
-        |> scope.unwrap_with (to_str_with_errcode 404)) in
-  let cactus_plot =
-    let open E.Infix in
-    try
-      begin match files_full with
-        | [f] -> Cactus_plot.of_file f
-        | fs ->
-          fs
-          |> List.mapi
-            (fun i f ->
-               let p =
-                 Cactus_plot.of_file f |> scope.unwrap_with (to_str_with_errcode 500)
-               in
-               spf "file %d (%s)" i (Filename.basename f), p)
-          |> Cactus_plot.combine |> E.return
-      end >|= fun plot ->
-      Cactus_plot.to_png plot
-    with e ->
-      let err = Error.of_exn e in
-      Log.err (fun k->k "failure to build a cactus plot:@ %a" Error.pp err);
-      Error err
+    CCList.map (fun file -> Bin_utils.mk_file_full file) files
+  in
+  let plot =
+    let plot =
+      match files_full with
+      | [f] -> Cactus_plot.of_file f
+      | fs ->
+        fs
+        |> List.mapi
+          (fun i file ->
+             guardf 500 (Error.wrapf "building cactus plot for %s" file) @@ fun () ->
+             let p = Cactus_plot.of_file file in
+             spf "file %d (%s)" i (Filename.basename file), p)
+        |> Cactus_plot.combine
+    in
+    Cactus_plot.to_png plot
   in
   Log.info (fun k->k "rendered to gplot in %.3fs" (Misc.Chrono.since_last chrono));
-  let plot = cactus_plot |> scope.unwrap_with (to_str_with_errcode 500) in
   Log.debug (fun k->k "encode png file of %d bytes" (String.length plot));
   Log.debug (fun k->k "successful reply for show-gp/%S" q_arg);
   H.Response.make_string
@@ -426,11 +419,9 @@ let handle_show_errors (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-err" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ chrono, scope = query_wrap (fun () -> spf "show-err/%s" file) in
+  let@@ chrono = query_wrap (Error.wrapf "serving show-err/%s" file) in
   Log.info (fun k->k "----- start show-err %s -----" file);
-  let _file_full, cr =
-    Bin_utils.load_file_summary ~full:true file
-    |> scope.unwrap_with (to_str_with_errcode 404) in
+  let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
   Log.info (fun k->k "show-err: loaded full summary in %.3fs"
                (Misc.Chrono.since_last chrono));
   let link_file = link_show_single file in
@@ -487,7 +478,7 @@ let handle_show_as_table (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_table" @/ string_urlencoded @/ return)
   @@ fun file req ->
-  let@@ chrono, scope = query_wrap (fun() -> spf "show-table/%s" file) in
+  let@@ chrono = query_wrap (Error.wrapf "serving show-table/%s" file) in
   let params = H.Request.query req in
   let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
   let filter_pb = try List.assoc "pb" params with Not_found -> "" in
@@ -496,9 +487,8 @@ let handle_show_as_table (self:t) : unit =
     with Not_found -> None
   in
   let page_size = 25 in
-  scope.unwrap @@
-  let@@ (scope, db) =
-    Bin_utils.with_file_as_db ~map_err:(fun e->Error.show e, 500) file in
+  let@@ db =
+    Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" file) file in
   let full_table =
     let link_res prover pb ~res =
       PB.link ~uri:(uri_show_single file prover pb) (PB.text res)
@@ -506,7 +496,6 @@ let handle_show_as_table (self:t) : unit =
     Test_top_result.db_to_printbox_table
       ?filter_res ~filter_pb ~offset ~link_pb:link_get_file
       ~page_size ~link_res db
-    |> scope.unwrap
   in
   Log.info (fun k->k "loaded table[offset=%d] in %.3fs"
                offset (Misc.Chrono.since_last chrono));
@@ -610,26 +599,25 @@ let l_all_expect = ["improved"; "ok"; "disappoint"; "bad"; "error"]
 
 let expect_of_string s =
   match String.trim s with
-  | "improved" -> Ok (Some Test_detailed_res.TD_expect_improved)
-  | "ok" -> Ok (Some Test_detailed_res.TD_expect_ok)
-  | "disappoint" -> Ok (Some Test_detailed_res.TD_expect_disappoint)
-  | "bad" -> Ok (Some Test_detailed_res.TD_expect_bad)
-  | "error" -> Ok (Some Test_detailed_res.TD_expect_error)
-  | "" -> Ok None
-  | e -> Error (Error.makef "unknown 'expect' filter: %S" e)
+  | "improved" -> Some Test_detailed_res.TD_expect_improved
+  | "ok" -> Some Test_detailed_res.TD_expect_ok
+  | "disappoint" -> Some Test_detailed_res.TD_expect_disappoint
+  | "bad" -> Some Test_detailed_res.TD_expect_bad
+  | "error" -> Some Test_detailed_res.TD_expect_error
+  | "" -> None
+  | e -> Error.failf "unknown 'expect' filter: %S" e
 
 (* show list of individual results with URLs to single results for a file *)
 let handle_show_detailed (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_detailed" @/ string_urlencoded @/ return)
   @@ fun db_file req ->
-  let@@ chrono, scope = query_wrap (fun() -> spf "show_detailed/%s" db_file) in
+  let@@ chrono = query_wrap (Error.wrapf "serving show_detailed/%s" db_file) in
   let params = H.Request.query req in
   let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
   let filter_res = try List.assoc "res" params with Not_found -> "" in
   let filter_expect =
-    try scope.unwrap_with (to_str_with_errcode 400) @@
-      expect_of_string @@ List.assoc "expect" params
+    try expect_of_string @@ List.assoc "expect" params
     with Not_found -> None
   in
   let filter_prover = try List.assoc "prover" params with Not_found -> "" in
@@ -637,13 +625,12 @@ let handle_show_detailed (self:t) : unit =
   let page_size = 25 in
   Log.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
                 db_file offset filter_pb filter_res filter_prover);
-  scope.unwrap @@
-  let@@ scope, db =
-    Bin_utils.with_file_as_db ~map_err:(to_str_with_errcode 500) db_file in
+  let@@ db =
+    Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" db_file) db_file in
   let l, n, complete =
     Test_detailed_res.list_keys
       ~page_size ~offset ~filter_prover ~filter_res ?filter_expect ~filter_pb db
-    |> scope.unwrap in
+  in
   Log.debug (fun k->k "got %d results in %.3fs, complete=%B"
                 (List.length l) (Misc.Chrono.elapsed chrono) complete);
   let open Html in
@@ -734,7 +721,7 @@ let handle_show_detailed (self:t) : unit =
     ];
   ]
   |> Html.to_string
-  |> E.return
+  |> CCResult.return
   |> H.Response.make_string ~headers:default_html_headers
 
 (* show invidual result *)
@@ -743,17 +730,16 @@ let handle_show_single (self:t) : unit =
     H.Route.(exact "show_single" @/ string_urlencoded @/
              string_urlencoded @/ string_urlencoded @/ return)
   @@ fun db_file prover pb_file _req ->
-  let@@ chrono, scope =
-    query_wrap (fun() -> spf "show_single db=%s prover=%s file=%s"
-                   db_file prover pb_file)
+  let@@ chrono =
+    query_wrap
+      (Error.wrapf "serving show_single db=%s prover=%s file=%s"
+         db_file prover pb_file)
   in
   Log.debug (fun k->k "show single called with prover=%s, pb_file=%s" prover pb_file);
-  H.Response.make_string ~headers:default_html_headers
-  @@ scope.unwrap @@
-  let@@ scope, db =
-    Bin_utils.with_file_as_db ~map_err:(to_str_with_errcode 500) db_file in
-  let r = Test_detailed_res.get_res db prover pb_file
-          |> scope.unwrap in
+  H.Response.make_string ~headers:default_html_headers @@
+  let@@ db =
+    Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" db_file) db_file in
+  let r = Test_detailed_res.get_res db prover pb_file in
   let pb, pb_prover, stdout, stderr =
     Test_detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
   in
@@ -781,10 +767,9 @@ let handle_show_csv (self:t): unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_csv" @/ string_urlencoded @/ return)
   @@ fun db_file req ->
-  let@@ chrono, scope = query_wrap (fun() -> spf "show_csv/%s" db_file) in
-  scope.unwrap @@
-  let@@ scope, db =
-    Bin_utils.with_file_as_db ~map_err:(to_str_with_errcode 500) db_file in
+  let@@ chrono = query_wrap (Error.wrapf "serving show_csv/%s" db_file) in
+  let@@ db =
+    Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" db_file) db_file in
   let query = H.Request.query req in
   Log.debug
     (fun k->k  "query: [%s]"
@@ -795,8 +780,7 @@ let handle_show_csv (self:t): unit =
     with _ -> None
   in
   let csv =
-    try Test_top_result.db_to_csv_string ?provers db |> scope.unwrap
-    with e -> scope.unwrap (Or_error.of_exn e)
+    Test_top_result.db_to_csv_string ?provers db
   in
   Log.debug (fun k->k "successful reply in %.3fs for /show_csv/%S/"
                 (Misc.Chrono.elapsed chrono) db_file);
@@ -812,9 +796,10 @@ let handle_compare self : unit =
     H.Route.(exact "compare" @/ return)
   @@ fun req ->
   let body = H.Request.body req |> String.trim in
-  let@@ _chrono, scope = query_wrap (fun() -> spf "compare (post) body=%s" body) in
+  let@@ _chrono = query_wrap (Error.wrapf "serving: compare (post) body=%s" body) in
   Log.debug (fun k->k "/compare: body is %s" body);
-  let body = U.parse_query body |> scope.unwrap_with (add_errcode 400) in
+  let body = U.parse_query body
+             |> Misc.unwrap_str (fun() -> spf "parse-query failed on %s" body) in
   let names =
     CCList.filter_map
       (fun (k,v) -> if v="on" then Some k else None)
@@ -827,10 +812,10 @@ let handle_compare self : unit =
       |> CCList.map
         (fun s ->
            match Bin_utils.mk_file_full s with
-           | Error e ->
+           | exception Error.E e ->
              Log.err (fun k->k "cannot load file %S" s);
              H.Response.fail_raise ~code:404 "invalid file %S: %s" s (Error.show e)
-           | Ok x -> x)
+           | x -> x)
     in
     let box_compare_l =
       let open PrintBox in
@@ -838,8 +823,8 @@ let handle_compare self : unit =
       |> CCList.map (fun (f1,f2) ->
           let c =
             match Test_compare.Short.make f1 f2 with
-            | Ok x -> x
-            | Error e ->
+            | x -> x
+            | exception Error.E e ->
               Log.err (fun k->k"cannot compare %s and %s: %s" f1 f2 @@ Error.show e);
               H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1 f2
           in
@@ -881,10 +866,10 @@ let handle_delete self : unit =
       names
       |> CCList.map
         (fun s -> match Bin_utils.mk_file_full s with
-           | Error e ->
+           | exception Error.E e ->
              Log.err (fun k->k "cannot load file %S" s);
              H.Response.fail_raise ~code:404 "invalid file %S: %s" s @@ Error.show e
-           | Ok x -> x)
+           | x -> x)
     in
     List.iter (fun file ->
         Log.info (fun k->k  "delete file %s" @@ Filename.quote file);
@@ -919,7 +904,7 @@ let handle_provers (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "provers" @/ return)
   @@ fun req ->
-  let@@ _chrono, _scope = query_wrap (fun() -> "provers") in
+  let@@ _chrono = query_wrap (Error.wrap "serving /provers/") in
   let name =
     try Some (List.assoc "name" @@ H.Request.query req)
     with _ -> None
@@ -927,8 +912,9 @@ let handle_provers (self:t) : unit =
   let provers = match name with
     | Some name ->
       begin match Definitions.find_prover' self.defs name with
-        | Ok p -> [p]
-        | Error e -> H.Response.fail_raise ~code:404 "no such prover: %s" @@ Error.show e
+        | p -> [p]
+        | exception Error.E e ->
+          H.Response.fail_raise ~code:404 "no such prover: %s" @@ Error.show e
       end
     | None -> Definitions.all_provers self.defs |> List.map With_loc.view
   in
@@ -958,7 +944,7 @@ let handle_tasks (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "tasks" @/ return)
   @@ fun _req ->
-  let@@ _chrono, _scopes = query_wrap (fun()->"tasks") in
+  let@@ _chrono = query_wrap (Error.wrap "serving /tasks/") in
   let tasks = Definitions.all_tasks self.defs |> List.map With_loc.view in
   let h =
     let open Html in
@@ -996,12 +982,11 @@ let handle_run (self:t) : unit =
   H.add_route_handler self.server ~meth:`POST
     H.Route.(exact "run" @/ string_urlencoded @/ return)
   @@ fun name _r ->
-  let@@ _chrono, scope = query_wrap (fun()->spf "run/%s" name) in
+  let@@ _chrono = query_wrap (Error.wrapf "serving /run/%s" name) in
   Log.debug (fun k->k "run task %S" name);
   let task =
+    guardf 500 (Error.wrapf "looking for task %s" name) @@ fun () ->
     Definitions.find_task' self.defs name
-    |> scope.unwrap_with
-      (fun e -> Error.wrapf "looking for task %s" name e |> to_str_with_errcode 404)
   in
   Log.debug (fun k->k "found task %s, run it" name);
   Task_queue.push self.task_q task;
@@ -1024,24 +1009,19 @@ let handle_job_interrupt (self:t) : unit =
   H.Response.make_string ~headers:default_html_headers r
 
 (* get metadata for the file *)
-let get_meta (self:t) (p:string) : _ result =
+let get_meta (self:t) (p:string) : Test_metadata.t =
   match Hashtbl.find self.meta_cache p with
-  | m -> Ok m
+  | m -> m
   | exception Not_found ->
     let res =
-      try
-        Sqlite3_utils.with_db ~cache:`PRIVATE ~mode:`READONLY p
-          (fun db -> Test_metadata.of_db db)
-      with e ->
-        Error (Error.wrapf "not a valid DB: '%s'" (Filename.basename p) @@
-               Error.of_exn e)
+      guardf 500 (Error.wrapf "obtaining metadata for '%s'" (Filename.basename p)) @@ fun () ->
+      Sqlite3_utils.with_db ~cache:`PRIVATE ~mode:`READONLY p
+        (fun db -> Test_metadata.of_db db)
     in
-    E.iter
-      (fun m ->
-         (* cache if it's complete *)
-         if Test_metadata.is_complete m then (
-           Hashtbl.add self.meta_cache p m
-         )) res;
+    (* cache if it's complete *)
+    if Test_metadata.is_complete res then (
+      Hashtbl.add self.meta_cache p res
+    );
     res
 
 (* index *)
@@ -1049,7 +1029,7 @@ let handle_root (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(return)
   @@ fun _req ->
-  let@@ chrono, _scope = query_wrap (fun()->"handle /") in
+  let@@ chrono = query_wrap (Error.wrap "serving /") in
   let entries = Bin_utils.list_entries self.data_dir in
 
   let mk_entry (s0, size) : _ Html.elt =
@@ -1131,20 +1111,18 @@ let handle_file_summary (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "file-sum" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ chrono, scope = query_wrap (fun()->spf "file-summary/%s" file) in
-  let file_full =
-    Bin_utils.mk_file_full file |> scope.unwrap_with (to_str_with_errcode 404)
-  in
+  let@@ chrono = query_wrap (Error.wrapf "serving /file-summary/%s" file) in
+  let file_full = Bin_utils.mk_file_full file in
   let s = Filename.basename file_full in
   let h =
     let open Html in
-    get_meta self file_full
-    |> E.catch
-      ~err:(fun e ->
-          let title = [a_title @@ "<no metadata>: "  ^ Error.show e] in
-          mk_a ~a:(a_href (uri_show s) :: title) [txt s]
-        )
-      ~ok:(fun m -> div (mk_file_summary s m))
+    try
+      let m = get_meta self file_full in
+      div (mk_file_summary s m)
+    with
+    | Error.E e | E(e,_) ->
+      let title = [a_title @@ "<no metadata>: "  ^ Error.show e] in
+      mk_a ~a:(a_href (uri_show s) :: title) [txt s]
   in
   let r =
     H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string_elt h))
@@ -1235,9 +1213,9 @@ module Cmd = struct
       handle_compare self;
       if allow_delete then handle_delete self;
       handle_file self;
-      H.run server |> E.map_err Printexc.to_string
+      H.run server |> CCResult.map_err Error.of_exn
     with e ->
-      E.of_exn_trace e
+      Error (Error.of_exn e)
 
   (* sub-command to serve the web UI *)
   let cmd =
@@ -1265,5 +1243,5 @@ let () =
   | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
   | `Ok (Ok ()) | `Version | `Help -> ()
   | `Ok (Error e) ->
-    print_endline ("error: " ^ e);
+    print_endline ("error: " ^ Error.show e);
     exit 1

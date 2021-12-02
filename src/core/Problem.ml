@@ -1,10 +1,5 @@
 (* This file is free software. See file "license" for more details. *)
 
-module Fmt = CCFormat
-open Misc
-
-type 'a or_error = 'a Or_error.t
-
 type path = string
 type t = {
   name: path;  (* filename *)
@@ -42,37 +37,37 @@ module Exp_ = struct
     let content = CCIO.with_in file CCIO.read_all in
     begin match Re.exec_opt re_expect_ content with
       | Some g ->
-        if Re.Mark.test g m_unsat_ then E.return Res.Unsat
-        else if Re.Mark.test g m_sat_ then E.return Res.Sat
-        else if Re.Mark.test g m_unknown_ then E.return Res.Unknown
-        else if Re.Mark.test g m_timeout_ then E.return Res.Timeout
-        else if Re.Mark.test g m_error_ then E.return Res.Error
-        else E.failf "could not parse the content of the `expect:` field in `%s`" file
+        if Re.Mark.test g m_unsat_ then Res.Unsat
+        else if Re.Mark.test g m_sat_ then Res.Sat
+        else if Re.Mark.test g m_unknown_ then Res.Unknown
+        else if Re.Mark.test g m_timeout_ then Res.Timeout
+        else if Re.Mark.test g m_error_ then Res.Error
+        else Error.failf "could not parse the content of the `expect:` field in `%s`" file
       | None ->
         begin match default with
-          | Some r -> E.return r
+          | Some r -> r
           | None ->
-            E.failf "could not find the `expect:` field in `%s`" file
+            Error.failf "could not find the `expect:` field in `%s`" file
         end
     end
 end
 
 (* find expected result for [file] *)
-let find_expect ?default_expect ~expect file : Res.t or_error =
+let find_expect ?default_expect ~expect file : Res.t =
   Logs.debug ~src:src_log
     (fun k->k "(@[<2>find_expect `%s`@ using %a@])…" file Dir.pp_expect expect);
   let rec loop expect =
     match expect with
     | Dir.E_comment -> Exp_.find_expected_ ?default:default_expect file
-    | Dir.E_const r -> Ok r
+    | Dir.E_const r -> r
     | Dir.E_try l ->
       let rec try_ = function
         | [] ->
-          E.failf "no method for finding expect succeeded on %S" file
+          Error.failf "no method for finding expect succeeded on %S" file
         | e :: tl ->
           match loop e with
-          | Error _ -> try_ tl
-          | Ok _ as res -> res
+          | exception Error.E _ -> try_ tl
+          | res -> res
       in
       try_ l
     | Dir.E_program {prover} ->
@@ -83,16 +78,15 @@ let find_expect ?default_expect ~expect file : Res.t or_error =
                      ())
       in
       match Prover.analyze_p_opt prover raw, default_expect with
-      | Some r, _ -> E.return r
-      | None, Some r -> E.return r
+      | Some r, _ -> r
+      | None, Some r -> r
       | None, None ->
-        E.failf "cannot find expect for problem `%s`" file
+        Error.failf "cannot find expect for problem `%s`" file
   in
   loop expect
 
-let make_find_expect ~expect file : t or_error =
-  let open E.Infix in
-  find_expect ~expect file >|= fun expect ->
+let make_find_expect ~expect file : t =
+  let expect = find_expect ~expect file in
   make file expect
 
 let compare_res pb res =

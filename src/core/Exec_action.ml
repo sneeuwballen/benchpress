@@ -1,7 +1,7 @@
 
 (** {1 Execute actions} *)
 
-open Misc
+open Common
 
 (** File for results with given uuid and timestamp *)
 let db_file_for_uuid ~timestamp (uuid:Uuidm.t) : string =
@@ -9,7 +9,7 @@ let db_file_for_uuid ~timestamp (uuid:Uuidm.t) : string =
     Printf.sprintf "res-%s-%s.sqlite"
       (match Ptime.of_float_s timestamp with
        | None -> Printf.sprintf "<time %.1fs>" timestamp
-       | Some t -> datetime_compact t)
+       | Some t -> Misc.datetime_compact t)
       (Uuidm.to_string uuid)
   in
   let data_dir = Filename.concat (Xdg.data_dir ()) !(Xdg.name_of_project) in
@@ -31,7 +31,7 @@ module Exec_run_provers : sig
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?interrupted:(unit -> bool) ->
-    t -> expanded or_error
+    t -> expanded
 
   val run :
     ?timestamp:float ->
@@ -42,15 +42,13 @@ module Exec_run_provers : sig
     uuid:Uuidm.t ->
     save:bool ->
     expanded ->
-    (Test_top_result.t or_error lazy_t * Test_compact_result.t) or_error
+    Test_top_result.t lazy_t * Test_compact_result.t
     (** Run the given prover(s) on the given problem set, obtaining results
         after all the problems have been dealt with.
         @param on_solve called whenever a single problem is solved
         @param on_done called when the whole process is done
     *)
 end = struct
-  open E.Infix
-
   type t = Action.run_provers
   let (>?) a b = match a with None -> b | Some x -> x
   let (>??) a b = match a with None -> b | Some _ as x -> x
@@ -70,7 +68,8 @@ end = struct
 
   (* turn a subdir into a list of problems *)
   let expand_subdir ?pattern ?(interrupted=fun _->false)
-      ~dyn (s:Subdir.t) : Problem.t list or_error =
+      ~dyn (s:Subdir.t) : Problem.t list =
+    Error.guard (Error.wrapf "expand_subdir of_dir %a" Subdir.pp s) @@ fun() ->
     try
       let filter1 = filter_regex_ s.Subdir.inside.pattern in
       let filter2 = filter_regex_ pattern in
@@ -79,7 +78,7 @@ end = struct
         CCIO.File.walk_l s.Subdir.path
         |> CCList.filter_map
           (fun (kind,f) ->
-             if interrupted() then failwith "interrupted";
+             if interrupted() then Error.fail "files.walk.interrupted";
              match kind with
              | `File when filter f -> Some f
              | _ -> None)
@@ -100,31 +99,28 @@ end = struct
            let res =Problem.make_find_expect path ~expect:s.Subdir.inside.expect in
            incr n_done;
            res)
-      |> E.flatten_l
-    with e ->
-      E.of_exn e
-      |> E.map_err (Error.wrapf "expand_subdir of_dir %a" Subdir.pp s)
+        with
+        | Error.E _ as e -> raise e
+        | exn -> Error.(raise @@ of_exn exn)
 
   (* Expand options into concrete choices *)
-  let expand ?j ?(dyn=false) ?limits ?interrupted (self:t) : expanded or_error =
+  let expand ?j ?(dyn=false) ?limits ?interrupted (self:t) : expanded =
     let limits = match limits with
       | None -> self.limits
       | Some l -> Limit.All.with_defaults l ~defaults:self.limits
     in
     let j = j >?? self.j >? Misc.guess_cpu_count () in
-    E.map_l (expand_subdir ~dyn ?interrupted) self.dirs >>= fun problems ->
-    let problems = CCList.flatten problems in
-    Ok { j; limits; problems; provers=self.provers; }
+    let problems = CCList.flat_map (expand_subdir ~dyn ?interrupted) self.dirs in
+    { j; limits; problems; provers=self.provers; }
 
   let _nop _ = ()
 
-  let run ?(timestamp=now_s())
+  let run ?(timestamp=Misc.now_s())
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_done = _nop)
       ?(interrupted=fun _->false)
       ~uuid ~save
-      (self:expanded) : _ or_error =
-    let open E.Infix in
-    let start = now_s() in
+      (self:expanded) : _*_ =
+    let start = Misc.now_s() in
     (* prepare DB *)
     let db =
       if save then (
@@ -133,21 +129,23 @@ end = struct
       ) else
         Sqlite3.db_open ":memory:"
     in
-    begin match Sys.getenv "BENCHPRESS_BUSY_TIMEOUT" with
+    let ms =
+      match Sys.getenv "BENCHPRESS_BUSY_TIMEOUT" with
       | n ->
-        (try Ok (int_of_string n)
+        (try int_of_string n
          with _e ->
-          E.fail "BENCHPRESS_BUSY_TIMEOUT must be an integer")
-      | exception Not_found -> Ok 3000
-    end >>= fun ms ->
+          Error.fail "BENCHPRESS_BUSY_TIMEOUT must be an integer")
+      | exception Not_found -> 3000
+    in
     Db.setup_timeout db ~ms;
-    Test_top_result.db_prepare db >>= fun () ->
+    Test_top_result.db_prepare db;
     Test_metadata.to_db db
       {Test_metadata.timestamp=Some timestamp; uuid; total_wall_time=None; n_bad=0;
-       n_results=0; dirs=[]; provers=[]} >>= fun () ->
-    Misc.err_with ~map_err:(Error.wrap "inserting provers into DB")
-      (fun scope -> List.iter (fun p -> Prover.to_db db p |> scope.unwrap) self.provers)
-    >>= fun () ->
+       n_results=0; dirs=[]; provers=[]};
+    begin
+      Error.guard (Error.wrap "inserting provers into DB") @@ fun () ->
+      List.iter (Prover.to_db db) self.provers;
+    end;
     on_start self;
     (* build list of tasks *)
     let jobs =
@@ -156,60 +154,53 @@ end = struct
         self.problems
     in
     (* run provers *)
-    begin
+    let res_l =
       let db = CCLock.create db in
       Misc.Par_map.map_p ~j:self.j
         (fun (prover,pb) ->
-           if interrupted() then E.fail "interrupted"
-           else (
-             begin
-               Run_prover_problem.run ~limits:self.limits
-                 prover pb >>= fun result ->
-               (* insert into DB here *)
-               CCLock.with_lock db (fun db ->
-                   Run_event.to_db db (Run_event.mk_prover result))
-               >|= fun () ->
-               on_solve result; (* callback *)
-               Run_event.mk_prover result
-             end
-             |> E.map_err
-               (Error.wrapf "(@[running :prover %a :on %a@])"
-                  Prover.pp_name prover Problem.pp pb)
-           )
+           if interrupted() then Error.fail "run.interrupted";
+           Error.guard
+             (Error.wrapf "(@[running :prover %a :on %a@])"
+                Prover.pp_name prover Problem.pp pb) @@ fun () ->
+           let result =
+             Run_prover_problem.run ~limits:self.limits
+               prover pb in
+           (* insert into DB here *)
+           CCLock.with_lock db (fun db ->
+               Run_event.to_db db (Run_event.mk_prover result));
+           on_solve result; (* callback *)
+           Run_event.mk_prover result
         )
         jobs
-      |> E.flatten_l
-    end
-    >>= fun res_l ->
+    in
 
     (* TODO: proof check the "unsat" results *)
 
     if interrupted() then (
-      E.fail "interrupted"
-    ) else (
-      let total_wall_time = now_s() -. start in
-      let uuid = uuid in
-      Logs.info (fun k->k"benchmark done in %a, uuid=%a"
-                    Misc.pp_human_duration total_wall_time
-                    Uuidm.pp uuid);
-      let timestamp = Some timestamp in
-      let total_wall_time = Some total_wall_time in
-      let meta = {
-        Test_metadata.uuid; timestamp; total_wall_time; n_results=0; dirs=[]; n_bad=0;
-        provers=List.map Prover.name self.provers;
-      } in
-      Logs.debug (fun k->k "saving metadata…");
-      Test_metadata.to_db db meta >>= fun () ->
-      let top_res = lazy (
-        let provers = CCList.map fst jobs in
-        Test_top_result.make ~meta ~provers res_l
-      ) in
-      Test_compact_result.of_db db >>= fun r ->
-      on_done r;
-      Logs.debug (fun k->k "closing db…");
-      ignore (Sqlite3.db_close db : bool);
-      Ok (top_res, r)
-    )
+      Error.fail "run.interrupted";
+    );
+    let total_wall_time = Misc.now_s() -. start in
+    let uuid = uuid in
+    Logs.info (fun k->k"benchmark done in %a, uuid=%a"
+                  Misc.pp_human_duration total_wall_time
+                  Uuidm.pp uuid);
+    let timestamp = Some timestamp in
+    let total_wall_time = Some total_wall_time in
+    let meta = {
+      Test_metadata.uuid; timestamp; total_wall_time; n_results=0; dirs=[]; n_bad=0;
+      provers=List.map Prover.name self.provers;
+    } in
+    Logs.debug (fun k->k "saving metadata…");
+    Test_metadata.to_db db meta;
+    let top_res = lazy (
+      let provers = CCList.map fst jobs in
+      Test_top_result.make ~meta ~provers res_l
+    ) in
+    let r = Test_compact_result.of_db db in
+    on_done r;
+    Logs.debug (fun k->k "closing db…");
+    ignore (Sqlite3.db_close db : bool);
+    top_res, r
 end
 
 type cb_progress = <
@@ -243,11 +234,11 @@ end = struct
 
   (* callback that prints a result *)
   let progress_dynamic len =
-    let start = now_s() in
+    let start = Misc.now_s() in
     let count = ref 0 in
     let tick() = incr count in
     let get_state() =
-      let time_elapsed = now_s() -. start in
+      let time_elapsed = Misc.now_s() -. start in
       let percent = if len=0 then 100. else (float_of_int !count *. 100.) /. float_of_int len in
       (* elapsed=(percent/100)*total, so total=elapsed*100/percent; eta=total-elapsed *)
       let eta = time_elapsed *. (100. -. percent) /. percent in
@@ -324,13 +315,13 @@ let dump_results_sqlite (results:Test_top_result.t) : unit =
   in
   Logs.app (fun k->k "write results into sqlite DB `%s`" dump_file);
   (try
-     match Db.with_db ~timeout:500 dump_file
+     Db.with_db ~timeout:500 dump_file
              (fun db -> Test_top_result.to_db db results)
-     with
-     | Ok () -> ()
-     | Error e ->
-       Logs.err (fun k->k"error when saving to %s:@ %a" dump_file Error.pp e);
-   with e ->
+   with
+   | Error.E e ->
+     Logs.err (fun k->k"error when saving to %s:@ %a" dump_file Error.pp e);
+     exit 1
+   | e ->
      Logs.err (fun k->k"error when saving to %s:@ %s"
                   dump_file (Printexc.to_string e));
      exit 1
@@ -348,72 +339,54 @@ let with_chdir d f =
     Sys.chdir cur_dir;
     raise e
 
-let run_cmd s : unit or_error =
-  try
-    let c = Sys.command s in
-    if c=0 then Ok ()
-    else E.failf "command %S returned with error code %d" s c
-  with e ->
-    E.of_exn e
+let run_cmd ?loc s : unit =
+  let c = Sys.command s in
+  if c=0 then ()
+  else Error.failf ?loc "command %S returned with error code %d" s c
 
 module Git_checkout = struct
   type t = Action.git_checkout
 
-  let run (self:t) : unit or_error =
-    Misc.err_with
-      ~map_err:(Error.wrapf "running action git-checkout '%s'" self.ref)
-      (fun scope ->
-         let {Action.dir; ref; fetch_first; loc} = self in
-         let r = match fetch_first with
-           | Some Git_fetch -> run_cmd "git fetch"
-           | Some Git_pull -> run_cmd "git pull --ff-only"
-           | _ -> Ok ()
-         in
-         scope.unwrap (E.wrap ~loc "running" r);
-         with_chdir dir
-           (fun () -> run_cmd ("git checkout " ^ ref))
-         |> scope.unwrap)
+  let run (self:t) : unit =
+    Error.guard (Error.wrapf "running action git-checkout '%s'" self.ref) @@ fun () ->
+    let {Action.dir; ref; fetch_first; loc=_} = self in
+    begin match fetch_first with
+      | Some Git_fetch -> run_cmd "git fetch"
+      | Some Git_pull -> run_cmd "git pull --ff-only"
+      | _ -> ()
+    end;
+    with_chdir dir
+      (fun () -> run_cmd ("git checkout " ^ ref))
 end
 
 (** Run the given action *)
 let rec run ?(save=true) ?interrupted ?cb_progress
-    (defs:Definitions.t) (a:Action.t) : unit or_error =
-  Misc.err_with
-    ~map_err:(Error.wrapf "running action %a" Action.pp a)
-    (fun scope ->
-       begin match a with
-         | Action.Act_run_provers r ->
-           let is_dyn = CCOpt.get_or ~default:false @@ Definitions.option_progress defs in
-           let r_expanded =
-             Exec_run_provers.expand ?interrupted ~dyn:is_dyn
-               ?j:(Definitions.option_j defs) r
-             |> scope.unwrap
-           in
-           let progress =
-             Progress_run_provers.make ~pp_results:true ~dyn:is_dyn
-               ?cb_progress r_expanded
-           in
-           let uuid = Misc.mk_uuid () in
-           let res =
-             Exec_run_provers.run ?interrupted ~on_solve:progress#on_res
-               ~on_done:(fun _ -> progress#on_done) ~save
-               ~timestamp:(now_s()) ~uuid r_expanded
-             |> scope.unwrap
-           in
-           Format.printf "task done: %a@." Test_compact_result.pp res;
-           ()
-         | Action.Act_progn l ->
-           List.iter (fun a -> run ~save ?interrupted defs a |> scope.unwrap) l
-         | Action.Act_git_checkout git ->
-           Git_checkout.run git |> scope.unwrap
-         | Action.Act_run_cmd {cmd; loc} ->
-           (try
-              let c = Sys.command cmd in
-              if c=0 then Ok ()
-              else E.failf ~loc "command %S returned with error code %d" cmd c
-            with e ->
-              E.of_exn ~loc e
-           ) |> scope.unwrap
-       end
-    )
+    (defs:Definitions.t) (a:Action.t) : unit =
+  Error.guard (Error.wrapf "running action %a" Action.pp a) @@ fun () ->
+  begin match a with
+    | Action.Act_run_provers r ->
+      let is_dyn = CCOpt.get_or ~default:false @@ Definitions.option_progress defs in
+      let r_expanded =
+        Exec_run_provers.expand ?interrupted ~dyn:is_dyn
+          ?j:(Definitions.option_j defs) r
+      in
+      let progress =
+        Progress_run_provers.make ~pp_results:true ~dyn:is_dyn
+          ?cb_progress r_expanded
+      in
+      let uuid = Misc.mk_uuid () in
+      let res =
+        Exec_run_provers.run ?interrupted ~on_solve:progress#on_res
+          ~on_done:(fun _ -> progress#on_done) ~save
+          ~timestamp:(Misc.now_s()) ~uuid r_expanded
+      in
+      Format.printf "task done: %a@." Test_compact_result.pp res;
+      ()
+    | Action.Act_progn l ->
+      List.iter (fun a -> run ~save ?interrupted defs a) l
+    | Action.Act_git_checkout git ->
+      Git_checkout.run git
+    | Action.Act_run_cmd {cmd; loc} ->
+      run_cmd ~loc cmd
+  end
 
