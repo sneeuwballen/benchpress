@@ -60,7 +60,7 @@ type t =
       name: string;
       loc: Loc.t;
       version: version_field option;
-      cmd: string;
+      cmd: string option;
       (** the command line to run.
           possibly contains $binary, $file, $memory and $timeout *)
 
@@ -81,7 +81,7 @@ type t =
       memory  : regex option;  (** regex for "out of memory" *)
       custom  : (string * regex) list; (** regex for custom results *)
 
-      inherit_: string option;
+      inherits: string option;
       (** Inherit another prover definition *)
     }
   | St_proof_checker of {
@@ -178,13 +178,13 @@ let pp out =
   | St_prover {
       name; cmd; version; unsat; sat; unknown; timeout; memory;
       binary=_; binary_deps=_; custom; ulimits;
-      produces_proof; inherit_; loc=_;
+      produces_proof; inherits; loc=_;
     } ->
     let pp_custom out (x,y) =
       Fmt.fprintf out "(@[tag %a@ %a@])" pp_str x pp_regex y in
     Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a%a%a@])"
       (pp_f "name" pp_str) name
-      (pp_f "cmd" pp_str) cmd
+      (pp_opt "cmd" pp_str) cmd
       (pp_opt "version" pp_version_field) version
       (pp_opt "ulimits" Ulimit.pp) ulimits
       (pp_opt "sat" pp_regex) sat
@@ -192,7 +192,7 @@ let pp out =
       (pp_opt "unknown" pp_regex) unknown
       (pp_opt "timeout" pp_regex) timeout
       (pp_opt "memory" pp_regex) memory
-      (pp_opt "inherit" pp_str) inherit_
+      (pp_opt "inherits" pp_str) inherits
       (pp_f "produces_proof" Fmt.bool) produces_proof
       (pp_l1 pp_custom) custom
   | St_proof_checker {name; cmd; loc=_; valid; invalid } ->
@@ -367,7 +367,7 @@ let dec tags : (_ list * t) SD.t =
        CCOpt.get_or ~default:[] l
      in
      let* name = Fields.field m "name" string in
-     let* cmd = Fields.field m "cmd" string in
+     let* cmd = Fields.field_opt m "cmd" string in
      let* version = Fields.field_opt m "version" dec_version in
      let* sat = Fields.field_opt m "sat" dec_regex in
      let* unsat = Fields.field_opt m "unsat" dec_regex in
@@ -376,11 +376,16 @@ let dec tags : (_ list * t) SD.t =
      let* memory = Fields.field_opt m "memory" dec_regex in
      let* ulimits = Fields.field_opt m "ulimit" dec_ulimits in
      let* produces_proof = Fields.field_opt_or ~default:false m "produces_proof" bool in
-     let* inherit_ = Fields.field_opt m "inherit" string in
-     let+ () = Fields.check_no_field_left m in
-     (tags, St_prover {
+     let* inherits = Fields.field_opt m "inherits" string in
+     let* () = Fields.check_no_field_left m in
+     let* () = if cmd=None && inherits=None then (
+         failf (fun k->k"one of 'cmd', 'inherits' must be set")
+       ) else return ()
+     in
+
+     return (tags, St_prover {
          name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
-         ulimits; loc; produces_proof; inherit_;
+         ulimits; loc; produces_proof; inherits;
          binary=None;
          binary_deps=[]; (* TODO *)
        })

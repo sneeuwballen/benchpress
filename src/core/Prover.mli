@@ -28,6 +28,7 @@ type t = {
   binary_deps: string list; (* list of binaries this depends on *)
   cmd: string;          (* the command line to run.
                            possibly contains $binary, $file, $memory and $timeout *)
+  produces_proof: bool;
 
   (* whether some limits should be enforced/set by ulimit *)
   ulimits : Ulimit.conf;
@@ -40,6 +41,8 @@ type t = {
   memory  : string option;  (* regex for "out of memory" *)
   custom  : (string * string) list; (* custom tags *)
   defined_in: string option;
+
+  inherits : name option; (** parent definition *)
 }
 (** The type of provers configurations *)
 

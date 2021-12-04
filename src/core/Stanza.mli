@@ -55,9 +55,10 @@ type t =
       name: string;
       loc: Loc.t;
       version: version_field option;
-      cmd: string;
+      cmd: string option;
       (** the command line to run.
-          possibly contains $binary, $file, $memory and $timeout *)
+          possibly contains $binary, $file, $memory and $timeout,
+          and $proof_file if {!produces_proof} is true *)
 
       produces_proof: bool;
       (** true if the solver should be passed $proof_file into which
@@ -76,7 +77,7 @@ type t =
       memory  : regex option;  (** regex for "out of memory" *)
       custom  : (string * regex) list; (** regex for custom results *)
 
-      inherit_: string option;
+      inherits: string option;
       (** Inherit another prover definition *)
     }
   | St_proof_checker of {

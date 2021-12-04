@@ -219,8 +219,20 @@ let add_stanza (st:Stanza.t) self : t =
   | St_prover {
       name; cmd; sat; unsat; timeout; unknown; memory;
       version; binary; binary_deps; custom; ulimits; loc;
+      produces_proof; inherits;
     } ->
     (* add prover *)
+    let inherits_p = match inherits with
+      | None -> None
+      | Some s ->
+        let p' = find_prover' self s in
+        Some p'
+    in
+    let cmd = match cmd, inherits_p with
+      | Some c, _ -> c
+      | None, Some p -> p.cmd
+      | None, None -> Error.failf ~loc "needs 'inherits' or 'cmd'"
+    in
     let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
     let binary = match binary with
       | Some b -> b
@@ -232,15 +244,16 @@ let add_stanza (st:Stanza.t) self : t =
       | None -> Version_exact (Prover.Tag "<unknown>")
     in
     let ulimits =
-      match ulimits with
-      | Some l -> l
-      | None -> Ulimit.mk ~time:true ~memory:true ~stack:false
+      match ulimits, inherits_p with
+      | Some l, _ -> l
+      | None, Some p -> p.ulimits
+      | None, None -> Ulimit.mk ~time:true ~memory:true ~stack:false
     in
     let p = {
       Prover.
       name; cmd; sat; unsat; timeout; unknown; memory; ulimits;
       binary; binary_deps; version=get_version ~binary version;
-      custom; defined_in=self.config_file;
+      custom; defined_in=self.config_file; inherits; produces_proof;
     } in
     add_prover (With_loc.make ~loc p) self
 
