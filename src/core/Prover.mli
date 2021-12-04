@@ -78,6 +78,7 @@ exception Missing_subst_value of string
 
 val subst :
   ?binary:string ->
+  ?proof_file:string ->
   ?file:string ->
   ?f:(string -> string option) ->
   unit -> (string -> string)
@@ -99,6 +100,7 @@ val interpolate_cmd :
 
 val make_command :
   ?env:(string * string) array ->
+  ?proof_file:string ->
   limits:Limit.All.t ->
   t ->
   file:string ->
@@ -106,6 +108,7 @@ val make_command :
 
 val run :
   ?env:(string * string) array ->
+  ?proof_file:string ->
   limits:Limit.All.t ->
   file:string ->
   t ->

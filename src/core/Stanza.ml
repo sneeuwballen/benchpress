@@ -64,6 +64,10 @@ type t =
       (** the command line to run.
           possibly contains $binary, $file, $memory and $timeout *)
 
+      produces_proof: bool;
+      (** true if the solver should be passed $proof_file into which
+          it can emit a proof *)
+
       binary: string option; (** name of the program itself *)
       binary_deps: string list; (** list of binaries this depends on *)
 
@@ -76,6 +80,9 @@ type t =
       timeout : regex option;  (** regex for "timeout" *)
       memory  : regex option;  (** regex for "out of memory" *)
       custom  : (string * regex) list; (** regex for custom results *)
+
+      inherit_: string option;
+      (** Inherit another prover definition *)
     }
   | St_proof_checker of {
       name: string;
@@ -170,11 +177,12 @@ let pp out =
       (pp_opt "pattern" pp_regex) pattern
   | St_prover {
       name; cmd; version; unsat; sat; unknown; timeout; memory;
-      binary=_; binary_deps=_; custom; ulimits; loc=_;
+      binary=_; binary_deps=_; custom; ulimits;
+      produces_proof; inherit_; loc=_;
     } ->
     let pp_custom out (x,y) =
       Fmt.fprintf out "(@[tag %a@ %a@])" pp_str x pp_regex y in
-    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a@])"
+    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a%a%a@])"
       (pp_f "name" pp_str) name
       (pp_f "cmd" pp_str) cmd
       (pp_opt "version" pp_version_field) version
@@ -184,6 +192,8 @@ let pp out =
       (pp_opt "unknown" pp_regex) unknown
       (pp_opt "timeout" pp_regex) timeout
       (pp_opt "memory" pp_regex) memory
+      (pp_opt "inherit" pp_str) inherit_
+      (pp_f "produces_proof" Fmt.bool) produces_proof
       (pp_l1 pp_custom) custom
   | St_proof_checker {name; cmd; loc=_; valid; invalid } ->
     Fmt.fprintf out "(@[<hv>proof-checker%a%a%a%a@])"
@@ -365,10 +375,12 @@ let dec tags : (_ list * t) SD.t =
      let* timeout = Fields.field_opt m "timeout" dec_regex in
      let* memory = Fields.field_opt m "memory" dec_regex in
      let* ulimits = Fields.field_opt m "ulimit" dec_ulimits in
+     let* produces_proof = Fields.field_opt_or ~default:false m "produces_proof" bool in
+     let* inherit_ = Fields.field_opt m "inherit" string in
      let+ () = Fields.check_no_field_left m in
      (tags, St_prover {
          name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
-         ulimits; loc;
+         ulimits; loc; produces_proof; inherit_;
          binary=None;
          binary_deps=[]; (* TODO *)
        })

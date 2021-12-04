@@ -94,6 +94,9 @@ module Fields : sig
   val field_opt : t -> string -> 'a m -> 'a option m
   (** Same as {!field} but doesn't fail if the field is absent. *)
 
+  val field_opt_or : t -> string -> default:'a -> 'a m -> 'a m
+  (** Like {!field_opt} but provide a default value *)
+
   val check_no_field_left : t -> unit m
   (** Check that all fields have been consumed by {!field} and {!field_opt}
       above.

@@ -377,6 +377,12 @@ module Fields = struct
         self.m <- Str_map.remove key self.m;
         d.run v |> CCResult.map (fun x -> Some x)
   }
+
+  let field_opt_or (self:t) key ~default d : _ m =
+    let+ x = field_opt self key d in
+    match x with
+    | None -> default
+    | Some y -> y
 end
 
 let fields = Fields.get

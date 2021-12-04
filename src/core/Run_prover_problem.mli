@@ -8,6 +8,7 @@ type job_res= (Prover.name, Res.t) Run_result.t
 
 val run :
   limits:Limit.All.t ->
+  ?proof_file:string ->
   Prover.t ->
   Problem.t ->
   job_res

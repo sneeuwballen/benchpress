@@ -6,8 +6,10 @@ type path = string
 type job_res= (Prover.name, Res.t) Run_result.t
 
 (* run one particular test *)
-let run ~limits prover pb =
-  Error.guard (Error.wrapf "run prover '%s' on problem '%s'" prover.Prover.name pb.Problem.name) @@ fun () ->
+let run ~limits ?proof_file prover pb =
+  Error.guard (Error.wrapf "run prover '%s' on problem '%s' (proof file %a)"
+                 prover.Prover.name pb.Problem.name
+                 Fmt.Dump.(option string) proof_file) @@ fun () ->
   Profile.with_ "run-prover" ~args:["prover",prover.Prover.name] @@ fun () ->
 
   let timeout = CCOpt.get_or ~default:Limit.Time.(mk ~s:30 ()) limits.Limit.All.time in
@@ -15,7 +17,7 @@ let run ~limits prover pb =
     (fun k->k"running %-15s/%-30s (timeout %a)..."
         prover.Prover.name pb.Problem.name Limit.Time.pp timeout);
   (* spawn process *)
-  let raw = Prover.run ~limits ~file:pb.Problem.name prover in
+  let raw = Prover.run ?proof_file ~limits ~file:pb.Problem.name prover in
   let result =
     Run_result.make_from_prover prover ~timeout pb raw
   in

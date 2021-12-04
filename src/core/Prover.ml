@@ -122,8 +122,9 @@ let subst_aux name = function
     | Some v -> v
     | None -> raise (Missing_subst_value name)
 
-let subst ?binary ?file ?(f=fun _ -> None) () = function
+let subst ?binary ?proof_file ?file ?(f=fun _ -> None) () = function
   | "file" as s -> subst_aux s file
+  | "proof_file" as s -> subst_aux s proof_file
   | "binary" as s -> subst_aux s binary
   | s -> begin match f s with
       | Some res -> res
@@ -139,7 +140,7 @@ let interpolate_cmd ?(env=[||]) ~subst cmd =
   add_str cmd;
   Buffer.contents buf
 
-let make_command ?env ~limits prover ~file =
+let make_command ?env ?proof_file ~limits prover ~file =
   let binary = prover.binary in
   let limit_subst = Limit.All.substitute limits
       ~time_as:Seconds
@@ -147,7 +148,7 @@ let make_command ?env ~limits prover ~file =
       ~stack_as:Megabytes
   in
   try interpolate_cmd ?env prover.cmd
-        ~subst:(subst ~binary ~file ~f:limit_subst ())
+        ~subst:(subst ~binary ?proof_file ~file ~f:limit_subst ())
   with Subst_not_found s ->
     Error.raise
       (Error.makef
@@ -169,10 +170,10 @@ end
 module Map = CCMap.Make(As_key)
 module Set = CCSet.Make(As_key)
 
-let run ?env ~limits ~file (self:t) : Run_proc_result.t =
+let run ?env ?proof_file ~limits ~file (self:t) : Run_proc_result.t =
   Log.debug
     (fun k->k "(@[Prover.run %s %a@])" self.name Limit.All.pp limits);
-  let cmd = make_command ?env ~limits self ~file in
+  let cmd = make_command ?env ?proof_file ~limits self ~file in
   (* Give one more second to the ulimit timeout to account for the startup
      time and the time elasped between starting ulimit and starting the prover *)
   let prefix = Ulimit.cmd ~conf:self.ulimits ~limits:(

@@ -59,6 +59,10 @@ type t =
       (** the command line to run.
           possibly contains $binary, $file, $memory and $timeout *)
 
+      produces_proof: bool;
+      (** true if the solver should be passed $proof_file into which
+          it can emit a proof *)
+
       binary: string option; (** name of the program itself *)
       binary_deps: string list; (** list of binaries this depends on *)
 
@@ -71,6 +75,9 @@ type t =
       timeout : regex option;  (** regex for "timeout" *)
       memory  : regex option;  (** regex for "out of memory" *)
       custom  : (string * regex) list; (** regex for custom results *)
+
+      inherit_: string option;
+      (** Inherit another prover definition *)
     }
   | St_proof_checker of {
       name: string;
