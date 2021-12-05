@@ -300,19 +300,7 @@ let to_db (db:Db.t) (self:t) : unit =
       List.iter (fun ev -> Run_event.to_db db ev) self.events);
   ()
 
-let make ~meta ~provers (events:Run_event.t list) : t =
-  Error.guard(Error.wrap "reading top_res from DB") @@ fun() ->
-  (* create a temporary in-memory DB *)
-  let db = Sqlite3.db_open ":memory:" in
-  db_prepare db;
-  Test_metadata.to_db db meta;
-  Db.transact db (fun _ ->
-      List.iter
-        (fun p ->
-           Error.guard (Error.wrapf "adding prover '%s'" p.Prover.name) @@ fun () ->
-           Prover.to_db db p)
-        provers;
-      List.iter (fun ev -> Run_event.to_db db ev) events);
+let of_db_ ~meta ~provers ~events db : t =
   Logs.debug (fun k->k "computing stats");
   let stats = Test_stat.of_db db in
   Logs.debug (fun k->k "computing analyze");
@@ -320,13 +308,29 @@ let make ~meta ~provers (events:Run_event.t list) : t =
   Logs.debug (fun k->k "done");
   { db; events; meta; provers; stats; analyze; }
 
+let make ~meta ~provers (events:Run_event.t list) : t =
+  Error.guard(Error.wrap "reading top_res from events") @@ fun() ->
+  (* create a temporary in-memory DB *)
+  let db = Sqlite3.db_open ":memory:" in
+  db_prepare db;
+  Test_metadata.to_db db meta;
+  (* insert all events into the DB *)
+  Db.transact db (fun _ ->
+      Error.guard (Error.wrap "updating in-memory DB") @@ fun () ->
+      List.iter
+        (fun p ->
+           Error.guard (Error.wrapf "adding prover '%s'" p.Prover.name) @@ fun () ->
+           Prover.to_db db p)
+        provers;
+      List.iter (fun ev -> Run_event.to_db db ev) events);
+  of_db_ db ~meta ~provers ~events
+
 let of_db (db:Db.t) : t =
   Error.guard (Error.wrapf "reading top_res from DB") @@ fun () ->
   Logs.debug (fun k->k "loading metadata from DB");
   let meta = Test_metadata.of_db db in
   let prover_names = Prover.db_names db in
-  let provers =
-    CCList.map (fun p -> Prover.of_db db p) prover_names in
+  let provers = CCList.map (fun p -> Prover.of_db db p) prover_names in
   Logs.debug (fun k->k "loading events from DB");
   let events = Run_event.of_db_l db in
-  make ~meta ~provers events
+  of_db_ ~meta ~provers ~events db
