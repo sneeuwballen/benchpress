@@ -258,7 +258,7 @@ module Prover_show = struct
     let open Cmdliner in
     let doc = "show definitions of given prover(s)" in
     let names = Arg.(value & pos_all string [] & info []) in
-    Term.(pure run $ Bin_utils.definitions_term $ names ), Term.info ~doc "prover-show"
+    Term.(pure run $ Bin_utils.definitions_term $ names ), Term.info ~doc "show-prover"
 end
 
 (** {2 List provers} *)
@@ -273,7 +273,7 @@ module Prover_list = struct
   let cmd =
     let open Cmdliner in
     let doc = "list prover(s) defined in config" in
-    Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "prover-list"
+    Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "list-prover"
 end
 
 (** {2 Show Task} *)
@@ -289,7 +289,7 @@ module Task_show = struct
     let open Cmdliner in
     let doc = "show definitions of given task(s)" in
     let names = Arg.(value & pos_all string [] & info []) in
-    Term.(pure run $ Bin_utils.definitions_term $ names ), Term.info ~doc "task-show"
+    Term.(pure run $ Bin_utils.definitions_term $ names ), Term.info ~doc "show-task"
 end
 
 (** {2 List Tasks} *)
@@ -304,7 +304,7 @@ module Task_list = struct
   let cmd =
     let open Cmdliner in
     let doc = "list task(s) defined in config" in
-    Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "task-list"
+    Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "list-task"
 end
 
 (** {2 Convert results to Sql} *)
