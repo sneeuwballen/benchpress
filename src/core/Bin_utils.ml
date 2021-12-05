@@ -4,14 +4,15 @@ module MStr = Misc.Str_map
 
 let definitions_term : Definitions.t Cmdliner.Term.t =
   let open Cmdliner in
-  let aux conf_files logs_cmd =
+  let aux conf_files with_default logs_cmd =
     Misc.setup_logs logs_cmd;
     let conf_files = CCList.flatten conf_files in
     let conf_files =
       let default_conf = Misc.default_config () in
       (* always add default config file if it exists *)
-      if Sys.file_exists (Xdg.interpolate_home default_conf)
-      then default_conf :: conf_files else conf_files
+      if with_default && Sys.file_exists (Xdg.interpolate_home default_conf)
+      then default_conf :: conf_files
+      else conf_files
     in
     let conf_files = List.map Xdg.interpolate_home conf_files in
     Logs.info (fun k->k "parse config files %a" CCFormat.Dump.(list string) conf_files);
@@ -25,10 +26,12 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
   let args =
     Arg.(value & opt_all (list ~sep:',' string) [] &
          info ["c"; "config"] ~doc:"configuration file (sexp)")
+  and with_default =
+    Arg.(value & opt bool false & info ["d"; "default"] ~doc:"combine with the default config file(s)")
   and debug =
     Logs_cli.level ()
   in
-  Term.(ret (pure aux $ args $ debug))
+  Term.(ret (pure aux $ args $ with_default $ debug))
 
 let get_definitions () : Definitions.t =
   let conf_files =

@@ -72,7 +72,7 @@ let pp out (self:t) =
   in
   Fmt.fprintf out "@[<v>%a@]" loop self
 
-let show = Fmt.to_string pp
+let show e = Fmt.sprintf "%a" pp e
 
 let () =
   Printexc.register_printer

@@ -220,10 +220,17 @@ let pp_l out l =
 
 (** {2 Decoding} *)
 
-let dec_res tags =
+type tag = string
+
+type state = {
+  mutable tags: tag list;
+  mutable parse_prelude: bool;
+}
+
+let dec_res (st:state) =
   let open SD in
   let* s = atom in
-  (try return (Res.of_string ~tags s)
+  (try return (Res.of_string ~tags:st.tags s)
    with _ -> failf (fun k->k"expected a `Res.t`, not %S" s))
 
 let dec_regex : regex SD.t =
@@ -338,28 +345,27 @@ let dec_action : action SD.t =
     );
   ]
 
-(* TODO: carry definitions around? *)
-let dec ~parse_prelude tags : (_ list * t list) SD.t =
+let dec (st:state) : t list SD.t =
   let open SD in
   let* loc = value_loc in
   try_l ~msg:"expected a stanza" [
     (is_applied "dir",
      let* m = applied_fields "dir" in
      let* path = Fields.field m "path" string in
-     let* expect = Fields.field_opt m "expect" (dec_expect tags) in
+     let* expect = Fields.field_opt m "expect" (dec_expect st) in
      let* pattern = Fields.field_opt m "pattern" dec_regex in
      let+ () = Fields.check_no_field_left m in
-     (tags, [St_dir {path;expect;pattern;loc}])
+     [St_dir {path;expect;pattern;loc}]
     );
     (is_applied "import-prelude",
-     let+ () = applied0 "import-prelude" in
-     let tags, l = parse_prelude ~loc tags in
-     tags, l);
+     let+ b = applied1 "import-prelude" bool in
+     st.parse_prelude <- b;
+     []);
     (is_applied "prover",
      let* m = applied_fields "prover" in
      let dec_tag_name =
        let* name = atom in
-       if List.mem name tags then return name
+       if List.mem name st.tags then return name
        else failf (fun k->k"unknown tag %S, declare it with `cutom-tag`" name)
      in
      let dec_tags =
@@ -394,7 +400,7 @@ let dec ~parse_prelude tags : (_ list * t list) SD.t =
          binary_deps=[]; (* TODO *)
        } in
 
-     return (tags, [st])
+     return [st]
     );
     (is_applied "task",
      let* m = applied_fields "task" in
@@ -402,20 +408,21 @@ let dec ~parse_prelude tags : (_ list * t list) SD.t =
      let* synopsis = Fields.field_opt m "synopsis" string in
      let* action = Fields.field m "action" dec_action in
      let+ () = Fields.check_no_field_left m in
-     (tags, [St_task {name;synopsis;action;loc}])
+     [St_task {name;synopsis;action;loc}]
     );
     (is_applied "set-options",
      let* m = applied_fields "set-options" in
      let* progress = Fields.field_opt m "progress" bool in
      let* j = Fields.field_opt m "j" int in
      let+ () = Fields.check_no_field_left m in
-     (tags, [St_set_options {progress; j; loc}])
+     [St_set_options {progress; j; loc}]
     );
     (is_applied "custom-tag",
      let* m = applied_fields "custom-tag" in
      let* s = Fields.field m "name" string in
      let+ () = Fields.check_no_field_left m in
-     (s::tags, [St_declare_custom_tag {tag=s;loc}])
+     st.tags <- s :: st.tags;
+     [St_declare_custom_tag {tag=s;loc}]
     );
   ]
 
@@ -437,6 +444,10 @@ let parse_string_list_ ~filename str : _ list =
   iter []
 
 let parse_prelude, parse_files, parse_string =
+  let st = {
+    parse_prelude=true;
+    tags=[];
+  } in
 
   let mk_error_stanza ~loc ~reify_errors (e:Error.t) =
     if reify_errors then (
@@ -447,50 +458,44 @@ let parse_prelude, parse_files, parse_string =
     )
   in
 
-  let decode_sexp_l ~parse_prelude ~reify_errors l =
-    let parse_prelude = parse_prelude ~reify_errors in
-    CCList.fold_flat_map
-      (fun tags s ->
-         match Sexp_decode.run (dec ~parse_prelude tags) s with
+  let decode_sexp_l ~reify_errors l =
+    CCList.flat_map
+      (fun s ->
+         match Sexp_decode.run (dec st) s with
          | Ok x -> x
          | Error e ->
            let loc = Sexp_decode.Err.loc e in
            let err = SD.Err.to_error e in
-           tags, [mk_error_stanza ~loc ~reify_errors err])
+           [mk_error_stanza ~loc ~reify_errors err])
       l
   in
   (* prelude? *)
-  let parse_prelude ~reify_errors ~loc:_ tags =
+  let parse_prelude ~reify_errors () =
     Error.guard (Error.wrap "Reading builtin config") @@ fun () ->
     let l =
       parse_string_list_ ~filename:"builtin_config.sexp" Builtin_config.config in
-    let tags, l =
-      decode_sexp_l ~reify_errors
-        ~parse_prelude:(fun ~reify_errors:_ ~loc tags ->
-            let err = Error.make "cannot import prelude from within prelude" in
-            tags, [mk_error_stanza ~loc ~reify_errors err])
-        tags l in
-    tags, (St_enter_file "prelude" :: l)
+    let l = decode_sexp_l ~reify_errors l in
+    St_enter_file "prelude" :: l
   in
-  let process_file ~reify_errors tags file =
+  let process_file ~reify_errors file =
     let file = Misc.mk_abs_path file in
     match Se.parse_file_l file with
     | Error e -> Error.failf ?loc:None "cannot parse file '%s':@ %s" file e
     | Ok l ->
-      let tags, l = decode_sexp_l ~reify_errors ~parse_prelude tags l in
-      tags, (St_enter_file file :: l)
-  and process_string ~reify_errors ~filename tags s =
+      let l = decode_sexp_l ~reify_errors l in
+      St_enter_file file :: l
+  and process_string ~reify_errors ~filename s =
     match Se.parse_string_l ~filename s with
     | Error e -> Error.failf ?loc:None "cannot parse file '%s':@ %s" filename e
     | Ok l ->
-      let tags, l = decode_sexp_l ~reify_errors ~parse_prelude tags l in
-      tags, (St_enter_file filename :: l)
+      let l = decode_sexp_l ~reify_errors l in
+      St_enter_file filename :: l
   in
   let parse_files ?(reify_errors=false) (files:string list) : t list =
-    let _tags, l = CCList.fold_map (process_file ~reify_errors) [] files in
-    CCList.flatten l
+    let l = CCList.flat_map (process_file ~reify_errors) files in
+    if st.parse_prelude then parse_prelude ~reify_errors () @ l else l
   and parse_string ?(reify_errors=false) ~filename (s:string) : t list =
-    let _tags, l = process_string ~reify_errors ~filename [] s in
-    l
+    let l = process_string ~reify_errors ~filename s in
+    if st.parse_prelude then parse_prelude ~reify_errors () @ l else l
   in
   parse_prelude, parse_files, parse_string

@@ -69,7 +69,8 @@ Some internal parameters of benchpress can be set using environment variables:
 
 ## Config File
 
-Benchpress ships with a builtin config that contains, roughly:
+Benchpress ships with a builtin config, which is imported by default
+unless `(import-prelude false)` is specified. It contains, roughly:
 
 ### Builtin config
 
@@ -118,6 +119,7 @@ A more complete example, taken from [mc2](https://github.com/c-cube/mc2):
 ```sexp
 
 ; from https://github.com/c-cube/mc2
+
 (prover
   (name mc2)
   (cmd "ulimit -t $timeout; mc2 --time $timeout $file")
