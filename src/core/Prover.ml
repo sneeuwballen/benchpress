@@ -83,7 +83,7 @@ module Version = struct
     try_l ~msg:"expected version" [
       (is_atom, let+ s = string in Tag s);
       (is_applied "git",
-       let* m = applied1 "git" fields in
+       let* m = applied_fields "git" in
        let* branch = Fields.field m "branch" string in
        let* commit = Fields.field m "commit" string in
        let+ () = Fields.check_no_field_left m in
