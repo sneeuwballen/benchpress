@@ -283,8 +283,7 @@ let add_stanza (st:Stanza.t) self : t =
     )
 
   | St_error {err;loc=_} ->
-    let error = Sexp_decode.Err.to_error err in
-    {self with errors = error :: self.errors }
+    {self with errors = err :: self.errors }
 
 let add_stanza_l (l:Stanza.t list) self : t =
   List.fold_left (fun self st -> add_stanza st self) self l

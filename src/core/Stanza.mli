@@ -111,7 +111,7 @@ type t =
       loc: Loc.t
     }
   | St_error of {
-      err: Sexp_decode.err;
+      err: Error.t;
       loc: Loc.t;
     }
 
@@ -129,7 +129,7 @@ val errors : t list -> Error.t list
 (** {2 Decoding} *)
 
 val parse_files :
-  ?reify_errors:bool -> ?builtin:bool ->
+  ?reify_errors:bool ->
   string list -> t list
 (** Parse a list of files and return their concatenated stanzas.
     @param builtin if true, add the builtin prelude before the files
@@ -137,7 +137,7 @@ val parse_files :
 *)
 
 val parse_string :
-  ?reify_errors:bool -> ?builtin:bool ->
+  ?reify_errors:bool ->
   filename:string -> string -> t list
 (** Parse a string. See {!parse_files} for the arguments.
     @param filename name used in locations *)

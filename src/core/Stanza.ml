@@ -115,12 +115,12 @@ type t =
       loc: Loc.t
     }
   | St_error of {
-      err: Sexp_decode.err;
+      err: Error.t;
       loc: Loc.t;
     }
 
 let as_error = function
-  | St_error {err;loc=_} -> Some (Sexp_decode.Err.to_error err)
+  | St_error {err;loc=_} -> Some err
   | _ -> None
 
 let errors = CCList.filter_map as_error
@@ -213,7 +213,7 @@ let pp out =
   | St_declare_custom_tag {tag=t;loc=_} ->
     Fmt.fprintf out "(custom-tag %s)" t
   | St_error {err; loc=_} ->
-    Fmt.fprintf out "(@[error %a@])" Error.pp (SD.Err.to_error err)
+    Fmt.fprintf out "(@[error %a@])" Error.pp err
 
 let pp_l out l =
   Fmt.fprintf out "@[<v>%a@]" (Misc.pp_list pp) l
@@ -339,7 +339,7 @@ let dec_action : action SD.t =
   ]
 
 (* TODO: carry definitions around? *)
-let dec tags : (_ list * t) SD.t =
+let dec ~parse_prelude tags : (_ list * t list) SD.t =
   let open SD in
   let* loc = value_loc in
   try_l ~msg:"expected a stanza" [
@@ -349,8 +349,12 @@ let dec tags : (_ list * t) SD.t =
      let* expect = Fields.field_opt m "expect" (dec_expect tags) in
      let* pattern = Fields.field_opt m "pattern" dec_regex in
      let+ () = Fields.check_no_field_left m in
-     (tags, St_dir {path;expect;pattern;loc})
+     (tags, [St_dir {path;expect;pattern;loc}])
     );
+    (is_applied "import-prelude",
+     let+ () = applied0 "import-prelude" in
+     let tags, l = parse_prelude ~loc tags in
+     tags, l);
     (is_applied "prover",
      let* m = applied_fields "prover" in
      let dec_tag_name =
@@ -383,12 +387,14 @@ let dec tags : (_ list * t) SD.t =
        ) else return ()
      in
 
-     return (tags, St_prover {
+     let st = St_prover {
          name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
          ulimits; loc; produces_proof; inherits;
          binary=None;
          binary_deps=[]; (* TODO *)
-       })
+       } in
+
+     return (tags, [st])
     );
     (is_applied "task",
      let* m = applied_fields "task" in
@@ -396,20 +402,20 @@ let dec tags : (_ list * t) SD.t =
      let* synopsis = Fields.field_opt m "synopsis" string in
      let* action = Fields.field m "action" dec_action in
      let+ () = Fields.check_no_field_left m in
-     (tags, St_task {name;synopsis;action;loc})
+     (tags, [St_task {name;synopsis;action;loc}])
     );
     (is_applied "set-options",
      let* m = applied_fields "set-options" in
-      let* progress = Fields.field_opt m "progress" bool in
-      let* j = Fields.field_opt m "j" int in
-      let+ () = Fields.check_no_field_left m in
-      (tags, St_set_options {progress; j; loc})
+     let* progress = Fields.field_opt m "progress" bool in
+     let* j = Fields.field_opt m "j" int in
+     let+ () = Fields.check_no_field_left m in
+     (tags, [St_set_options {progress; j; loc}])
     );
     (is_applied "custom-tag",
      let* m = applied_fields "custom-tag" in
      let* s = Fields.field m "name" string in
      let+ () = Fields.check_no_field_left m in
-     (s::tags,St_declare_custom_tag {tag=s;loc})
+     (s::tags, [St_declare_custom_tag {tag=s;loc}])
     );
   ]
 
@@ -430,60 +436,61 @@ let parse_string_list_ ~filename str : _ list =
   in
   iter []
 
-(** Parse a list of files into a list of stanzas *)
-let parse_files, parse_string =
-  let decode_sexp_l ~reify_errors l =
-    CCList.fold_map
+let parse_prelude, parse_files, parse_string =
+
+  let mk_error_stanza ~loc ~reify_errors (e:Error.t) =
+    if reify_errors then (
+      let st = St_error {err=e; loc} in
+      st
+    ) else (
+      Error.raise e
+    )
+  in
+
+  let decode_sexp_l ~parse_prelude ~reify_errors l =
+    let parse_prelude = parse_prelude ~reify_errors in
+    CCList.fold_flat_map
       (fun tags s ->
-         match Sexp_decode.run (dec tags) s with
+         match Sexp_decode.run (dec ~parse_prelude tags) s with
          | Ok x -> x
          | Error e ->
            let loc = Sexp_decode.Err.loc e in
-           if reify_errors then (
-             let st = St_error {err=e; loc} in
-             tags, st
-           ) else (
-             Error.raise (Sexp_decode.Err.to_error e)
-           ))
+           let err = SD.Err.to_error e in
+           tags, [mk_error_stanza ~loc ~reify_errors err])
       l
   in
   (* prelude? *)
-  let get_prelude ~reify_errors ~builtin () =
-    let tags, prelude =
-      Error.guard (Error.wrap "Reading builtin config") @@ fun () ->
-      if builtin then (
-        let l =
-          parse_string_list_ ~filename:"builtin_config.sexp" Builtin_config.config in
-        let tags, l = decode_sexp_l ~reify_errors [] l in
-        tags, St_enter_file "prelude" :: l
-      ) else [], []
-    in
-    tags, prelude
+  let parse_prelude ~reify_errors ~loc:_ tags =
+    Error.guard (Error.wrap "Reading builtin config") @@ fun () ->
+    let l =
+      parse_string_list_ ~filename:"builtin_config.sexp" Builtin_config.config in
+    let tags, l =
+      decode_sexp_l ~reify_errors
+        ~parse_prelude:(fun ~reify_errors:_ ~loc tags ->
+            let err = Error.make "cannot import prelude from within prelude" in
+            tags, [mk_error_stanza ~loc ~reify_errors err])
+        tags l in
+    tags, (St_enter_file "prelude" :: l)
   in
   let process_file ~reify_errors tags file =
     let file = Misc.mk_abs_path file in
     match Se.parse_file_l file with
     | Error e -> Error.failf ?loc:None "cannot parse file '%s':@ %s" file e
     | Ok l ->
-      let tags, l = decode_sexp_l ~reify_errors tags l in
-      tags, St_enter_file file :: l
+      let tags, l = decode_sexp_l ~reify_errors ~parse_prelude tags l in
+      tags, (St_enter_file file :: l)
   and process_string ~reify_errors ~filename tags s =
     match Se.parse_string_l ~filename s with
     | Error e -> Error.failf ?loc:None "cannot parse file '%s':@ %s" filename e
     | Ok l ->
-      let tags, l = decode_sexp_l ~reify_errors tags l in
-      tags, St_enter_file filename :: l
+      let tags, l = decode_sexp_l ~reify_errors ~parse_prelude tags l in
+      tags, (St_enter_file filename :: l)
   in
-  let parse_files ?(reify_errors=false) ?(builtin=true) (files:string list) : t list =
-    let tags, prelude = get_prelude ~reify_errors ~builtin () in
-    CCList.fold_map (process_file ~reify_errors) tags files
-    |> snd
-    |> CCList.cons prelude
-    |> CCList.flatten
-  and parse_string ?(reify_errors=false) ?(builtin=true) ~filename (s:string) : t list =
-    let tags, prelude = get_prelude ~reify_errors ~builtin () in
-    let _tags, l = process_string ~reify_errors ~filename tags s in
-    CCList.cons prelude [l]
-    |> CCList.flatten
+  let parse_files ?(reify_errors=false) (files:string list) : t list =
+    let _tags, l = CCList.fold_map (process_file ~reify_errors) [] files in
+    CCList.flatten l
+  and parse_string ?(reify_errors=false) ~filename (s:string) : t list =
+    let _tags, l = process_string ~reify_errors ~filename [] s in
+    l
   in
-  parse_files, parse_string
+  parse_prelude, parse_files, parse_string
