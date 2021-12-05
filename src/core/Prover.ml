@@ -227,7 +227,7 @@ let db_prepare (db:Db.t) : unit =
       ulimit_mem text not null,
       ulimit_stack text not null,
       produces_proof bool,
-      inherits text,
+      inherits text
     );
 
   create table if not exists
