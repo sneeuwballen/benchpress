@@ -61,7 +61,12 @@ let diag_of_error ~uri (e0:Error.t) : LT.Diagnostic.t list =
 let diagnostics ~uri (p:processed_buf) : _ list =
   match p.stanzas with
   | Ok l ->
-    let errors = Stanza.errors l in
+    (* parsed succesfully, but stanzas might contain some additional errors *)
+    let defs_errors = match p.defs with
+      | Ok defs -> Definitions.errors defs
+      | Error e -> [e]
+    in
+    let errors = List.rev_append (Stanza.errors l) defs_errors in
     Log.debug (fun k->k"in %s: ok, %d stanzas, %d errors" uri (List.length l) (List.length errors));
     CCList.flat_map (diag_of_error ~uri) errors
 
@@ -218,7 +223,7 @@ class blsp = object(self)
     let defs =
       let* stanzas = stanzas in
       catch_e @@ fun () ->
-      Definitions.of_stanza_l stanzas
+      Definitions.of_stanza_l ~reify_errors:true stanzas
     in
     let pdoc = {stanzas; defs; text=contents} in
     Lock.with_lock buffers (fun b -> Hashtbl.replace b uri pdoc);

@@ -39,11 +39,11 @@ end
 val option_j : t -> int option
 val option_progress : t -> bool option
 
-val add_stanza : Stanza.t -> t -> t
+val add_stanza : ?reify_errors:bool -> Stanza.t -> t -> t
 
-val add_stanza_l : Stanza.t list -> t -> t
+val add_stanza_l : ?reify_errors:bool -> Stanza.t list -> t -> t
 
-val of_stanza_l : Stanza.t list -> t
+val of_stanza_l : ?reify_errors:bool -> Stanza.t list -> t
 
 val mk_subdir : t -> string -> Subdir.t
 

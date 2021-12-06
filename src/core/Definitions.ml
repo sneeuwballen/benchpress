@@ -3,7 +3,9 @@
 (** {1 Definitions} *)
 
 open Common
+
 module Str_map = Misc.Str_map
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.definition"))
 
 type path = string
 type 'a with_loc = 'a With_loc.t
@@ -208,7 +210,7 @@ let rec mk_action (self:t) (a:Stanza.action) : _ =
 let str_mem a b = CCString.mem ~sub:a b
 
 (* conversion from stanzas *)
-let add_stanza (st:Stanza.t) self : t =
+let add_stanza_ (st:Stanza.t) self : t =
   Logs.info (fun k->k "add-stanza %a" Stanza.pp st);
   let open Stanza in
   match st with
@@ -218,9 +220,10 @@ let add_stanza (st:Stanza.t) self : t =
       config_file=Some file; }
 
   | St_dir {path;expect;pattern;loc} ->
+    Log.debug (fun k->k"cur dir: '%s'" self.cur_dir);
     let path = norm_path ~cur_dir:self.cur_dir path in
     if Sys.file_exists path && Sys.is_directory path then () else (
-      Error.failf ~loc "%S is not a directory" path
+      Error.failf ~loc "%S is not a directory (cur_dir: %S)" path self.cur_dir
     );
     let expect =
       match expect with
@@ -338,10 +341,19 @@ let add_stanza (st:Stanza.t) self : t =
   | St_error {err;loc=_} ->
     {self with errors = err :: self.errors }
 
-let add_stanza_l (l:Stanza.t list) self : t =
-  List.fold_left (fun self st -> add_stanza st self) self l
+let add_stanza ?(reify_errors=false) st self : t =
+  if reify_errors then (
+    try add_stanza_ st self
+    with
+    | Error.E e -> {self with errors = e :: self.errors }
+  ) else (
+    add_stanza_ st self
+  )
 
-let of_stanza_l l = add_stanza_l l empty
+let add_stanza_l ?reify_errors (l:Stanza.t list) self : t =
+  List.fold_left (fun self st -> add_stanza ?reify_errors st self) self l
+
+let of_stanza_l ?reify_errors l = add_stanza_l ?reify_errors l empty
 
 let completions (self:t) ?before_pos (str:string) : def list =
   to_iter self

@@ -18,7 +18,7 @@ let interpolate_home ?(f=fun _-> None) s =
         begin match f s with
           | Some u -> u
           | None ->
-            failwith ("couldn't find variable: " ^ s)
+            Error.failf "interpolate home: couldn't find variable: '%s'" s
         end)
     s;
   Buffer.contents buf
