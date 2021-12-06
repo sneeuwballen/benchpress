@@ -18,12 +18,14 @@ val empty : t
 
 val find_prover : t -> string -> Prover.t with_loc
 val find_prover' : t -> string -> Prover.t
+val find_checker: t -> string -> Proof_checker.t with_loc
 val find_task : t -> string -> Task.t with_loc
 val find_task' : t -> string -> Task.t
 val find : t -> string -> def option
 val errors : t -> Error.t list
 val to_iter : t -> (string * def) Iter.t
 val all_provers : t -> Prover.t with_loc list
+val all_checkers : t -> Proof_checker.t with_loc list
 val all_tasks : t -> Task.t with_loc list
 val custom_tags : t -> string list
 

@@ -32,5 +32,13 @@ val make:
   Run_proc_result.t ->
   ('name, 'res) t
 
+val make_from_checker :
+  Prover.t ->
+  Proof_checker.t ->
+  timeout:Limit.Time.t ->
+  Problem.t ->
+  Run_proc_result.t ->
+  (Prover.name * Proof_checker.name, Proof_check_res.t) t
+
 val pp : 'a Fmt.printer -> 'res Fmt.printer -> ('a, 'res) t Fmt.printer
 

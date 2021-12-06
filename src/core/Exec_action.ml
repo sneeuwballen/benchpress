@@ -2,6 +2,7 @@
 (** {1 Execute actions} *)
 
 open Common
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.runexec-action"))
 
 (** File for results with given uuid and timestamp *)
 let db_file_for_uuid ~timestamp (uuid:Uuidm.t) : string =
@@ -23,6 +24,7 @@ module Exec_run_provers : sig
     j: int;
     problems: Problem.t list;
     provers: Prover.t list;
+    checkers: Proof_checker.t Misc.Str_map.t;
     limits : Limit.All.t;
   }
 
@@ -31,12 +33,14 @@ module Exec_run_provers : sig
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?interrupted:(unit -> bool) ->
+    Definitions.t ->
     t -> expanded
 
   val run :
     ?timestamp:float ->
     ?on_start:(expanded -> unit) ->
     ?on_solve:(Test.result -> unit) ->
+    ?on_proof_check:(Test.proof_check_result -> unit) ->
     ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
     uuid:Uuidm.t ->
@@ -57,6 +61,7 @@ end = struct
     j: int;
     problems: Problem.t list;
     provers: Prover.t list;
+    checkers: Proof_checker.t Misc.Str_map.t;
     limits : Limit.All.t;
   }
 
@@ -104,19 +109,32 @@ end = struct
         | exn -> Error.(raise @@ of_exn exn)
 
   (* Expand options into concrete choices *)
-  let expand ?j ?(dyn=false) ?limits ?interrupted (self:t) : expanded =
+  let expand ?j ?(dyn=false) ?limits ?interrupted (defs:Definitions.t) (self:t) : expanded =
     let limits = match limits with
       | None -> self.limits
       | Some l -> Limit.All.with_defaults l ~defaults:self.limits
     in
     let j = j >?? self.j >? Misc.guess_cpu_count () in
     let problems = CCList.flat_map (expand_subdir ~dyn ?interrupted) self.dirs in
-    { j; limits; problems; provers=self.provers; }
+    let checkers =
+      Definitions.all_checkers defs
+      |> List.map (fun c -> let c=c.With_loc.view in c.Proof_checker.name, c)
+      |> Misc.Str_map.of_list
+    in
+    { j; limits; problems; checkers; provers=self.provers; }
 
   let _nop _ = ()
 
+  let with_proof_file_opt ~proof_file f =
+    match proof_file with
+    | None -> f ()
+    | Some file ->
+      CCFun.finally
+        ~h:(fun () -> try Sys.remove file with _ -> ())
+        ~f
+
   let run ?(timestamp=Misc.now_s())
-      ?(on_start=_nop) ?(on_solve = _nop) ?(on_done = _nop)
+      ?(on_start=_nop) ?(on_solve = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
       ?(interrupted=fun _->false)
       ~uuid ~save
       (self:expanded) : _*_ =
@@ -158,20 +176,72 @@ end = struct
       let db = CCLock.create db in
       Misc.Par_map.map_p ~j:self.j
         (fun (prover,pb) ->
+           (* Also runs the proof checker, if the prover is proof producing
+              and returns "UNSAT". *)
            if interrupted() then Error.fail "run.interrupted";
            Error.guard
              (Error.wrapf "(@[running :prover %a :on %a@])"
                 Prover.pp_name prover Problem.pp pb) @@ fun () ->
+
+           let proof_file =
+             if prover.Prover.produces_proof then (
+               let pb = pb.Problem.name in
+               let ext = CCOpt.get_or ~default:"proof" prover.Prover.proof_ext in
+               let f =
+                 Filename.concat (Filename.dirname pb)
+                   (spf "proof-%s-%s.%s" prover.Prover.name (Filename.basename pb) ext)
+               in
+               Some f
+             ) else None
+           in
+
+           (* continue but ensure we cleanup the proof file *)
+           with_proof_file_opt ~proof_file @@ fun () ->
+
            let result =
-             Run_prover_problem.run ~limits:self.limits
-               prover pb in
+             Run_prover_problem.run ~limits:self.limits ~proof_file
+               prover pb
+           in
            (* insert into DB here *)
-           CCLock.with_lock db (fun db ->
-               Run_event.to_db db (Run_event.mk_prover result));
+           let ev_prover = Run_event.mk_prover result in
+           CCLock.with_lock db (fun db -> Run_event.to_db db ev_prover);
            on_solve result; (* callback *)
-           Run_event.mk_prover result
+
+           let ev_proof =
+             match result.res, proof_file with
+             | Res.Unsat, Some pfile when prover.Prover.produces_proof ->
+               (* run proof checker *)
+               Log.debug (fun k->k"proof-file size: %d"
+                             (try Unix.((stat pfile).st_size) with _ -> 0));
+
+               let checker =
+                 match prover.Prover.proof_checker with
+                 | None -> Error.failf "cannot check proofs for '%s'" prover.name
+                 | Some c ->
+                   try Misc.Str_map.find c self.checkers
+                   with Not_found ->
+                     Error.failf "cannot find proof checker '%s'" c
+               in
+
+               let res =
+                 let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
+                 Run_prover_problem.run_proof_check ~limits
+                   ~proof_file:pfile prover checker pb
+               in
+               let ev_checker = Run_event.mk_checker res in
+
+               (* insert into DB here *)
+               CCLock.with_lock db (fun db -> Run_event.to_db db ev_checker);
+               [ev_checker]
+
+             | _ -> []
+           in
+
+           Run_event.mk_prover result :: ev_proof
         )
         jobs
+
+      |> CCList.flatten
     in
 
     (* TODO: proof check the "unsat" results *)
@@ -211,6 +281,7 @@ type cb_progress = <
 module Progress_run_provers : sig
   type t = <
     on_res: Run_prover_problem.job_res -> unit;
+    on_proof_check_res: Test.proof_check_result -> unit;
     on_done: unit;
   >
   val nil : t
@@ -227,10 +298,15 @@ module Progress_run_provers : sig
 end = struct
   type t = <
     on_res: Run_prover_problem.job_res -> unit;
+    on_proof_check_res: Test.proof_check_result -> unit;
     on_done: unit;
   >
 
-  let nil = object method on_res _=() method on_done=() end
+  let nil = object
+    method on_res _=()
+    method on_proof_check_res _=()
+    method on_done=()
+  end
 
   (* callback that prints a result *)
   let progress_dynamic len =
@@ -275,6 +351,8 @@ end = struct
             cb#on_progress ~percent:(int_of_float percent) ~elapsed_time ~eta)
           cb_progress;
         ()
+      method on_proof_check_res res =
+        tick();
       method on_done =
         match cb_progress with
         | None -> ()
@@ -368,7 +446,7 @@ let rec run ?(save=true) ?interrupted ?cb_progress
       let is_dyn = CCOpt.get_or ~default:false @@ Definitions.option_progress defs in
       let r_expanded =
         Exec_run_provers.expand ?interrupted ~dyn:is_dyn
-          ?j:(Definitions.option_j defs) r
+          ?j:(Definitions.option_j defs) defs r
       in
       let progress =
         Progress_run_provers.make ~pp_results:true ~dyn:is_dyn

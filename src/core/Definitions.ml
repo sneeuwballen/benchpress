@@ -62,9 +62,15 @@ module Def = struct
 end
 
 let to_iter self : _ Iter.t = Str_map.to_iter self.defs
+
 let all_provers self : _ list =
   Str_map.values self.defs
   |> Iter.filter_map (function D_prover p -> Some p | _ -> None)
+  |> Iter.to_rev_list
+
+let all_checkers self : _ list =
+  Str_map.values self.defs
+  |> Iter.filter_map (function D_proof_checker c -> Some c | _ -> None)
   |> Iter.to_rev_list
 
 let all_tasks self : _ list =
@@ -94,7 +100,13 @@ let find_prover self name : Prover.t with_loc =
   match Str_map.get name self.defs with
   | Some (D_prover p) -> p
   | Some _ -> Error.failf "%S is not a prover" name
-  | _ -> Error.failf "prover %S not defined" name
+  | _ -> Error.failf "prover %S is not defined" name
+
+let find_checker self name : Proof_checker.t with_loc =
+  match Str_map.get name self.defs with
+  | Some (D_proof_checker p) -> p
+  | Some _ -> Error.failf "%S is not a proof checker" name
+  | _ -> Error.failf "proof checker %S is not defined" name
 
 let find_task self name : Task.t with_loc =
   match Str_map.get name self.defs with
@@ -193,6 +205,8 @@ let rec mk_action (self:t) (a:Stanza.action) : _ =
   | Stanza.A_run_cmd {cmd; loc} ->
     Action.Act_run_cmd {cmd; loc}
 
+let str_mem a b = CCString.mem ~sub:a b
+
 (* conversion from stanzas *)
 let add_stanza (st:Stanza.t) self : t =
   Logs.info (fun k->k "add-stanza %a" Stanza.pp st);
@@ -218,8 +232,8 @@ let add_stanza (st:Stanza.t) self : t =
 
   | St_prover {
       name; cmd; sat; unsat; timeout; unknown; memory;
-      version; binary; binary_deps; custom; ulimits; loc;
-      produces_proof; inherits;
+      version; custom; ulimits; loc;
+      produces_proof; proof_ext; proof_checker; inherits;
     } ->
     (* add prover *)
     let inherits_p = match inherits with
@@ -228,17 +242,54 @@ let add_stanza (st:Stanza.t) self : t =
         let p' = find_prover' self s in
         Some p'
     in
+
     let cmd = match cmd, inherits_p with
       | Some c, _ -> c
       | None, Some p -> p.cmd
       | None, None -> Error.failf ~loc "needs 'inherits' or 'cmd'"
     in
     let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
-    let binary = match binary with
-      | Some b -> b
-      | None -> Misc.get_binary_of_cmd cmd
+
+    let sat = match sat, inherits_p with
+      | None, Some p -> p.sat | r, _ -> r
+    and unsat = match unsat, inherits_p with
+      | None, Some p -> p.unsat | r, _ -> r
+    and unknown = match unknown, inherits_p with
+      | None, Some p -> p.unknown | r, _ -> r
+    and timeout = match timeout , inherits_p with
+      | None, Some p -> p.timeout | r, _ -> r
+    and memory = match memory , inherits_p with
+      | None, Some p -> p.memory | r, _ -> r
+    and produces_proof = match produces_proof, inherits_p with
+      | None, Some p -> p.produces_proof | Some b, _ -> b | _ -> false
+    and proof_ext = match proof_ext, inherits_p with
+      | None, Some p -> p.proof_ext | r, _ -> r
+    and proof_checker = match proof_checker, inherits_p with
+      | None, Some p -> p.proof_checker | r, _ -> r
     in
-    let binary = Misc.str_replace ["cur_dir", self.cur_dir] binary in
+    if not (str_mem "$file" cmd) then (
+      Error.failf ~loc "Prover's `cmd` does not contain $file"
+    );
+    if produces_proof && not (str_mem "$proof_file" cmd) then (
+      Error.failf ~loc "Prover produces proof, but `cmd` does not contain $proof_file"
+    );
+    if produces_proof then (
+      match proof_checker with
+      | None ->
+        Error.failf ~loc "Prover produces proof, but no checker is declared"
+      | Some c ->
+        (* make sure it's defined *)
+        let _c = find_checker self c in
+        ()
+    );
+    if not produces_proof && str_mem "$proof_file" cmd then (
+      Error.failf ~loc
+        "Prover does not produce proof, but `cmd` does contains $proof_file.\n\
+         It will not be substituted."
+    );
+    let binary =
+      Misc.get_binary_of_cmd cmd
+      |> Misc.str_replace ["cur_dir", self.cur_dir] in
     let version = match version with
       | Some v -> v
       | None -> Version_exact (Prover.Tag "<unknown>")
@@ -252,12 +303,14 @@ let add_stanza (st:Stanza.t) self : t =
     let p = {
       Prover.
       name; cmd; sat; unsat; timeout; unknown; memory; ulimits;
-      binary; binary_deps; version=get_version ~binary version;
-      custom; defined_in=self.config_file; inherits; produces_proof;
+      binary; binary_deps=[]; version=get_version ~binary version;
+      custom; defined_in=self.config_file;
+      inherits; produces_proof; proof_ext; proof_checker;
     } in
     add_prover (With_loc.make ~loc p) self
 
   | St_proof_checker {name; cmd; valid; invalid; loc} ->
+    let cmd = Misc.str_replace ["cur_dir", self.cur_dir] cmd in
     let pc = {
       Proof_checker.name; cmd; valid; invalid
     } in

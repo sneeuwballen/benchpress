@@ -61,17 +61,12 @@ type t =
       loc: Loc.t;
       version: version_field option;
       cmd: string option;
-      (** the command line to run.
-          possibly contains $binary, $file, $memory and $timeout *)
 
-      produces_proof: bool;
-      (** true if the solver should be passed $proof_file into which
-          it can emit a proof *)
+      produces_proof: bool option;
+      proof_ext: string option;
+      proof_checker: string option;
 
-      binary: string option; (** name of the program itself *)
-      binary_deps: string list; (** list of binaries this depends on *)
-
-      ulimits : Ulimit.conf option; (** which limits to enforce using ulimit *)
+      ulimits : Ulimit.conf option;
 
       (* Result analysis *)
       unsat   : regex option;  (** regex for "unsat" *)
@@ -177,12 +172,12 @@ let pp out =
       (pp_opt "pattern" pp_regex) pattern
   | St_prover {
       name; cmd; version; unsat; sat; unknown; timeout; memory;
-      binary=_; binary_deps=_; custom; ulimits;
-      produces_proof; inherits; loc=_;
+      custom; ulimits;
+      produces_proof; proof_ext; proof_checker; inherits; loc=_;
     } ->
     let pp_custom out (x,y) =
       Fmt.fprintf out "(@[tag %a@ %a@])" pp_str x pp_regex y in
-    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a%a%a@])"
+    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
       (pp_f "name" pp_str) name
       (pp_opt "cmd" pp_str) cmd
       (pp_opt "version" pp_version_field) version
@@ -193,7 +188,9 @@ let pp out =
       (pp_opt "timeout" pp_regex) timeout
       (pp_opt "memory" pp_regex) memory
       (pp_opt "inherits" pp_str) inherits
-      (pp_f "produces_proof" Fmt.bool) produces_proof
+      (pp_opt "produces_proof" Fmt.bool) produces_proof
+      (pp_opt "proof_checker" pp_str) proof_checker
+      (pp_opt "proof_ext" pp_str) proof_ext
       (pp_l1 pp_custom) custom
   | St_proof_checker {name; cmd; loc=_; valid; invalid } ->
     Fmt.fprintf out "(@[<hv>proof-checker%a%a%a%a@])"
@@ -385,7 +382,9 @@ let dec (st:state) : t list SD.t =
      let* timeout = Fields.field_opt m "timeout" dec_regex in
      let* memory = Fields.field_opt m "memory" dec_regex in
      let* ulimits = Fields.field_opt m "ulimit" dec_ulimits in
-     let* produces_proof = Fields.field_opt_or ~default:false m "produces_proof" bool in
+     let* produces_proof = Fields.field_opt m "produces_proof" bool in
+     let* proof_ext = Fields.field_opt m "proof_ext" string in
+     let* proof_checker = Fields.field_opt m "proof_checker" string in
      let* inherits = Fields.field_opt m "inherits" string in
      let* () = Fields.check_no_field_left m in
      let* () = if cmd=None && inherits=None then (
@@ -395,12 +394,19 @@ let dec (st:state) : t list SD.t =
 
      let st = St_prover {
          name; cmd; version; sat; unsat; unknown; timeout; memory; custom;
-         ulimits; loc; produces_proof; inherits;
-         binary=None;
-         binary_deps=[]; (* TODO *)
+         ulimits; loc; produces_proof; proof_ext; inherits; proof_checker;
        } in
 
      return [st]
+    );
+    (is_applied "proof_checker",
+     let* m = applied_fields "proof_checker" in
+     let* name = Fields.field m "name" string in
+     let* cmd = Fields.field m "cmd" string in
+     let* valid = Fields.field m "valid" dec_regex in
+     let* invalid = Fields.field m "invalid" dec_regex in
+     let+ () = Fields.check_no_field_left m in
+     [St_proof_checker {name;cmd;valid;invalid;loc}]
     );
     (is_applied "task",
      let* m = applied_fields "task" in

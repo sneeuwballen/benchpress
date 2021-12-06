@@ -60,12 +60,11 @@ type t =
           possibly contains $binary, $file, $memory and $timeout,
           and $proof_file if {!produces_proof} is true *)
 
-      produces_proof: bool;
+      produces_proof: bool option;
       (** true if the solver should be passed $proof_file into which
           it can emit a proof *)
-
-      binary: string option; (** name of the program itself *)
-      binary_deps: string list; (** list of binaries this depends on *)
+      proof_ext: string option; (** file extension for proofs *)
+      proof_checker: string option; (** name of proof checker *)
 
       ulimits : Ulimit.conf option; (** which limits to enforce using ulimit *)
 

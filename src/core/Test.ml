@@ -7,6 +7,7 @@ open Misc
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.test"))
 
 type result = (Prover.name, Res.t) Run_result.t
+type proof_check_result = ((Prover.name * Proof_checker.name), Proof_check_res.t) Run_result.t
 
 (** {2 URL providers} *)
 

@@ -26,12 +26,13 @@ val make_cmd :
 module Res = Proof_check_res
 
 val run :
+  ?limits:Limit.All.t ->
   problem:string -> proof_file:string ->
   t ->
   Run_proc_result.t
 
 val analyze_res :
-  t -> Run_proc_result.t -> Res.t
+  t -> Run_proc_result.t -> Res.t option
 
 val db_prepare : Db.t -> unit
 

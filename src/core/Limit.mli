@@ -24,6 +24,8 @@ module Time : sig
   (** Create a timeout of [~h] hours, [~m] minutes and
       [~s] seconds. The arguments default to [0] is not provided. *)
 
+  val default : t
+
   val add : t -> t -> t
   (** Add timeouts. *)
 
@@ -63,6 +65,8 @@ module Memory : sig
   (** Create a memory limits of [~t] terabytes, [~g] gigabytes,
       [~m] megabytes, [~k] kilobytes, and [~b] bytes. The arguments default
       to [0] if not provided. *)
+
+  val default : t
 
   val as_int : view -> t -> int
   (** View a memory size converted into the given view/units, truncating
@@ -113,6 +117,8 @@ module All : sig
 
   val mk : ?time:Time.t -> ?memory:Memory.t -> ?stack:Stack.t -> unit -> t
   (** Create a set of limits. *)
+
+  val default : t
 
   val update_time : (Time.t option -> Time.t option) -> t -> t
   val update_memory : (Memory.t option -> Memory.t option) -> t -> t

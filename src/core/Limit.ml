@@ -30,6 +30,8 @@ module Time = struct
   let mk ?(s=0) ?(m=0) ?(h=0) () =
     s + m * t_min + h * t_hour
 
+  let default = mk ~h:1 ()
+
   let add x y = x + y
 
   (* Int (i.e. partial) View *)
@@ -96,6 +98,8 @@ module Memory = struct
   let mk ?(b=0) ?(k=0) ?(m=0) ?(g=0) ?(t=0) () =
     b + k * s_k + m * s_m + g * s_g + t * s_t
 
+  let default = mk ~g:1 ()
+
   (* Int View *)
   let as_int v t =
     match v with
@@ -161,6 +165,8 @@ module All = struct
   (* Creation *)
   let mk ?time ?memory ?stack () =
     { time; memory; stack; }
+
+  let default : t = mk ~time:(Time.default) ~memory:Memory.default ()
 
   let update_time f t = { t with time = f t.time }
   let update_memory f t = { t with memory = f t.memory }

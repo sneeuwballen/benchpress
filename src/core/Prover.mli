@@ -29,6 +29,8 @@ type t = {
   cmd: string;          (* the command line to run.
                            possibly contains $binary, $file, $memory and $timeout *)
   produces_proof: bool;
+  proof_ext: string option; (** file extension for proofs *)
+  proof_checker: string option; (** proof checker for its proofs *)
 
   (* whether some limits should be enforced/set by ulimit *)
   ulimits : Ulimit.conf;

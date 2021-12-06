@@ -6,12 +6,12 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action
     ?j ?timestamp ?pp_results ?dyn ?limits ~notify ~uuid ~save
-    (r:Action.run_provers)
+    (defs: Definitions.t) (r:Action.run_provers)
   : (_ * Test_compact_result.t) =
   begin
-    Error.guard (Error.wrapf "run prover action %a" Action.pp_run_provers r) @@ fun () ->
+    Error.guard (Error.wrapf "run prover action@ `@[%a@]`" Action.pp_run_provers r) @@ fun () ->
     let interrupted = CCLock.create false in
-    let r = Exec_action.Exec_run_provers.expand ?dyn ?j ?limits r in
+    let r = Exec_action.Exec_run_provers.expand ?dyn ?j ?limits defs r in
     let len = List.length r.problems in
     Notify.sendf notify "testing with %d provers, %d problems…"
       (List.length r.provers) len;
@@ -28,7 +28,7 @@ let execute_run_prover_action
   end
 
 type top_task =
-  | TT_run_provers of Action.run_provers
+  | TT_run_provers of Action.run_provers * Definitions.t
   | TT_other of Action.t
 
 let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
@@ -61,7 +61,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
             |> CCList.sort_uniq ~cmp:Prover.compare_by_name
           in
           let r = {r with provers; dirs=paths @ r.dirs} in
-          TT_run_provers r
+          TT_run_provers (r,defs)
 
         | {loc=_;view=t} ->
           TT_other t.action
@@ -75,12 +75,12 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       let provers = CCList.sort_uniq ~cmp:Prover.compare_name provers in (* deduplicate *)
       let r =
         Definitions.mk_run_provers ~loc:None ?timeout ?memory ?j ~provers ~paths defs in
-      TT_run_provers r
+      TT_run_provers (r, defs)
   in
   begin match tt_task with
     | TT_other a ->
       Exec_action.run ~save defs a
-    | TT_run_provers run_provers_action ->
+    | TT_run_provers (run_provers_action, defs) ->
       let j = CCOpt.Infix.( j <+> Definitions.option_j defs) in
       let progress = CCOpt.Infix.( dyn <+> Definitions.option_progress defs) in
       let limits = run_provers_action.limits in
@@ -90,7 +90,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       let (top_res, (results:Test_compact_result.t)) =
         execute_run_prover_action
           ~uuid ?pp_results ?dyn:progress ~limits ?j ~notify ~timestamp ~save
-          run_provers_action
+          defs run_provers_action
       in
       if CCOpt.is_some csv then (
         let res = Lazy.force top_res in

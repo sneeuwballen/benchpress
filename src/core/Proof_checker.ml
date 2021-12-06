@@ -36,7 +36,7 @@ let interpolate_cmd_ ?(env=[||]) ~subst cmd =
 
 let make_cmd ?env ~problem ~proof_file (self:t) : string =
   let subst = function
-    | "problem" -> problem
+    | "file" -> problem
     | "proof_file" -> proof_file
     | s -> raise (Subst_not_found s)
   in
@@ -46,25 +46,25 @@ let make_cmd ?env ~problem ~proof_file (self:t) : string =
       "cannot make command for proof_checker %s:@ cannot find field %s"
       self.name s
 
-let run ~problem ~proof_file (self:t) =
+let run ?(limits=Limit.All.default) ~problem ~proof_file (self:t) =
   let cmd = make_cmd ~problem ~proof_file self in
+  let ulimit = Ulimit.mk ~time:true ~memory:true ~stack:true in
+  let prefix = Ulimit.cmd ~conf:ulimit ~limits:(
+      Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits
+    ) in
+  let cmd = Ulimit.prefix_cmd ?prefix ~cmd () in
   Run_proc.run cmd
 
-let analyze_res (self:t) (res:Run_proc_result.t) : Res.t =
-
+let analyze_res (self:t) (res:Run_proc_result.t) : Res.t option =
   let find_ re =
     let re = Re.Perl.compile_pat ~opts:[`Multiline] re in
     Re.execp re res.stdout ||
     Re.execp re res.stderr
   in
 
-  if find_ self.valid then Res.Valid
-  else if find_ self.invalid then Res.Invalid
-  else if res.errcode <> 0 then (
-    Res.Unknown (spf "no match; errcode=%d" res.errcode)
-  ) else (
-    Res.Unknown "no match"
-  )
+  if find_ self.valid then Some Res.Valid
+  else if find_ self.invalid then Some Res.Invalid
+  else None
 
 let db_prepare (db:Db.t) : unit =
   Db.exec0 db {|

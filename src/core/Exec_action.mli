@@ -12,6 +12,7 @@ module Exec_run_provers : sig
     j: int;
     problems: Problem.t list;
     provers: Prover.t list;
+    checkers: Proof_checker.t Misc.Str_map.t;
     limits : Limit.All.t;
   }
 
@@ -20,12 +21,14 @@ module Exec_run_provers : sig
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?interrupted:(unit -> bool) ->
+    Definitions.t ->
     t -> expanded
 
   val run :
     ?timestamp:float ->
     ?on_start:(expanded -> unit) ->
     ?on_solve:(Test.result -> unit) ->
+    ?on_proof_check:(Test.proof_check_result -> unit) ->
     ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
     uuid:Uuidm.t ->
@@ -42,6 +45,7 @@ end
 module Progress_run_provers : sig
   type t = <
     on_res: Run_prover_problem.job_res -> unit;
+    on_proof_check_res: Test.proof_check_result -> unit;
     on_done: unit;
   >
   val nil : t

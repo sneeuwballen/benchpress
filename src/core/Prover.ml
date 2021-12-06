@@ -28,6 +28,8 @@ type t = {
   (* the command line to run. Possibly contains $binary, $file, $memory and $timeout *)
 
   produces_proof: bool;
+  proof_ext: string option; (** file extension for proofs *)
+  proof_checker: string option; (** proof checker for its proofs *)
 
   (* whether some limits should be enforced/set by ulimit *)
   ulimits : Ulimit.conf;
@@ -103,10 +105,10 @@ end
 let pp out self =
   let open Misc.Pp in
   let {name; version; cmd; ulimits; unsat; sat; timeout; unknown; memory;
-       binary; custom; produces_proof; inherits;
+       binary; custom; produces_proof; proof_ext; inherits; proof_checker;
        binary_deps=_; defined_in} = self in
   Fmt.fprintf out
-    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
+    "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
     (pp_f "name" pp_str) name
     (pp_f "version" Version.pp) version
     (pp_f "cmd" pp_str) cmd
@@ -119,6 +121,8 @@ let pp out self =
     (pp_opt "unknown" pp_regex) unknown
     (pp_opt "defined_in" pp_str) defined_in
     (pp_f "produces_proof" Fmt.bool) produces_proof
+    (pp_opt "produces_proof" pp_str) proof_ext
+    (pp_opt "proof_checker" pp_str) proof_checker
     (pp_opt "inherits" pp_str) inherits
     (pp_l1 (pp_pair pp_str pp_regex)) custom
 
@@ -227,6 +231,8 @@ let db_prepare (db:Db.t) : unit =
       ulimit_mem text not null,
       ulimit_stack text not null,
       produces_proof bool,
+      proof_checker text,
+      proof_ext text,
       inherits text
     );
 
@@ -243,10 +249,10 @@ let db_prepare (db:Db.t) : unit =
 let to_db db (self:t) : unit =
   let str_or = CCOpt.get_or ~default:"" in
   Db.exec_no_cursor db
-    {|insert into prover values (?,?,?,?,?,?,?,?,?,?,?,?,?) on conflict do nothing;
+    {|insert into prover values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) on conflict do nothing;
       |}
-    ~ty:Db.Ty.([text; text; blob; text; text; text; text;
-                text; text; text; text; text; text])
+    ~ty:Db.Ty.([text; text; blob; text; text; text; text; text;
+                text; text; text; text; text; text; text])
     self.name
     (Version.ser_sexp self.version)
     self.binary
@@ -259,6 +265,8 @@ let to_db db (self:t) : unit =
     (self.ulimits.memory |> string_of_bool)
     (self.ulimits.stack |> string_of_bool)
     (self.produces_proof |> string_of_bool)
+    (self.proof_checker |> str_or)
+    (self.proof_ext |> str_or)
     (self.inherits |> CCOpt.get_or ~default:"")
   |> Misc.unwrap_db (fun() -> "prover.to-db");
   if self.custom <> [] then (
@@ -319,16 +327,17 @@ let of_db db name : t =
         memory = true;
         stack = false; }
   in
-  let produces_proof, inherits =
+  let produces_proof, proof_ext, proof_checker, inherits =
     (* parse separately, for migration purposes (old DBs don't have this) *)
-    try Db.exec_exn db {|select produces_proof, inherits from prover where name=?|}
+    try Db.exec_exn db
+          {|select produces_proof, proof_ext, proof_checker, inherits from prover where name=?|}
           ~f:Db.Cursor.next
-          ~ty:Db.Ty.([text], [nullable text; nullable text],
-                     fun a b->
-                       CCOpt.map_or ~default:false bool_of_string a,b)
+          ~ty:Db.Ty.([text], [nullable text; nullable text; nullable text; nullable text],
+                     fun a b c d->
+                       CCOpt.map_or ~default:false bool_of_string a,b,c,d)
           name
-      |> CCOpt.get_or ~default:(false, None)
-    with _ -> false, None
+      |> CCOpt.get_or ~default:(false, None, None, None)
+    with _ -> false, None, None, None
   in
   Db.exec db
     {|select
@@ -349,7 +358,7 @@ let of_db db name : t =
                  let timeout = nonnull timeout in
                  let memory = nonnull memory in
                  { name; cmd; binary_deps=[]; defined_in=None; custom;
-                   inherits; produces_proof;
+                   inherits; produces_proof; proof_ext; proof_checker;
                    version; binary; ulimits; unsat;sat;unknown;timeout;memory})
   |> Misc.unwrap_db (fun() -> spf "reading data for prover '%s'" name)
   |> Error.unwrap_opt (spf "no prover by the name '%s'" name)

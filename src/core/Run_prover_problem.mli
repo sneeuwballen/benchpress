@@ -5,13 +5,23 @@ open Common
 
 type path = string
 type job_res= (Prover.name, Res.t) Run_result.t
+type check_res = (Prover.name * Proof_checker.name, Proof_check_res.t) Run_result.t
 
+(** Run this prover on this problem. *)
 val run :
   limits:Limit.All.t ->
-  ?proof_file:string ->
+  proof_file:string option ->
   Prover.t ->
   Problem.t ->
   job_res
+
+val run_proof_check :
+  limits:Limit.All.t ->
+  Prover.t ->
+  Proof_checker.t ->
+  Problem.t ->
+  proof_file:string ->
+  check_res
 
 val pp_result :
   w_prover:int ->
