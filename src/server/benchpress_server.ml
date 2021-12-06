@@ -198,6 +198,7 @@ let link_show_single db_file prover path =
 let uri_get_file pb = spf "/get-file/%s/" (U.percent_encode pb)
 let uri_gnuplot pb = spf "/show-gp/%s/" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s/" (U.percent_encode pb)
+let uri_invalid pb = spf "/show-invalid/%s/" (U.percent_encode pb)
 let uri_show_detailed
     ?(offset=0) ?(filter_prover="") ?(filter_pb="")
     ?(filter_res="") ?(filter_expect="") pb =
@@ -291,6 +292,7 @@ let handle_show (self:t) : unit =
     Test_comparison_short.to_printbox_l cr.cr_comparison in
   let uri_plot = uri_gnuplot file in
   let uri_err = uri_error_bad file in
+  let uri_invalid = uri_invalid file in
   Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let h =
     let open Html in
@@ -336,6 +338,8 @@ let handle_show (self:t) : unit =
       (* lazy loading *)
       [div ~a:[a_class ["lazy-load"];
                Unsafe.string_attrib "x_src" uri_err ] []];
+      [div ~a:[a_class ["lazy-load"];
+               Unsafe.string_attrib "x_src" uri_invalid ] []];
       [img
          ~src:uri_plot
          ~a:[a_class ["img-fluid"];
@@ -458,6 +462,48 @@ let handle_show_errors (self:t) : unit =
                        [txt "list of errors"; ])
               [div [mk_dl_file l; pb_html p]]])
         errors;
+    ]
+  in
+  Log.info (fun k->k "show:turned into html in %.3fs"
+               (Misc.Chrono.since_last chrono));
+  Log.debug (fun k->k "successful reply for %S" file);
+  H.Response.make_string (Ok (Html.to_string_elt h))
+
+let handle_show_invalid (self:t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show-invalid" @/ string_urlencoded @/ return)
+  @@ fun file _req ->
+  let@@ chrono = query_wrap (Error.wrapf "serving show-invalid/%s" file) in
+  Log.info (fun k->k "----- start show-invalid %s -----" file);
+  let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
+  Log.info (fun k->k "show-err: loaded full summary in %.3fs"
+               (Misc.Chrono.since_last chrono));
+  let link_file = link_show_single file in
+  let invalid = Test_analyze.to_printbox_invalid_proof_l ~link:link_file cr.cr_analyze in
+  Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
+  let mk_dl_file l =
+    let open Html in
+    let data =
+      "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
+    in
+    mk_a ~cls:["btn"; "btn-link";"btn-sm"]
+      ~a:[a_download (Some "problems.txt"); a_href data]
+      [txt "download list"]
+  in
+  let h =
+    let open Html in
+    (* FIXME: only optional? *)
+    div @@
+    (*           mk_page ~title:"show-err" @@ *)
+    List.flatten [
+      CCList.flat_map
+        (fun (n,l,p) ->
+           [h3 [txt ("bad for " ^ n)];
+            details ~a:[a_open()]
+              (summary ~a:[a_class ["alert";"alert-danger"]]
+                 [txt "list of invalid proofs"])
+              [div [mk_dl_file l; pb_html p]]])
+        invalid
     ]
   in
   Log.info (fun k->k "show:turned into html in %.3fs"
@@ -739,9 +785,9 @@ let handle_show_single (self:t) : unit =
   H.Response.make_string ~headers:default_html_headers @@
   let@@ db =
     Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" db_file) db_file in
-  let r = Test_detailed_res.get_res db prover pb_file in
+  let r, check_res = Test_detailed_res.get_res db prover pb_file in
   let pb, pb_prover, stdout, stderr =
-    Test_detailed_res.to_printbox ~link:(fun _ -> link_get_file) r
+    Test_detailed_res.to_printbox ~link:(fun _ -> link_get_file) r check_res
   in
   let open Html in
   let h = mk_page ~title:"single result" [
@@ -1202,6 +1248,7 @@ module Cmd = struct
       handle_show_gp self;
       handle_prover_in self;
       handle_show_errors self;
+      handle_show_invalid self;
       handle_show_as_table self;
       handle_show_detailed self;
       handle_show_single self;

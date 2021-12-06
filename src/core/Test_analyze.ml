@@ -72,6 +72,7 @@ type t = {
   disappoint: int;
   bad       : int; (* mismatch *)
   bad_full  : (Problem.t * Res.t * float) list; (* always materialized *)
+  valid_proof: int;
   invalid_proof: int;
   invalid_proof_full: (Problem.t * Proof_check_res.t * float) list;
   errors    : int;
@@ -152,6 +153,23 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t =
               and res = 'error' ; |}
         prover ~f:Db.Cursor.to_list_rev
          |> Misc.unwrap_db (fun() -> "reading full list of erroneous results")
+  and valid_proof =
+    match
+      Db.exec db prover
+        {| select count(*) from prover_res r, proof_check_res p
+            where r.prover = ? and r.prover = p.prover and r.file = p.file
+            and p.res = 'valid'; |}
+        ~ty:Db.Ty.([text], [int], fun i->i) ~f:Db.Cursor.next
+    with
+    | Ok (Some i) -> i
+    | Ok None -> Error.failf "expected a result"
+    | Error db ->
+      Log.err (fun k->k"cannot list valid proofs: %a" Error.pp (Misc.err_of_db db));
+      0
+    | exception e ->
+      Log.err
+        (fun k->k"cannot list invalid-proofs: %s" (Printexc.to_string e));
+      0
   and invalid_proof_full =
     match
       Db.exec db prover
@@ -179,7 +197,7 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t =
   in
   let invalid_proof = List.length invalid_proof_full in
   { ok; disappoint; improved; bad; bad_full;
-    invalid_proof; invalid_proof_full;
+    invalid_proof; invalid_proof_full; valid_proof;
     errors; errors_full; total; }
 
 (* TODO: create a function for "better"
@@ -238,6 +256,8 @@ let get_improved r = r.improved
 let get_ok r = r.ok
 let get_disappoint r = r.disappoint
 let get_bad r = r.bad
+let get_valid_proof r = r.valid_proof
+let get_invalid_proof r = r.invalid_proof
 let get_errors r = r.errors
 
 let to_printbox_ ~header ?link:to_link (l:(Prover.name * t) list) : PrintBox.t =
@@ -266,6 +286,8 @@ let to_printbox_ ~header ?link:to_link (l:(Prover.name * t) list) : PrintBox.t =
     mk_row "ok" get_ok @@ pb_int_color Style.(fg_color Green);
     mk_row "disappoint" get_disappoint @@ pb_int_color Style.(fg_color Yellow);
     mk_row "bad" get_bad @@ pb_int_color Style.(fg_color Red);
+    mk_row "valid proof" get_valid_proof @@ pb_int_color Style.(fg_color Green);
+    mk_row "invalid proof" get_valid_proof @@ pb_int_color Style.(fg_color Red);
     mk_row ~ex:"error" "errors" get_errors @@ pb_int_color Style.(fg_color Cyan);
     text "total" :: List.map (fun (_,r) -> int r.total) l;
   ] in
@@ -300,6 +322,31 @@ let to_printbox_bad_l ?(link=default_pp_linker) =
        if a.bad = 0 then None
        else Some (p, CCList.map (fun (pb,_,_) -> pb.Problem.name) a.bad_full,
                   to_printbox_bad ~link:(link p) a))
+
+let to_printbox_invalid_proof ?link:(mk_link=default_linker) r : PrintBox.t =
+  let open PrintBox in
+  if r.invalid_proof <> 0 then (
+    let l =
+      r.invalid_proof_full
+      |> CCList.map
+        (fun (pb, res, t) ->
+           [ mk_link pb.Problem.name;
+             text (Proof_check_res.to_string res);
+             text (Misc.human_duration t);
+           ])
+    in
+    let header =
+      let tb = text_with_style Style.bold in
+      [tb "problem"; tb "proof check res"; tb "time"] in
+    grid_l (header :: l)
+  ) else empty
+
+let to_printbox_invalid_proof_l ?(link=default_pp_linker)=
+  CCList.filter_map
+    (fun ((p:string), a) ->
+       if a.invalid_proof = 0 then None
+       else Some (p, CCList.map (fun (pb,_,_) -> pb.Problem.name) a.invalid_proof_full,
+                  to_printbox_invalid_proof ~link:(link p) a))
 
 let to_printbox_errors ?link:(mk_link=default_linker) r : PrintBox.t =
   let open PrintBox in

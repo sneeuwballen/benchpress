@@ -19,6 +19,22 @@ type expect_filter =
   | TD_expect_bad
   | TD_expect_error
 
+let get_proof_check db p file : Proof_check_res.t option =
+  if Misc.db_has_table db "proof_check_res" then (
+    try
+      let r =
+        Db.exec db
+          {|select res from proof_check_res where prover=? and file =?; |}
+          ~ty:Db.Ty.([text;text], [text], fun i->i) ~f:Db.Cursor.next p file
+        |> Misc.unwrap_db (fun() -> spf "getting proof check res for '%s' on '%s'" p file)
+        |> Error.unwrap_opt "expected result"
+      in Some (Proof_check_res.of_string r)
+    with
+    | Error.E e ->
+      Log.err (fun k->k"cannot get proof-check-res for '%s' on '%s':@ %a" p file Error.pp e);
+      None
+  ) else None
+
 let list_keys ?(offset=0) ?(page_size=500)
     ?(filter_prover="") ?(filter_pb="") ?(filter_res="") ?filter_expect
     db : (key list*_*_) =
@@ -53,6 +69,7 @@ let list_keys ?(offset=0) ?(page_size=500)
       filter_prover filter_res filter_pb
     |> Misc.unwrap_db (fun() -> spf "counting results of '%s' with '%s'" filter_prover filter_res)
   in
+
   (* ask for [limit+1] entries *)
   let l =
     Db.exec db
@@ -121,14 +138,16 @@ let get_res db prover file : _ =
           {Problem.name=file; expected}
           { Run_proc_result.errcode;stdout;stderr;rtime;utime;stime})
   in
+  let proof_check_res = get_proof_check db prover file in
   Logs.info (fun k->k "try to get prover");
   let prover = Prover.of_db db prover in
   Logs.info (fun k->k "got prover");
-  Run_result.map ~f:(fun _ -> prover) res
+  Run_result.map ~f:(fun _ -> prover) res, proof_check_res
 
 module PB = PrintBox
 
-let to_printbox ?link:(mk_link=default_pp_linker) (self:t) : PB.t*PB.t*string*string =
+let to_printbox ?link:(mk_link=default_pp_linker)
+    (self:t) (check_res:_ option) : PB.t*PB.t*string*string =
   let open PB in
   Logs.debug (fun k->k "coucou");
   let pp_res r =
@@ -136,16 +155,29 @@ let to_printbox ?link:(mk_link=default_pp_linker) (self:t) : PB.t*PB.t*string*st
     | Res.Sat | Res.Unsat -> text_with_style Style.(set_fg_color Green@@bold) @@ Res.to_string r
     | Res.Error -> text_with_style Style.(set_fg_color Red@@bold) @@ Res.to_string r
     | _ -> text @@ Res.to_string r
+  and pp_proof_res = function
+    | Proof_check_res.Valid -> text_with_style Style.(set_fg_color Green@@bold) "valid"
+    | Proof_check_res.Invalid -> text_with_style Style.(set_fg_color Red@@bold) "invalid"
+    | Proof_check_res.Unknown msg ->
+      PB.hlist [
+        text_with_style Style.(set_fg_color Yellow@@bold) "unknown";
+        text msg;
+      ]
   in
   Logs.debug (fun k->k "prover is %a" Prover.pp self.program);
-  v_record @@ [
-    "problem.path", mk_link self.program.Prover.name self.problem.Problem.name;
-    "problem.expected_res", pp_res self.problem.Problem.expected;
-    "res", pp_res self.res;
-    "rtime", text (Misc.human_duration self.raw.rtime);
-    "stime", text (Misc.human_duration self.raw.stime);
-    "utime", text (Misc.human_duration self.raw.utime);
-    "errcode", int self.raw.errcode;
+  v_record @@ List.flatten @@ [
+    ["problem.path", mk_link self.program.Prover.name self.problem.Problem.name;
+     "problem.expected_res", pp_res self.problem.Problem.expected;
+     "res", pp_res self.res;
+    ];
+    (match check_res with
+     | None -> []
+     | Some p -> ["proof_check_res", pp_proof_res p]);
+    ["rtime", text (Misc.human_duration self.raw.rtime);
+     "stime", text (Misc.human_duration self.raw.stime);
+     "utime", text (Misc.human_duration self.raw.utime);
+     "errcode", int self.raw.errcode;
+    ];
   ],
   v_record @@ List.flatten [
     ["prover.name", text self.program.Prover.name;

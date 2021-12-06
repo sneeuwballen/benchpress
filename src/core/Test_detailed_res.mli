@@ -36,8 +36,10 @@ val list_keys :
     no more results, and [n] is the total number of results (not just
     those in [l]). *)
 
-val to_printbox : ?link:prover_path_linker -> t -> PrintBox.t * PrintBox.t * string * string
+val to_printbox : ?link:prover_path_linker ->
+  t -> Proof_check_res.t option ->
+  PrintBox.t * PrintBox.t * string * string
 (** Display an individual result + prover descr + stdout + stderr *)
 
-val get_res : Db.t -> Prover.name -> string -> t
+val get_res : Db.t -> Prover.name -> string -> t * Proof_check_res.t option
 (** Get an individual result *)

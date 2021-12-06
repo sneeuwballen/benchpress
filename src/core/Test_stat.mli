@@ -13,6 +13,8 @@ type t = {
   unknown: int;
   timeout: int;
   memory: int;
+  valid_proof: int;
+  invalid_proof: int;
   custom: (string * int) list;
   total: int;
   total_time: float; (* for sat+unsat *)

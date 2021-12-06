@@ -10,6 +10,7 @@ type t = {
   disappoint: int;
   bad       : int; (* mismatch *)
   bad_full  : (Problem.t * Res.t * float) list; (* always materialized *)
+  valid_proof: int;
   invalid_proof: int;
   invalid_proof_full: (Problem.t * Proof_check_res.t * float) list;
   errors    : int;
@@ -32,6 +33,9 @@ val to_printbox_bad_l :
   (Prover.name * t) list -> (string*string list*PrintBox.t) list
 val to_printbox_errors : ?link:path_linker -> t -> PrintBox.t
 val to_printbox_errors_l :
+  ?link:prover_path_linker ->
+  (Prover.name * t) list -> (string*string list*PrintBox.t) list
+val to_printbox_invalid_proof_l :
   ?link:prover_path_linker ->
   (Prover.name * t) list -> (string*string list*PrintBox.t) list
 
