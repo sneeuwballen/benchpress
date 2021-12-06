@@ -156,9 +156,7 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t =
   and valid_proof =
     match
       Db.exec db prover
-        {| select count(*) from prover_res r, proof_check_res p
-            where r.prover = ? and r.prover = p.prover and r.file = p.file
-            and p.res = 'valid'; |}
+        {| select proof_check_res where prover = ? and res = 'valid'; |}
         ~ty:Db.Ty.([text], [int], fun i->i) ~f:Db.Cursor.next
     with
     | Ok (Some i) -> i
@@ -175,7 +173,7 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t =
       Db.exec db prover
         {| select r.file, r.file_expect, p.rtime, p.res
                 from prover_res r, proof_check_res p
-                where r.prover=? and r.prover = p.prover and r.file = p.file
+                where p.prover=? and r.prover = p.prover and r.file = p.file
                   and p.res = 'invalid';
              |}
         ~ty:Db.Ty.([text], [text;text;float;text],

@@ -96,21 +96,19 @@ let of_db_for ~(prover:Prover.name) (db:Db.t) : t =
     |> Misc.unwrap_db (fun() -> spf "problems with result %s" r)
   in
   let get_proof_res r =
-    Error.guard (Error.wrapf "get-proof-res %S" r) @@ fun () ->
-    Logs.debug (fun k->k "get-proof-res %S" r);
+    Error.guard (Error.wrapf "get-proof-res %S %S" prover r) @@ fun () ->
+    Logs.debug (fun k->k "get-proof-res %S %S" prover r);
     try
       Db.exec db prover r
-          {| select count(*) from prover_res r, proof_check_res p
-             where r.prover = ? and r.prover = p.prover and r.file = p.file
-             and p.res = ?; |}
-          ~ty:Db.Ty.([text;text], [nullable int], CCOpt.get_or ~default:0) ~f
+          {| select count(*) from proof_check_res where prover=? and res=?; |}
+          ~ty:Db.Ty.([any_str;any_str], [nullable int], CCOpt.get_or ~default:0) ~f
       |> Misc.unwrap_db (fun() -> spf "problems with result %s" r)
     with
     | Sqlite3.SqliteError msg | Sqlite3.Error msg ->
-      Log.err (fun k->k"cannot get proof res %S:@ sqlite error:@ %s" r msg);
+      Log.err (fun k->k"cannot get proof res %S %S:@ sqlite error:@ %s" prover r msg);
       0
     | Error.E e ->
-      Log.err (fun k->k"cannot get proof res %S:@ %a" r Error.pp e);
+      Log.err (fun k->k"cannot get proof res %S %S:@ %a" prover r Error.pp e);
       0
   in
   let sat = get_res "sat" in

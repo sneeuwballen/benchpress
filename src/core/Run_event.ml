@@ -129,7 +129,7 @@ let of_db_checker_map' db ~f : _ list =
       where p.file = e.file;
     |}
     ~ty:Db.Ty.(
-        [text; text; blob; text; blob; float; blob; blob],
+        [any_str; any_str; any_str; any_str; any_str; float; blob; blob],
         fun prover file expected checker res rtime stdout stderr ->
           let pb =
             {Problem.name=file; expected=Res.of_string ~tags expected}
@@ -144,7 +144,7 @@ let of_db_checker_map' db ~f : _ list =
   |> Misc.unwrap_db (fun () ->"run-event.of-db-checker-map")
 
 let of_db_checker_map db ~f : _ list =
-  Error.guard (Error.wrap "run-event.of-db") @@ fun () ->
+  Error.guard (Error.wrap "run-event.checker.of-db") @@ fun () ->
   if Misc.db_has_table db "proof_check_res" then (
     of_db_checker_map' db ~f
   ) else (
