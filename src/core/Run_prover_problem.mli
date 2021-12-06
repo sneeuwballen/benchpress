@@ -34,3 +34,15 @@ val pp_result_progress :
   job_res ->
   unit
 (** Clear line, print this on stdout *)
+
+val pp_check_result :
+  w_prover:int ->
+  w_pb:int ->
+  check_res Fmt.printer
+
+val pp_check_result_progress :
+  w_prover:int ->
+  w_pb:int ->
+  check_res ->
+  unit
+(** Clear line, print this on stdout *)

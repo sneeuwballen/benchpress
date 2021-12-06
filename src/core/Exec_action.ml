@@ -229,6 +229,7 @@ end = struct
                    ~proof_file:pfile prover checker pb
                in
                let ev_checker = Run_event.mk_checker res in
+               on_proof_check res;
 
                (* insert into DB here *)
                CCLock.with_lock db (fun db -> Run_event.to_db db ev_checker);
@@ -320,7 +321,7 @@ end = struct
       let eta = time_elapsed *. (100. -. percent) /. percent in
       percent, time_elapsed, eta
     in
-    let pp_bar _ =
+    let pp_bar () =
       let len_bar = 50 in
       let bar = String.init len_bar
           (fun i -> if i * len <= len_bar * !count then '#' else '-') in
@@ -343,7 +344,7 @@ end = struct
         if pp_results then Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
         if dyn then (
           output_string stdout Misc.reset_line;
-          pp_bar res;
+          pp_bar ();
         );
         CCOpt.iter
           (fun cb ->
@@ -353,6 +354,11 @@ end = struct
         ()
       method on_proof_check_res res =
         tick();
+        if pp_results then Run_prover_problem.pp_check_result_progress ~w_prover ~w_pb res;
+        if dyn then (
+          output_string stdout Misc.reset_line;
+          pp_bar ();
+        );
       method on_done =
         match cb_progress with
         | None -> ()
