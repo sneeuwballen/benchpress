@@ -245,8 +245,6 @@ end = struct
       |> CCList.flatten
     in
 
-    (* TODO: proof check the "unsat" results *)
-
     if interrupted() then (
       Error.fail "run.interrupted";
     );
@@ -338,27 +336,27 @@ end = struct
 
   let progress ~w_prover ~w_pb ?cb_progress ~pp_results ~dyn n : t =
     let pp_bar, get_state, tick = progress_dynamic n in
+    let pp_common_ () =
+      if dyn then (
+        output_string stdout Misc.reset_line;
+        pp_bar ();
+      );
+      CCOpt.iter
+        (fun cb ->
+           let percent, elapsed_time, eta = get_state() in
+           cb#on_progress ~percent:(int_of_float percent) ~elapsed_time ~eta)
+        cb_progress;
+      ()
+    in
     object
       method on_res res =
         tick();
         if pp_results then Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
-        if dyn then (
-          output_string stdout Misc.reset_line;
-          pp_bar ();
-        );
-        CCOpt.iter
-          (fun cb ->
-            let percent, elapsed_time, eta = get_state() in
-            cb#on_progress ~percent:(int_of_float percent) ~elapsed_time ~eta)
-          cb_progress;
-        ()
+        pp_common_();
       method on_proof_check_res res =
         tick();
         if pp_results then Run_prover_problem.pp_check_result_progress ~w_prover ~w_pb res;
-        if dyn then (
-          output_string stdout Misc.reset_line;
-          pp_bar ();
-        );
+        pp_common_()
       method on_done =
         match cb_progress with
         | None -> ()
@@ -460,7 +458,9 @@ let rec run ?(save=true) ?interrupted ?cb_progress
       in
       let uuid = Misc.mk_uuid () in
       let res =
-        Exec_run_provers.run ?interrupted ~on_solve:progress#on_res
+        Exec_run_provers.run ?interrupted
+          ~on_solve:progress#on_res
+          ~on_proof_check:progress#on_proof_check_res
           ~on_done:(fun _ -> progress#on_done) ~save
           ~timestamp:(Misc.now_s()) ~uuid r_expanded
       in
