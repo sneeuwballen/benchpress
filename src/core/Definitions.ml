@@ -282,8 +282,8 @@ let add_stanza_ (st:Stanza.t) self : t =
         Error.failf ~loc "Prover produces proof, but no checker is declared"
       | Some c ->
         (* make sure it's defined *)
-        let _c = find_checker self c in
-        ()
+        (try let _c = find_checker self c in ()
+         with _ -> Error.failf ~loc "No proof checker named '%s' found" c)
     );
     if not produces_proof && str_mem "$proof_file" cmd then (
       Error.failf ~loc

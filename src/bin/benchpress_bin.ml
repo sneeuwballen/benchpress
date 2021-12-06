@@ -229,6 +229,7 @@ module Check_config = struct
       ) else if with_default && Sys.file_exists default_file then Misc.default_config() :: f else f in
     let l = Stanza.parse_files f in
     Format.printf "@[<v>%a@]@." Stanza.pp_l l;
+    let _defs = Definitions.of_stanza_l l in (* some checks are delayed *)
     ()
 
   let cmd =
