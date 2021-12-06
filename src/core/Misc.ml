@@ -190,9 +190,11 @@ let get_binary_of_cmd (cmd:string) : string =
    with Not_found -> cmd)
 
 let mk_abs_path (s:string) : string =
-  if CCString.prefix ~pre:"file://" s then s (* URIs in lsp *)
-  else if Filename.is_relative s then Filename.concat (Sys.getcwd()) s
-  else s
+  match CCString.chop_prefix ~pre:"file://" s with
+  | Some s -> s (* URIs from lsp *)
+  | None ->
+    if Filename.is_relative s then Filename.concat (Sys.getcwd()) s
+    else s
 
 (** Guess how many cores we have on the CPU *)
 let guess_cpu_count () =
