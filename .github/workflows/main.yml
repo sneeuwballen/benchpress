@@ -29,3 +29,4 @@ jobs:
     - run: opam install . --deps-only
     - run: opam exec -- dune build @all --ignore-promoted-rules
     - run: opam exec -- dune runtest --ignore-promoted-rules
+      if: ${{ matrix.os == 'ubuntu-latest' }}
