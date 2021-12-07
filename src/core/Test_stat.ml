@@ -85,23 +85,25 @@ let to_printbox_l ?to_link l : PB.t =
 (* obtain stats for this prover *)
 let of_db_for ~(prover:Prover.name) (db:Db.t) : t =
   Error.guard (Error.wrapf "reading stat(%s) from DB" prover) @@ fun () ->
-  let f c = Db.Cursor.next c |> Error.unwrap_opt "no result" in
   let custom = Prover.tags_of_db db in
   let get_res r =
     Error.guard (Error.wrapf "get-res %S" r) @@ fun () ->
     Logs.debug (fun k->k "get-res %S" r);
     Db.exec db
       {| select count(*) from prover_res where prover=? and res=?; |}
-      prover r ~ty:Db.Ty.(p2 text text, p1 (nullable int), CCOpt.get_or ~default:0) ~f
+      prover r ~ty:Db.Ty.(p2 text text, p1 (nullable int), CCOpt.get_or ~default:0)
+      ~f:Db.Cursor.get_one_exn
     |> Misc.unwrap_db (fun() -> spf "problems with result %s" r)
   in
   let get_proof_res r =
     Error.guard (Error.wrapf "get-proof-res %S %S" prover r) @@ fun () ->
     Logs.debug (fun k->k "get-proof-res %S %S" prover r);
     try
-      Db.exec db prover r
-          {| select count(*) from proof_check_res where prover=? and res=?; |}
-          ~ty:Db.Ty.([any_str;any_str], [nullable int], CCOpt.get_or ~default:0) ~f
+      Db.exec db
+          {| select count( * ) from proof_check_res where prover=? and res=?; |}
+          prover r
+          ~ty:Db.Ty.([text;text], [int], fun i->i)
+          ~f:Db.Cursor.get_one_exn
       |> Misc.unwrap_db (fun() -> spf "problems with result %s" r)
     with
     | Sqlite3.SqliteError msg | Sqlite3.Error msg ->
@@ -127,7 +129,8 @@ let of_db_for ~(prover:Prover.name) (db:Db.t) : t =
     Db.exec db {|
         select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
           |} prover
-      ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.) ~f
+      ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.)
+      ~f:Db.Cursor.get_one_exn
     |> Misc.unwrap_db (fun() -> spf "obtaining total time for %s" prover)
   in
   { sat; unsat; timeout; memory; unknown;

@@ -155,8 +155,8 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t =
          |> Misc.unwrap_db (fun() -> "reading full list of erroneous results")
   and valid_proof =
     match
-      Db.exec db prover
-        {| select proof_check_res where prover = ? and res = 'valid'; |}
+      Db.exec db
+        {| select proof_check_res where prover = ? and res = 'valid'; |} prover
         ~ty:Db.Ty.([text], [int], fun i->i) ~f:Db.Cursor.next
     with
     | Ok (Some i) -> i
@@ -170,12 +170,13 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t =
       0
   and invalid_proof_full =
     match
-      Db.exec db prover
+      Db.exec db
         {| select r.file, r.file_expect, p.rtime, p.res
                 from prover_res r, proof_check_res p
                 where p.prover=? and r.prover = p.prover and r.file = p.file
                   and p.res = 'invalid';
              |}
+        prover
         ~ty:Db.Ty.([text], [text;text;float;text],
                    fun file expected rtime pres ->
                      Problem.make file (Res.of_string ~tags expected),
