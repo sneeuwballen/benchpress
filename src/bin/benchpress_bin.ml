@@ -17,13 +17,13 @@ module Run = struct
   (* sub-command for running tests *)
   let cmd =
     let open Cmdliner in
-    let aux j pp_results dyn paths dir_file defs task timeout memory
+    let aux j pp_results dyn paths dir_file proof_dir defs task timeout memory
         meta provers csv summary no_color save =
       catch_err @@ fun () ->
       if no_color then CCFormat.set_color_default false;
       let dyn = if dyn then Some true else None in
       Run_main.main ~pp_results ?dyn ~j ?timeout ?memory ?csv ~provers
-        ~meta ?task ?summary ?dir_file ~save defs paths ()
+        ~meta ?task ?summary ?dir_file ?proof_dir ~save defs paths ()
     in
     let defs = Bin_utils.definitions_term
     and dyn =
@@ -34,6 +34,8 @@ module Run = struct
       Arg.(value & opt bool true & info ["save"] ~doc:"save results on disk")
     and dir_file =
       Arg.(value & opt (some string) None & info ["F"] ~doc:"file containing a list of files")
+    and proof_dir =
+      Arg.(value & opt (some string) None & info ["proof-dir"] ~doc:"store proofs in given directory")
     and task =
       Arg.(value & opt (some string) None & info ["task"] ~doc:"task to run")
     and timeout =
@@ -58,7 +60,8 @@ module Run = struct
     and summary =
       Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
     in
-    Term.(pure aux $ j $ pp_results $ dyn $ paths $ dir_file $ defs $ task $ timeout $ memory
+    Term.(pure aux $ j $ pp_results $ dyn $ paths
+          $ dir_file $ proof_dir $ defs $ task $ timeout $ memory
           $ meta $ provers $ csv $ summary $ no_color $ save),
     Term.info ~doc "run"
 end

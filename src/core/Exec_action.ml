@@ -26,12 +26,14 @@ module Exec_run_provers : sig
     provers: Prover.t list;
     checkers: Proof_checker.t Misc.Str_map.t;
     limits : Limit.All.t;
+    proof_dir: string option; (* directory in which to store proofs *)
   }
 
   val expand :
     ?j:int ->
     ?dyn:bool ->
     ?limits:Limit.All.t ->
+    ?proof_dir:string ->
     ?interrupted:(unit -> bool) ->
     Definitions.t ->
     t -> expanded
@@ -63,6 +65,7 @@ end = struct
     provers: Prover.t list;
     checkers: Proof_checker.t Misc.Str_map.t;
     limits : Limit.All.t;
+    proof_dir: string option; (* directory in which to store proofs *)
   }
 
   let filter_regex_ = function
@@ -109,7 +112,8 @@ end = struct
         | exn -> Error.(raise @@ of_exn exn)
 
   (* Expand options into concrete choices *)
-  let expand ?j ?(dyn=false) ?limits ?interrupted (defs:Definitions.t) (self:t) : expanded =
+  let expand ?j ?(dyn=false) ?limits ?proof_dir ?interrupted
+      (defs:Definitions.t) (self:t) : expanded =
     let limits = match limits with
       | None -> self.limits
       | Some l -> Limit.All.with_defaults l ~defaults:self.limits
@@ -121,17 +125,19 @@ end = struct
       |> List.map (fun c -> let c=c.With_loc.view in c.Proof_checker.name, c)
       |> Misc.Str_map.of_list
     in
-    { j; limits; problems; checkers; provers=self.provers; }
+    { j; limits; problems; checkers; proof_dir;
+      provers=self.provers; }
 
   let _nop _ = ()
 
-  let with_proof_file_opt ~proof_file f =
+  (* run [f], ensuring [proof_file] is cleaned up afterwards if it exists *)
+  let with_proof_file_opt ~proof_file ~keep f =
     match proof_file with
-    | None -> f ()
-    | Some file ->
+    | Some file when not keep ->
       CCFun.finally
         ~h:(fun () -> try Sys.remove file with _ -> ())
         ~f
+    | _ -> f ()
 
   let run ?(timestamp=Misc.now_s())
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
@@ -165,6 +171,80 @@ end = struct
       List.iter (Prover.to_db db) self.provers;
     end;
     on_start self;
+
+    CCOpt.iter Misc.mkdir_rec self.proof_dir;
+
+    let run_prover_pb ~prover ~pb ~db () : _ list =
+      (* Also runs the proof checker, if the prover is proof producing
+         and returns "UNSAT". *)
+      if interrupted() then Error.fail "run.interrupted";
+      Error.guard
+        (Error.wrapf "(@[running :prover %a :on %a@])"
+           Prover.pp_name prover Problem.pp pb) @@ fun () ->
+
+      let proof_file, keep =
+        if prover.Prover.produces_proof then (
+          let pb = pb.Problem.name in
+          let ext = CCOpt.get_or ~default:"proof" prover.Prover.proof_ext in
+          let basename =
+            spf "proof-%s-%s.%s" prover.Prover.name (Filename.basename pb) ext in
+          let f, keep =
+            match self.proof_dir with
+            | None -> Filename.concat (Filename.dirname pb) basename, false
+            | Some dir ->
+              (* user asked to keep proofs, in given directory *)
+              Filename.concat dir basename, true
+          in
+          Some f, keep
+        ) else None, false
+      in
+
+      (* continue but ensure we cleanup the proof file *)
+      with_proof_file_opt ~proof_file ~keep @@ fun () ->
+
+      let result =
+        Run_prover_problem.run ~limits:self.limits ~proof_file
+          prover pb
+      in
+      (* insert into DB here *)
+      let ev_prover = Run_event.mk_prover result in
+      CCLock.with_lock db (fun db -> Run_event.to_db db ev_prover);
+      on_solve result; (* callback *)
+
+      let ev_proof =
+        match result.res, proof_file with
+        | Res.Unsat, Some pfile when prover.Prover.produces_proof ->
+          (* run proof checker *)
+          Log.debug (fun k->k"proof-file size: %d"
+                        (try Unix.((stat pfile).st_size) with _ -> 0));
+
+          let checker =
+            match prover.Prover.proof_checker with
+            | None -> Error.failf "cannot check proofs for '%s'" prover.name
+            | Some c ->
+              try Misc.Str_map.find c self.checkers
+              with Not_found ->
+                Error.failf "cannot find proof checker '%s'" c
+          in
+
+          let res =
+            let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
+            Run_prover_problem.run_proof_check ~limits
+              ~proof_file:pfile prover checker pb
+          in
+          let ev_checker = Run_event.mk_checker res in
+          on_proof_check res;
+
+          (* insert into DB here *)
+          CCLock.with_lock db (fun db -> Run_event.to_db db ev_checker);
+          [ev_checker]
+
+        | _ -> []
+      in
+
+      Run_event.mk_prover result :: ev_proof
+    in
+
     (* build list of tasks *)
     let jobs =
       CCList.flat_map
@@ -175,73 +255,8 @@ end = struct
     let res_l =
       let db = CCLock.create db in
       Misc.Par_map.map_p ~j:self.j
-        (fun (prover,pb) ->
-           (* Also runs the proof checker, if the prover is proof producing
-              and returns "UNSAT". *)
-           if interrupted() then Error.fail "run.interrupted";
-           Error.guard
-             (Error.wrapf "(@[running :prover %a :on %a@])"
-                Prover.pp_name prover Problem.pp pb) @@ fun () ->
-
-           let proof_file =
-             if prover.Prover.produces_proof then (
-               let pb = pb.Problem.name in
-               let ext = CCOpt.get_or ~default:"proof" prover.Prover.proof_ext in
-               let f =
-                 Filename.concat (Filename.dirname pb)
-                   (spf "proof-%s-%s.%s" prover.Prover.name (Filename.basename pb) ext)
-               in
-               Some f
-             ) else None
-           in
-
-           (* continue but ensure we cleanup the proof file *)
-           with_proof_file_opt ~proof_file @@ fun () ->
-
-           let result =
-             Run_prover_problem.run ~limits:self.limits ~proof_file
-               prover pb
-           in
-           (* insert into DB here *)
-           let ev_prover = Run_event.mk_prover result in
-           CCLock.with_lock db (fun db -> Run_event.to_db db ev_prover);
-           on_solve result; (* callback *)
-
-           let ev_proof =
-             match result.res, proof_file with
-             | Res.Unsat, Some pfile when prover.Prover.produces_proof ->
-               (* run proof checker *)
-               Log.debug (fun k->k"proof-file size: %d"
-                             (try Unix.((stat pfile).st_size) with _ -> 0));
-
-               let checker =
-                 match prover.Prover.proof_checker with
-                 | None -> Error.failf "cannot check proofs for '%s'" prover.name
-                 | Some c ->
-                   try Misc.Str_map.find c self.checkers
-                   with Not_found ->
-                     Error.failf "cannot find proof checker '%s'" c
-               in
-
-               let res =
-                 let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
-                 Run_prover_problem.run_proof_check ~limits
-                   ~proof_file:pfile prover checker pb
-               in
-               let ev_checker = Run_event.mk_checker res in
-               on_proof_check res;
-
-               (* insert into DB here *)
-               CCLock.with_lock db (fun db -> Run_event.to_db db ev_checker);
-               [ev_checker]
-
-             | _ -> []
-           in
-
-           Run_event.mk_prover result :: ev_proof
-        )
+        (fun (prover,pb) -> run_prover_pb ~prover ~pb ~db ())
         jobs
-
       |> CCList.flatten
     in
 

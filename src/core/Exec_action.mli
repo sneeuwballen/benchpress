@@ -14,12 +14,14 @@ module Exec_run_provers : sig
     provers: Prover.t list;
     checkers: Proof_checker.t Misc.Str_map.t;
     limits : Limit.All.t;
+    proof_dir: string option;
   }
 
   val expand :
     ?j:int ->
     ?dyn:bool ->
     ?limits:Limit.All.t ->
+    ?proof_dir:string ->
     ?interrupted:(unit -> bool) ->
     Definitions.t ->
     t -> expanded

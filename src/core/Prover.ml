@@ -175,7 +175,7 @@ module As_key = struct
 
   let compare p1 p2 =
     let c = String.compare p1.name p2.name in
-    if c<>0 then c else CCOrd.compare p1.version p2.version
+    if c<>0 then c else CCShims_.Stdlib.compare p1.version p2.version
 end
 
 module Map = CCMap.Make(As_key)

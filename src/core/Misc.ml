@@ -201,6 +201,15 @@ let guess_cpu_count () =
   try get_cmd_out "grep -c processor /proc/cpuinfo" |> int_of_string
   with _ -> 2
 
+(** Ensure directory exists, recursively *)
+let rec mkdir_rec (d:string) =
+  if not (Sys.file_exists d) then (
+    let d2 = Filename.dirname d in
+    mkdir_rec d2;
+    (try Sys.mkdir d 0o755
+     with _ -> Logs.debug (fun k->k "mkdir %S failed" d));
+  )
+
 let mk_uuid () : Uuidm.t =
   Uuidm.v4_gen (Random.State.make_self_init()) ()
 

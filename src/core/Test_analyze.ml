@@ -286,7 +286,7 @@ let to_printbox_ ~header ?link:to_link (l:(Prover.name * t) list) : PrintBox.t =
     mk_row "disappoint" get_disappoint @@ pb_int_color Style.(fg_color Yellow);
     mk_row "bad" get_bad @@ pb_int_color Style.(fg_color Red);
     mk_row "valid proof" get_valid_proof @@ pb_int_color Style.(fg_color Green);
-    mk_row "invalid proof" get_valid_proof @@ pb_int_color Style.(fg_color Red);
+    mk_row "invalid proof" get_invalid_proof @@ pb_int_color Style.(fg_color Red);
     mk_row ~ex:"error" "errors" get_errors @@ pb_int_color Style.(fg_color Cyan);
     text "total" :: List.map (fun (_,r) -> int r.total) l;
   ] in
