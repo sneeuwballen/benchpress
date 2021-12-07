@@ -1,10 +1,4 @@
 [2Ktesting with 2 provers, 3 problems…
-[2Kfake1 …/simon/w/benchpress/_build/default/tests/fake_files/t1.fake : ok (0.5s)
-[2Kfake2 …/simon/w/benchpress/_build/default/tests/fake_files/t1.fake : ok (0.5s)
-[2Kfake1 …/simon/w/benchpress/_build/default/tests/fake_files/t3.fake : ok (0.5s)
-[2Kfake2 …/simon/w/benchpress/_build/default/tests/fake_files/t3.fake : ok (0.5s)
-[2Kfake1 …/simon/w/benchpress/_build/default/tests/fake_files/t2.fake : ok (0.5s)
-[2Kfake2 …/simon/w/benchpress/_build/default/tests/fake_files/t2.fake : ok (0.5s)
 [2KOK
 STAT:
 provers      |fake2|fake1

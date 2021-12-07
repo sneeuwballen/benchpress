@@ -28,7 +28,7 @@
   (action
     (with-stdout-to
       %{targets}
-      (run ../src/bin/benchpress_bin.exe run --save=false --nc -q -c conf_prover1.sexp --task runall))))
+      (run ../src/bin/benchpress_bin.exe run --save=false --pp-results=false --nc -q -c conf_prover1.sexp --task runall))))
 
 (rule
   (alias runtest)
