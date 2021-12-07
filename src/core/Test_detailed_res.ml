@@ -19,7 +19,13 @@ type expect_filter =
   | TD_expect_bad
   | TD_expect_error
 
-let get_proof_check db p file : Proof_check_res.t option =
+type proof_check_res = {
+  res: Proof_check_res.t;
+  stdout: string;
+  rtime: float;
+}
+
+let get_proof_check db p file : proof_check_res option =
   if Misc.db_has_table db "proof_check_res" then (
     try
       let r =
@@ -28,7 +34,13 @@ let get_proof_check db p file : Proof_check_res.t option =
           ~ty:Db.Ty.([text;text], [text], fun i->i) ~f:Db.Cursor.next p file
         |> Misc.unwrap_db (fun() -> spf "getting proof check res for '%s' on '%s'" p file)
         |> Error.unwrap_opt "expected result"
-      in Some (Proof_check_res.of_string r)
+      and stdout, rtime =
+        Db.exec db
+          {| select stdout, rtime from proof_check_res where prover=? and file=?; |}
+          ~ty:Db.Ty.([text;text], [blob; float], fun x y->x,y) ~f:Db.Cursor.get_one_exn
+          p file
+        |> Misc.unwrap_db (fun() -> spf "getting proof check output for '%s' on '%s'" p file)
+      in Some {res=Proof_check_res.of_string r; stdout; rtime }
     with
     | Error.E e ->
       Log.err (fun k->k"cannot get proof-check-res for '%s' on '%s':@ %a" p file Error.pp e);
@@ -97,16 +109,16 @@ let list_keys ?(offset=0) ?(page_size=500)
     l, n, true
   )
 
-let get_res db prover file : _ =
+let get_res db prover file : _ * proof_check_res option =
   Profile.with_ "detailed-res" ~args:["prover",prover] @@ fun () ->
   Error.guard (Error.wrapf "getting results for '%s' on '%s'" prover file) @@ fun () ->
   let tags = Prover.tags_of_db db in
   let res: _ Run_result.t =
     Db.exec db
       {|select
-                res, file_expect, timeout, errcode, stdout, stderr,
-                rtime, utime, stime
-             from prover_res where prover=? and file=? ; |}
+        res, file_expect, timeout, errcode, stdout, stderr,
+        rtime, utime, stime
+        from prover_res where prover=? and file=? ; |}
       prover file
       ~f:Db.Cursor.next
       ~ty:Db.Ty.([text;text],
@@ -122,9 +134,6 @@ let get_res db prover file : _ =
            "expected a non-empty result for prover='%s', file='%s'"
            prover file)
     |> (fun (res, file_expect, timeout, errcode, stdout, stderr, rtime, utime, stime) ->
-        (* Still needed ?! *)
-        Gc.compact();
-        Gc.full_major();
         Logs.info (fun k->k "got results 2");
         let stdout=CCOpt.get_or ~default:"" stdout in
         let stderr=CCOpt.get_or ~default:"" stderr in
@@ -147,7 +156,7 @@ let get_res db prover file : _ =
 module PB = PrintBox
 
 let to_printbox ?link:(mk_link=default_pp_linker)
-    (self:t) (check_res:_ option) : PB.t*PB.t*string*string =
+    (self:t) (check_res:proof_check_res option) : PB.t*PB.t*string*string*string option =
   let open PB in
   Logs.debug (fun k->k "coucou");
   let pp_res r =
@@ -170,14 +179,17 @@ let to_printbox ?link:(mk_link=default_pp_linker)
      "problem.expected_res", pp_res self.problem.Problem.expected;
      "res", pp_res self.res;
     ];
-    (match check_res with
-     | None -> []
-     | Some p -> ["proof_check_res", pp_proof_res p]);
     ["rtime", text (Misc.human_duration self.raw.rtime);
      "stime", text (Misc.human_duration self.raw.stime);
      "utime", text (Misc.human_duration self.raw.utime);
      "errcode", int self.raw.errcode;
     ];
+    (match check_res with
+     | None -> []
+     | Some p ->
+       ["proof_check.res", pp_proof_res p.res;
+        "proof_check.time", text (Misc.human_duration p.rtime);
+       ]);
   ],
   v_record @@ List.flatten [
     ["prover.name", text self.program.Prover.name;
@@ -192,4 +204,4 @@ let to_printbox ?link:(mk_link=default_pp_linker)
     ["prover.memory", text (CCOpt.get_or ~default:"<none>" self.program.Prover.memory);
     ]
   ],
-  self.raw.stdout, self.raw.stderr
+  self.raw.stdout, self.raw.stderr, CCOpt.map (fun p->p.stdout) check_res

@@ -786,7 +786,7 @@ let handle_show_single (self:t) : unit =
   let@@ db =
     Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" db_file) db_file in
   let r, check_res = Test_detailed_res.get_res db prover pb_file in
-  let pb, pb_prover, stdout, stderr =
+  let pb, pb_prover, stdout, stderr, proof_stdout =
     Test_detailed_res.to_printbox ~link:(fun _ -> link_get_file) r check_res
   in
   let open Html in
@@ -804,6 +804,12 @@ let handle_show_single (self:t) : unit =
       [pre [txt stderr]];
     details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "prover config"])
       [pb_html pb_prover];
+    (match proof_stdout with
+     | None -> div[]
+     | Some s ->
+       details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "proof checker stdout"])
+         [pre [txt s]];
+    );
   ] in
   Log.debug (fun k->k"render page in %.3fs" (Misc.Chrono.elapsed chrono));
   Ok (Html.to_string h)
