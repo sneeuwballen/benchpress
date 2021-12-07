@@ -1,0 +1,50 @@
+[2Ktesting with 2 provers, 3 problems…
+[2Kfake1 …/simon/w/benchpress/_build/default/tests/fake_files/t1.fake : ok (0.5s)
+[2Kfake2 …/simon/w/benchpress/_build/default/tests/fake_files/t1.fake : ok (0.5s)
+[2Kfake1 …/simon/w/benchpress/_build/default/tests/fake_files/t3.fake : ok (0.5s)
+[2Kfake2 …/simon/w/benchpress/_build/default/tests/fake_files/t3.fake : ok (0.5s)
+[2Kfake1 …/simon/w/benchpress/_build/default/tests/fake_files/t2.fake : ok (0.5s)
+[2Kfake2 …/simon/w/benchpress/_build/default/tests/fake_files/t2.fake : ok (0.5s)
+[2KOK
+STAT:
+provers      |fake2|fake1
+-------------+-----+-----
+sat          |[1;32m1[0m    |[1;32m1[0m
+-------------+-----+-----
+unsat        |[1;32m1[0m    |[1;32m1[0m
+-------------+-----+-----
+sat+unsat    |[1;32m2[0m    |[1;32m2[0m
+-------------+-----+-----
+errors       |0    |0
+-------------+-----+-----
+valid_proof  |[1;32m1[0m    |0
+-------------+-----+-----
+invalid_proof|0    |0
+-------------+-----+-----
+unknown      |1    |1
+-------------+-----+-----
+timeout      |0    |0
+-------------+-----+-----
+memory       |0    |0
+-------------+-----+-----
+total        |3    |3
+-------------+-----+-----
+total_time   |1s   |1s
+ANALYSIS:
+provers      |fake2|fake1
+-------------+-----+-----
+improved     |0    |0
+-------------+-----+-----
+ok           |[1;32m3[0m    |[1;32m3[0m
+-------------+-----+-----
+disappoint   |0    |0
+-------------+-----+-----
+bad          |0    |0
+-------------+-----+-----
+valid proof  |0    |0
+-------------+-----+-----
+invalid proof|0    |0
+-------------+-----+-----
+errors       |0    |0
+-------------+-----+-----
+total        |3    |3

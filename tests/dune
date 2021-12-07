@@ -21,3 +21,16 @@
   (alias runtest)
   (package benchpress)
   (action (diff conf_invalid.expected conf_invalid.out)))
+
+(rule
+  (targets fake.out)
+  (deps (source_tree .))
+  (action
+    (with-stdout-to
+      %{targets}
+      (run ../src/bin/benchpress_bin.exe run --save=false --nc -q -c conf_prover1.sexp --task runall))))
+
+(rule
+  (alias runtest)
+  (package benchpress)
+  (action (diff fake.expected fake.out)))
