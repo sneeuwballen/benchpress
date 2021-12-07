@@ -138,7 +138,7 @@ A more complete example, taken from [mc2](https://github.com/c-cube/mc2):
   (synopsis "run all SMT solvers on smtlib")
   (action
    (run_provers
-    (dirs "$HOME/workspace/smtlib")
+    (dirs ("$HOME/workspace/smtlib"))
     (provers (mc2 z3))
     ;(memory 100000000)  ; TODO: parse "10G"
     (timeout 10))))
@@ -148,18 +148,31 @@ A more complete example, taken from [mc2](https://github.com/c-cube/mc2):
   (synopsis "run all SMT solvers on QF_UF")
   (action
     (run_provers
-      (dirs "$HOME/workspace/smtlib/QF_UF")
+      (dirs ("$HOME/workspace/smtlib/QF_UF"))
       (provers (mc2 z3))
       (timeout 10))))
 ```
 
-Then one can run, say,
+Such a configuration file can be validated using:
+
+```sh
+$ benchpress check-config the_file.sexp
+```
+
+Then one can run a task, like so:
 ```sh
 $ benchpress run -c the_file.sexp --task glob-all-smtlib-QF_UF -t 30
 ```
 to run mc2 and z3 on the QF_UF problems in the SMTLIB directory.
 The `task` stanza defines a pre-packaged task that can be launched easily
 from the command line or the embedded web server (a bit like a makefile target).
+
+Note that tasks are not necessary, they're just shortcuts. You can also
+pass directly the prover list and directory:
+
+```sh
+$ benchpress run -c the_file.sexp -p mc2 some/path/ -t 30
+```
 
 ### List of stanzas
 
@@ -192,8 +205,8 @@ same repository).
 ### Actions
 
 - `(run_provers fields)` to run some provers on some benchmarks. Fields are:
-  * `(provers p1 … pn)` list of (names of) provers defined in other stanzas
-  * `(dirs p1 … pn)` paths containing benchmarks. The paths must be subdirectories
+  * `(provers (p1 … pn))` list of (names of) provers defined in other stanzas
+  * `(dirs (p1 … pn))` paths containing benchmarks. The paths must be subdirectories
     of already defined directories (see the `dir` stanza above)
   * `(timeout n)` (optional) defines a timeout in seconds
   * `(pattern regex)` (optional) an additional regex for files to consider in `dirs`
