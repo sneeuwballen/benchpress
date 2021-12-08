@@ -39,8 +39,7 @@ module Log_report = struct
 
   let reporter () =
     Fmt.set_color_default true;
-    let app, app_flush = buf_fmt () in
-    let dst, dst_flush = buf_fmt () in
+    let buf_out, buf_flush = buf_fmt () in
     let pp_header fmt header =
       let now = now_s() in
       Format.fprintf fmt "@[<2>[%a|t%d] %a@ "
@@ -64,16 +63,16 @@ module Log_report = struct
     in
     let report src level ~over k msgf =
       let k _ =
-        begin match level with
-          | Logs.App -> output_string out (app_flush ()); flush out
-          | _ -> output_string err (dst_flush ()); flush err
-        end;
+        let write_str out s =
+          synchronized (fun () -> Printf.fprintf out "%s%s%!" reset_line s)
+        in
+        let msg = buf_flush() in
+        write_str (match level with Logs.App -> out | _ -> err) msg;
         over ();
         k ()
       in
       msgf (fun ?header ?tags:_ fmt ->
-          let ppf = if level = App then app else dst in
-          Format.kfprintf k ppf ("%a@[" ^^ fmt ^^ "@]@.") pp_header (src, level, header))
+          Format.kfprintf k buf_out ("%a@[" ^^ fmt ^^ "@]@.") pp_header (src, level, header))
     in
     { Logs.report = report }
 end
