@@ -156,7 +156,7 @@ let of_db_for ?(full=false) (db:Db.t) ~prover : t =
   and valid_proof =
     match
       Db.exec db
-        {| select proof_check_res where prover = ? and res = 'valid'; |} prover
+        {| select count(*) from proof_check_res where prover = ? and res = 'valid'; |} prover
         ~ty:Db.Ty.([text], [int], fun i->i) ~f:Db.Cursor.next
     with
     | Ok (Some i) -> i
