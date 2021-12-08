@@ -120,7 +120,8 @@ end = struct
       | Some l -> Limit.All.with_defaults l ~defaults:self.limits
     in
     let j = j >?? self.j >? Misc.guess_cpu_count () in
-    let problems = CCList.flat_map (expand_subdir ~dyn ?interrupted) self.dirs in
+    let problems = CCList.flat_map
+        (expand_subdir ?pattern:self.pattern ~dyn ?interrupted) self.dirs in
     let checkers =
       Definitions.all_checkers defs
       |> List.map (fun c -> let c=c.With_loc.view in c.Proof_checker.name, c)
