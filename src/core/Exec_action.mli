@@ -1,4 +1,3 @@
-open Common
 
 type cb_progress = <
   on_progress: percent:int -> elapsed_time:float -> eta:float -> unit;
@@ -30,6 +29,7 @@ module Exec_run_provers : sig
     ?timestamp:float ->
     ?on_start:(expanded -> unit) ->
     ?on_solve:(Test.result -> unit) ->
+    ?on_start_proof_check:(unit -> unit) ->
     ?on_proof_check:(Test.proof_check_result -> unit) ->
     ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
@@ -47,6 +47,7 @@ end
 module Progress_run_provers : sig
   type t = <
     on_res: Run_prover_problem.job_res -> unit;
+    on_start_proof_check : unit;
     on_proof_check_res: Test.proof_check_result -> unit;
     on_done: unit;
   >

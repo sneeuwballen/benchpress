@@ -42,6 +42,7 @@ module Exec_run_provers : sig
     ?timestamp:float ->
     ?on_start:(expanded -> unit) ->
     ?on_solve:(Test.result -> unit) ->
+    ?on_start_proof_check:(unit -> unit) ->
     ?on_proof_check:(Test.proof_check_result -> unit) ->
     ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
@@ -140,7 +141,8 @@ end = struct
     | _ -> f ()
 
   let run ?(timestamp=Misc.now_s())
-      ?(on_start=_nop) ?(on_solve = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
+      ?(on_start=_nop) ?(on_solve = _nop) ?(on_start_proof_check=_nop)
+      ?(on_proof_check = _nop) ?(on_done = _nop)
       ?(interrupted=fun _->false)
       ~uuid ~save
       (self:expanded) : _*_ =
@@ -209,7 +211,6 @@ end = struct
       (* insert into DB here *)
       let ev_prover = Run_event.mk_prover result in
       CCLock.with_lock db (fun db -> Run_event.to_db db ev_prover);
-      on_solve result; (* callback *)
 
       let ev_proof =
         match result.res, proof_file with
@@ -217,6 +218,8 @@ end = struct
           (* run proof checker *)
           Log.debug (fun k->k"proof-file size: %d"
                         (try Unix.((stat pfile).st_size) with _ -> 0));
+
+          on_start_proof_check();
 
           let checker =
             match prover.Prover.proof_checker with
@@ -241,6 +244,8 @@ end = struct
 
         | _ -> []
       in
+
+      on_solve result; (* only now we can announce our "solve" result *)
 
       Run_event.mk_prover result :: ev_proof
     in
@@ -295,6 +300,7 @@ type cb_progress = <
 module Progress_run_provers : sig
   type t = <
     on_res: Run_prover_problem.job_res -> unit;
+    on_start_proof_check: unit;
     on_proof_check_res: Test.proof_check_result -> unit;
     on_done: unit;
   >
@@ -312,12 +318,14 @@ module Progress_run_provers : sig
 end = struct
   type t = <
     on_res: Run_prover_problem.job_res -> unit;
+    on_start_proof_check: unit;
     on_proof_check_res: Test.proof_check_result -> unit;
     on_done: unit;
   >
 
-  let nil = object
+  let nil : t = object
     method on_res _=()
+    method on_start_proof_check =()
     method on_proof_check_res _=()
     method on_done=()
   end
@@ -325,32 +333,34 @@ end = struct
   (* callback that prints a result *)
   let progress_dynamic len =
     let start = Misc.now_s() in
+    let len = ref len in
     let count = ref 0 in
     let tick() = incr count in
     let get_state() =
       let time_elapsed = Misc.now_s() -. start in
-      let percent = if len=0 then 100. else (float_of_int !count *. 100.) /. float_of_int len in
+      let percent = if !len=0 then 100. else (float_of_int !count *. 100.) /. float_of_int !len in
       (* elapsed=(percent/100)*total, so total=elapsed*100/percent; eta=total-elapsed *)
       let eta = time_elapsed *. (100. -. percent) /. percent in
       percent, time_elapsed, eta
     in
+    let bump () = incr len in
     let pp_bar () =
       let len_bar = 50 in
       let bar = String.init len_bar
-          (fun i -> if i * len <= len_bar * !count then '#' else '-') in
+          (fun i -> if i * !len <= len_bar * !count then '#' else '-') in
       let percent, time_elapsed, eta = get_state() in
       Misc.synchronized
         (fun () ->
            Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?"
-             !count len percent (Misc.human_duration time_elapsed) bar (Misc.human_duration eta));
-      if !count = len then (
+             !count !len percent (Misc.human_duration time_elapsed) bar (Misc.human_duration eta));
+      if !count = !len then (
         Misc.synchronized (fun() -> Format.printf "@.")
       )
     in
-    pp_bar, get_state, tick
+    pp_bar, get_state, bump, tick
 
   let progress ~w_prover ~w_pb ?cb_progress ~pp_results ~dyn n : t =
-    let pp_bar, get_state, tick = progress_dynamic n in
+    let pp_bar, get_state, bump, tick = progress_dynamic n in
     let pp_common_ () =
       if dyn then (
         output_string stdout Misc.reset_line;
@@ -368,11 +378,14 @@ end = struct
         tick();
         if pp_results then Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
         pp_common_();
+      method on_start_proof_check =
+        bump(); (* add another task *)
+        pp_common_();
       method on_proof_check_res res =
-        tick();
         if pp_results then Run_prover_problem.pp_check_result_progress ~w_prover ~w_pb res;
         pp_common_()
       method on_done =
+        pp_common_();
         match cb_progress with
         | None -> ()
         | Some cb -> cb#on_done

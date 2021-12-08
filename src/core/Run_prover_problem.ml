@@ -92,7 +92,7 @@ let pp_check_result ~w_prover ~w_pb out (res:check_res): unit =
                 prover_name checker pb_name (Proof_check_res.to_string res.res) res.raw.rtime
                 );
   Fmt.fprintf out
-    "proof check %-*s%-*s%-*s : %a (%.1fs)@."
+    "[chk]%-*s%-*s%-*s : %a (%.1fs)@."
     w_prover (Misc.truncate_right w_prover prover_name)
     w_prover (Misc.truncate_right w_prover checker)
     w_pb (Misc.truncate_left w_pb pb_name)

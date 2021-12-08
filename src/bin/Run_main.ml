@@ -22,7 +22,10 @@ let execute_run_prover_action
       Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
       Exec_action.Exec_run_provers.run ~uuid ?timestamp
         ~interrupted:(fun () -> CCLock.get interrupted)
-        ~on_solve:progress#on_res ~save ~on_done:(fun _ -> progress#on_done) r
+        ~on_solve:progress#on_res ~save
+        ~on_start_proof_check:(fun() -> progress#on_start_proof_check)
+        ~on_proof_check:progress#on_proof_check_res
+        ~on_done:(fun _ -> progress#on_done) r
     in
     result
   end
