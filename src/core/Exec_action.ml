@@ -132,6 +132,15 @@ end = struct
 
   let _nop _ = ()
 
+  let copy_problem ~proof_dir ~prover (file:string) : unit =
+    let basename =
+      spf "pb-%s-%s" prover.Prover.name (Filename.basename file) in
+    let new_path = Filename.concat proof_dir basename in
+    Log.debug (fun k->k"(@[copy-problem@ :from %S@ :to %S@])" file new_path);
+    CCIO.with_out new_path @@ fun oc ->
+    CCIO.with_in file @@ fun ic ->
+    CCIO.copy_into ~bufsize:(64 * 1024) ic oc
+
   (* run [f], ensuring [proof_file] is cleaned up afterwards if it exists *)
   let with_proof_file_opt ~proof_file ~keep f =
     match proof_file with
@@ -191,14 +200,16 @@ end = struct
           let ext = CCOpt.get_or ~default:"proof" prover.Prover.proof_ext in
           let basename =
             spf "proof-%s-%s.%s" prover.Prover.name (Filename.basename pb) ext in
-          let f, keep =
+          let filename, keep =
             match self.proof_dir with
             | None -> Filename.concat (Filename.dirname pb) basename, false
             | Some dir ->
-              (* user asked to keep proofs, in given directory *)
+              (* copy problem *)
+              copy_problem ~proof_dir:dir ~prover pb;
+              (* user asked to keep proofs, in given directory. *)
               Filename.concat dir basename, true
           in
-          Some f, keep
+          Some filename, keep
         ) else None, false
       in
 

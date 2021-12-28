@@ -209,6 +209,12 @@ let rec mkdir_rec (d:string) =
      with _ -> Logs.debug (fun k->k "mkdir %S failed" d));
   )
 
+(** concatenate list into a path *)
+let rec filename_concat_l = function
+  | [] -> "."
+  | [s] -> s
+  | s :: tl -> Filename.concat s @@ filename_concat_l tl
+
 let mk_uuid () : Uuidm.t =
   Uuidm.v4_gen (Random.State.make_self_init()) ()
 
