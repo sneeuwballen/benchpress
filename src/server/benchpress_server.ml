@@ -211,10 +211,16 @@ let uri_show_detailed
      else spf "expect=%s&" @@ U.percent_encode filter_expect)
     offset
 
+let enc_params ?(params=[]) s =
+  List.fold_left
+    (fun s (k,v) ->
+      Printf.sprintf "%s&%s=%s" s (U.percent_encode k) (U.percent_encode v))
+    s params
 let uri_prover_in file prover =
   spf "/prover-in/%s/%s/" (U.percent_encode file) (U.percent_encode prover)
-let uri_show_table ?(offset=0) file =
+let uri_show_table ?params ?(offset=0) file =
   spf "/show_table/%s/?offset=%d" (U.percent_encode file) offset
+  |> enc_params ?params
 let uri_show_csv file = spf "/show_csv/%s" (U.percent_encode file)
 
 let link_get_file pb = PB.link (PB.text pb) ~uri:(uri_get_file pb)
@@ -526,12 +532,15 @@ let handle_show_as_table (self:t) : unit =
   @@ fun file req ->
   let@@ chrono = query_wrap (Error.wrapf "serving show-table/%s" file) in
   let params = H.Request.query req in
+  Logs.debug (fun k->k "serving /show_table/, params=%s"
+                (String.concat ";" @@ List.map (fun (x,y)->Printf.sprintf "%s=%s" x y) params));
   let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
   let filter_pb = try List.assoc "pb" params with Not_found -> "" in
   let filter_res =
     try trf_of_string @@ List.assoc "res" params
     with Not_found -> None
   in
+
   let page_size = 25 in
   let@@ db =
     Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" file) file in
@@ -549,16 +558,17 @@ let handle_show_as_table (self:t) : unit =
     let open Html in
     (* pagination buttons *)
     (* FIXME: only display next if not complete *)
+    let params = List.remove_assoc "offset" params in
     let btns = [
       mk_a
         ~cls:((if offset>0 then [] else ["disabled"]) @
               ["page-link";"link-sm";"my-1"; "p-1"])
         ~a:[a_href
-              (uri_show_table ~offset:(max 0 (offset-page_size)) file)]
+              (uri_show_table ~params ~offset:(max 0 (offset-page_size)) file)]
         [txt "prev"];
       mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
         ~a:[a_href
-              (uri_show_table ~offset:(offset+page_size) file)]
+              (uri_show_table ~params ~offset:(offset+page_size) file)]
         [txt "next"];
     ]
     in
