@@ -185,8 +185,6 @@ let mk_navigation ?(btns=[]) path =
 (* default reply headers *)
 let default_html_headers = H.Headers.([] |> set "content-type" "text/html; charset=utf-8")
 
-let delete_warning = "delete (no confirmation will be asked!!)"
-
 let uri_show file =
   Printf.sprintf "/show/%s/" (U.percent_encode ~skip:(fun c->c='/') file)
 
@@ -331,13 +329,6 @@ let handle_show (self:t) : unit =
              ~a:[a_href (uri_show_table file)]
              [txt "show table of results"];
          ];
-         if self.allow_delete then [
-           form ~a:[a_method `Post] [
-             mk_button ~cls:["btn-danger";"btn-sm"]
-               ~a:[a_formaction ("/delete1/" ^ U.percent_encode file ^ "/");
-                   a_title delete_warning;]
-               [txt "delete"];
-           ]] else [];
        ]
       ];
       [h3 [txt "Summary"]; div [pb_html box_meta]];
@@ -935,13 +926,13 @@ let handle_compare self : unit =
 let handle_delete self : unit =
   assert self.allow_delete;
   let run names =
-    Log.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
+    Log.debug (fun k->k "/delete1: names is [%s]" @@ String.concat ";" names);
     let files =
       names
       |> CCList.map
         (fun s -> match Bin_utils.mk_file_full s with
            | exception Error.E e ->
-             Log.err (fun k->k "cannot load file %S" s);
+             Log.err (fun k->k "cannot load file %S: %a" s Error.pp e);
              H.Response.fail_raise ~code:404 "invalid file %S: %s" s @@ Error.show e
            | x -> x)
     in
@@ -949,28 +940,14 @@ let handle_delete self : unit =
         Log.info (fun k->k  "delete file %s" @@ Filename.quote file);
         Sys.remove file)
       files;
-    let h = html_redirect ~href:"/" @@ spf "deleted %d files" (List.length files) in
-    H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
+    (* return empty html *)
+    H.Response.make_string ~headers:default_html_headers (Ok "")
   in
-  H.add_route_handler self.server ~meth:`POST
+  H.add_route_handler self.server ~meth:`DELETE
     H.Route.(exact "delete1" @/ string_urlencoded @/ return)
     (fun file _req ->
       Log.debug (fun k->k "/delete1: path is %s" file);
       run [file]
-    );
-  H.add_route_handler self.server ~meth:`POST
-    H.Route.(exact "delete" @/ return)
-    (fun req -> let body = H.Request.body req |> String.trim in
-      Log.debug (fun k->k "/delete: body is %s" body);
-      let names =
-        CCString.split_on_char '&' body
-        |> CCList.filter_map
-          (fun s -> match CCString.Split.left ~by:"=" (String.trim s) with
-             | Some (name, "on") -> Some name
-             | _ -> None)
-      in
-      Log.debug (fun k->k "/delete: names is [%s]" @@ String.concat ";" names);
-      run names
     );
   ()
 
@@ -1101,25 +1078,26 @@ let get_meta (self:t) (p:string) : Test_metadata.t =
 let html_of_files (self:t) ~off ~limit : _ Html.elt list =
   let entries, more = Bin_utils.list_entries self.data_dir ~off ~limit in
 
-  let mk_entry idx (s0, size) : _ Html.elt =
+  let mk_entry idx (file_path, size) : _ Html.elt =
     let open Html in
-    let s = Filename.basename s0 in
-    let meta = CCHashtbl.get self.meta_cache s0 in
-    let url_show = uri_show s in
-    let url_meta = Printf.sprintf "/file-sum/%s" (U.percent_encode s) in
+    let file_basename = Filename.basename file_path in
+    let meta = CCHashtbl.get self.meta_cache file_path in
+    let url_show = uri_show file_basename in
+    let url_meta = Printf.sprintf "/file-sum/%s" (U.percent_encode file_basename) in
+    let id = spf "file_%d" (off+idx) in (* unique id *)
 
     (* description aprt *)
     let descr = match meta with
       | Some meta ->
         (* metadata cached, just display it *)
-        mk_file_summary s meta
+        mk_file_summary file_basename meta
       | None ->
         (* lazy loading *)
         [div ~a:[
             a_hx "get" url_meta;
             a_hx "swap" "outerHTML";
             a_hx "trigger" "load";
-          ] [mk_a ~a:[a_href url_show] [txt s0]]
+          ] [mk_a ~a:[a_href url_show] [txt file_path]]
         ]
     in
     let a =
@@ -1130,23 +1108,33 @@ let html_of_files (self:t) ~off ~limit : _ Html.elt list =
         ]
       else []
     in
-    let a = a_class ["list-group-item"] :: a in
+    let a = a_class ["list-group-item"] :: a_id id :: a in
 
     li ~a [
-      div ~a:[a_class ["row"]] [
+      div ~a:[a_class ["row"; "row-cols-12"]] [
         (* lazy loading of status *)
-        div ~a:[a_class ["col-md-9"; "justify-self-left"]] descr;
-        h4 ~a:[a_class ["col-md-1"; "justify-self-right"]] [
+        div ~a:[a_class ["col-md-7"; "justify-self-left"]] descr;
+        h4 ~a:[a_class ["col-md-2"; "justify-self-right"]] [
           span ~a:[a_class ["badge"; "text-secondary"]]
             [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
         ];
+        if self.allow_delete then
+          div ~a:[a_class ["col-md-2"; "justify-self-right"]] [
+            mk_button
+              ~cls:["btn-danger";"btn-sm"]
+              ~a:[a_hx "delete" ("/delete1/" ^ U.percent_encode file_path ^ "/");
+                  a_hx "confirm" "Confirm deletion?";
+                  a_hx "target" (spf "#%s" id); (* remove whole "li" element *)
+                  a_hx "swap" "outerHTML";
+                  a_title "delete file"; ]
+              [txt "delete"]
+          ] else div [];
         div ~a:[a_class ["col-md-1"; "justify-self-right"]]
-          [input ~a:[a_input_type `Checkbox; a_name s] ()];
-      ]]
+          [input ~a:[a_input_type `Checkbox; a_name file_basename] ()];
+      ];
+    ]
   in
-
-  let l = CCList.mapi mk_entry entries in
-  l
+  CCList.mapi mk_entry entries
 
 (* serve list of benchmarks *)
 let handle_list_benchs (self:t) : unit =
@@ -1197,16 +1185,11 @@ let handle_root (self:t) : unit =
                     ~a:[a_formaction "/compare/"]
                     [txt "compare selected"]];
               ];
-              if self.allow_delete then [
-                mk_col ~cls:["col-auto";"p-1"] [
-                  mk_button ~cls:["btn-danger";"btn-sm"]
-                    ~a:[a_formaction "/delete/"; a_title delete_warning]
-                    [txt "delete selected"]]
-              ]
-              else [];
             ];
             (* initial list *)
-            mk_ul ~a:[a_id "list-of-res"] @@
+            mk_ul ~a:[
+              a_id "list-of-res";
+            ] @@
             html_of_files ~off:0 ~limit:20 self
           ]
         ];

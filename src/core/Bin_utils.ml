@@ -134,14 +134,14 @@ let list_entries ?(off=0) ?(limit=max_int) data_dir : _ list * [`Done | `More] =
       if len>limit then CCList.take limit l, `More else l, `Done)
 
 (* find absolute path of [f] in the data dir *)
-let mk_file_full (f:string) : string =
-  let dir = Filename.concat (Xdg.data_dir()) !(Xdg.name_of_project) in
-  let file = Filename.concat dir f in
+let mk_file_full (file:string) : string =
   if not @@ Sys.file_exists file then (
-    Error.failf "cannot find file '%s'" f
-  ) else (
-    file
-  )
+    let dir = Filename.concat (Xdg.data_dir()) !(Xdg.name_of_project) in
+    let file = Filename.concat dir file in
+    if not (Sys.file_exists file) then (
+      Error.failf "cannot find file '%s'" file
+    ) else file
+  ) else file
 
 let guess_uuid (f:string) =
   let f = Filename.chop_extension @@ Filename.basename f in
