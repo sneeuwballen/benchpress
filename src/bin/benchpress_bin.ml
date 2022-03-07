@@ -70,7 +70,7 @@ module List_files = struct
   let main ?(abs=false) () : bool =
     catch_err @@ fun () ->
     let data_dir = Misc.data_dir() in
-    let entries = Bin_utils.list_entries data_dir in
+    let entries, _ = Bin_utils.list_entries data_dir in
     List.iter
       (fun (s,size) ->
          let s = if abs then s else Filename.basename s in

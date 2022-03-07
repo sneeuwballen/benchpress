@@ -9,7 +9,7 @@ module PB = PrintBox
 module Log = (val Logs.src_log (Logs.Src.create "benchpress-serve"))
 let spf = Printf.sprintf
 
-let[@inline] (let@@) f1 f2 = f1 @@ f2
+let[@inline] (let@) f x = f x
 
 type expect_filter =
   | TD_expect_improved
@@ -130,6 +130,7 @@ module Html = struct
           link ~rel:[`Icon] ~href:"/favicon.png" ();
           meta ~a:(a_charset "utf-8" :: my_meta) ();
           script ~a:[a_src "/js"; Unsafe.string_attrib "type" "module"] (txt "");
+          script ~a:[a_src "https://unpkg.com/htmx.org@1.7.0"] (txt "");
         ])
       (body [
           div ~a:[a_class ["container"]] my_body
@@ -140,9 +141,12 @@ module Html = struct
   let mk_row ?(cls=[]) x = div ~a:[a_class ("row"::cls)] x
   let mk_col ?(a=[]) ?(cls=[]) x = div ~a:(a_class ("col"::cls) :: a) x
   let mk_li x = li ~a:[a_class ["list-group-item"]] x
-  let mk_ul l = ul ~a:[a_class ["list-group"]] l
+  let mk_ul ?(a=[]) l = ul ~a:(a_class ["list-group"]::a) l
   let mk_button ?(a=[]) ?(cls=[]) x =
     button ~a:(a_button_type `Submit :: a_class ("btn" :: cls) :: a) x
+
+  (** [hx-…] attribute *)
+  let a_hx key v = Unsafe.string_attrib ("hx-" ^ key) v
 
   let pb_html pb =
     div ~a:[a_class ["table"]] [PB_html.to_html pb]
@@ -211,6 +215,14 @@ let uri_show_detailed
      else spf "expect=%s&" @@ U.percent_encode filter_expect)
     offset
 
+let uri_list_benchs ~off ?limit () : string =
+  spf "/list-benchs/?%s"
+    (String.concat "&" @@
+     List.flatten [
+       [spf "off=%d" off];
+       (match limit with None -> [] | Some l -> [spf "limit=%d" l])
+     ])
+
 let enc_params ?(params=[]) s =
   List.fold_left
     (fun s (k,v) ->
@@ -272,7 +284,7 @@ let handle_show (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ chrono = query_wrap (Error.wrapf "serving %s" @@ uri_show file) in
+  let@ chrono = query_wrap (Error.wrapf "serving %s" @@ uri_show file) in
   Log.info (fun k->k "----- start show %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:false file in
   Log.info (fun k->k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
@@ -369,9 +381,9 @@ let handle_prover_in (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "prover-in" @/ string_urlencoded @/ string_urlencoded @/ return)
   @@ fun file p_name _req ->
-  let@@ _chrono = query_wrap (Error.wrapf "prover-in-file/%s/%s" file p_name) in
+  let@ _chrono = query_wrap (Error.wrapf "prover-in-file/%s/%s" file p_name) in
   Log.info (fun k->k "----- start prover-in %s %s -----" file p_name);
-  let@@ db = Bin_utils.with_file_as_db ~map_err:(Error.wrapf "reading file '%s'" file) file in
+  let@ db = Bin_utils.with_file_as_db ~map_err:(Error.wrapf "reading file '%s'" file) file in
   let prover = Prover.of_db db p_name in
   let open Html in
   let h = mk_page ~title:"prover"
@@ -397,7 +409,7 @@ let handle_show_gp (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-gp" @/ string_urlencoded @/ return)
   @@ fun q_arg _req ->
-  let@@ chrono = query_wrap (Error.wrapf "serving /show-gp/%s" q_arg) in
+  let@ chrono = query_wrap (Error.wrapf "serving /show-gp/%s" q_arg) in
   Log.info (fun k->k "----- start show-gp %s -----" q_arg);
   let files = CCString.split_on_char ',' q_arg |> List.map String.trim in
   let files_full =
@@ -429,7 +441,7 @@ let handle_show_errors (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-err" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ chrono = query_wrap (Error.wrapf "serving show-err/%s" file) in
+  let@ chrono = query_wrap (Error.wrapf "serving show-err/%s" file) in
   Log.info (fun k->k "----- start show-err %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
   Log.info (fun k->k "show-err: loaded full summary in %.3fs"
@@ -479,7 +491,7 @@ let handle_show_invalid (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-invalid" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ chrono = query_wrap (Error.wrapf "serving show-invalid/%s" file) in
+  let@ chrono = query_wrap (Error.wrapf "serving show-invalid/%s" file) in
   Log.info (fun k->k "----- start show-invalid %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
   Log.info (fun k->k "show-err: loaded full summary in %.3fs"
@@ -530,7 +542,7 @@ let handle_show_as_table (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_table" @/ string_urlencoded @/ return)
   @@ fun file req ->
-  let@@ chrono = query_wrap (Error.wrapf "serving show-table/%s" file) in
+  let@ chrono = query_wrap (Error.wrapf "serving show-table/%s" file) in
   let params = H.Request.query req in
   Logs.debug (fun k->k "serving /show_table/, params=%s"
                 (String.concat ";" @@ List.map (fun (x,y)->Printf.sprintf "%s=%s" x y) params));
@@ -542,7 +554,7 @@ let handle_show_as_table (self:t) : unit =
   in
 
   let page_size = 25 in
-  let@@ db =
+  let@ db =
     Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" file) file in
   let full_table =
     let link_res prover pb ~res =
@@ -668,7 +680,7 @@ let handle_show_detailed (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_detailed" @/ string_urlencoded @/ return)
   @@ fun db_file req ->
-  let@@ chrono = query_wrap (Error.wrapf "serving show_detailed/%s" db_file) in
+  let@ chrono = query_wrap (Error.wrapf "serving show_detailed/%s" db_file) in
   let params = H.Request.query req in
   let offset = try List.assoc "offset" params |> int_of_string with Not_found -> 0 in
   let filter_res = try List.assoc "res" params with Not_found -> "" in
@@ -681,7 +693,7 @@ let handle_show_detailed (self:t) : unit =
   let page_size = 25 in
   Log.debug (fun k->k "-- show detailed file=%S offset=%d pb=`%s` res=`%s` prover=`%s` --"
                 db_file offset filter_pb filter_res filter_prover);
-  let@@ db =
+  let@ db =
     Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" db_file) db_file in
   let l, n, complete =
     Test_detailed_res.list_keys
@@ -786,14 +798,14 @@ let handle_show_single (self:t) : unit =
     H.Route.(exact "show_single" @/ string_urlencoded @/
              string_urlencoded @/ string_urlencoded @/ return)
   @@ fun db_file prover pb_file _req ->
-  let@@ chrono =
+  let@ chrono =
     query_wrap
       (Error.wrapf "serving show_single db=%s prover=%s file=%s"
          db_file prover pb_file)
   in
   Log.debug (fun k->k "show single called with prover=%s, pb_file=%s" prover pb_file);
   H.Response.make_string ~headers:default_html_headers @@
-  let@@ db =
+  let@ db =
     Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" db_file) db_file in
   let r, check_res = Test_detailed_res.get_res db prover pb_file in
   let pb, pb_prover, stdout, stderr, proof_stdout =
@@ -829,8 +841,8 @@ let handle_show_csv (self:t): unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show_csv" @/ string_urlencoded @/ return)
   @@ fun db_file req ->
-  let@@ chrono = query_wrap (Error.wrapf "serving show_csv/%s" db_file) in
-  let@@ db =
+  let@ chrono = query_wrap (Error.wrapf "serving show_csv/%s" db_file) in
+  let@ db =
     Bin_utils.with_file_as_db ~map_err:(Error.wrapf "using DB '%s'" db_file) db_file in
   let query = H.Request.query req in
   Log.debug
@@ -858,7 +870,7 @@ let handle_compare self : unit =
     H.Route.(exact "compare" @/ return)
   @@ fun req ->
   let body = H.Request.body req |> String.trim in
-  let@@ _chrono = query_wrap (Error.wrapf "serving: compare (post) body=%s" body) in
+  let@ _chrono = query_wrap (Error.wrapf "serving: compare (post) body=%s" body) in
   Log.debug (fun k->k "/compare: body is %s" body);
   let body = U.parse_query body
              |> Misc.unwrap_str (fun() -> spf "parse-query failed on %s" body) in
@@ -966,7 +978,7 @@ let handle_provers (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "provers" @/ return)
   @@ fun req ->
-  let@@ _chrono = query_wrap (Error.wrap "serving /provers/") in
+  let@ _chrono = query_wrap (Error.wrap "serving /provers/") in
   let name =
     try Some (List.assoc "name" @@ H.Request.query req)
     with _ -> None
@@ -1006,7 +1018,7 @@ let handle_tasks (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "tasks" @/ return)
   @@ fun _req ->
-  let@@ _chrono = query_wrap (Error.wrap "serving /tasks/") in
+  let@ _chrono = query_wrap (Error.wrap "serving /tasks/") in
   let tasks = Definitions.all_tasks self.defs |> List.map With_loc.view in
   let h =
     let open Html in
@@ -1044,7 +1056,7 @@ let handle_run (self:t) : unit =
   H.add_route_handler self.server ~meth:`POST
     H.Route.(exact "run" @/ string_urlencoded @/ return)
   @@ fun name _r ->
-  let@@ _chrono = query_wrap (Error.wrapf "serving /run/%s" name) in
+  let@ _chrono = query_wrap (Error.wrapf "serving /run/%s" name) in
   Log.debug (fun k->k "run task %S" name);
   let task =
     guardf 500 (Error.wrapf "looking for task %s" name) @@ fun () ->
@@ -1086,15 +1098,10 @@ let get_meta (self:t) (p:string) : Test_metadata.t =
     );
     res
 
-(* index *)
-let handle_root (self:t) : unit =
-  H.add_route_handler self.server ~meth:`GET
-    H.Route.(return)
-  @@ fun _req ->
-  let@@ chrono = query_wrap (Error.wrap "serving /") in
-  let entries = Bin_utils.list_entries self.data_dir in
+let html_of_files (self:t) ~off ~limit : _ Html.elt list =
+  let entries, more = Bin_utils.list_entries self.data_dir ~off ~limit in
 
-  let mk_entry (s0, size) : _ Html.elt =
+  let mk_entry idx (s0, size) : _ Html.elt =
     let open Html in
     let s = Filename.basename s0 in
     let meta = CCHashtbl.get self.meta_cache s0 in
@@ -1108,12 +1115,24 @@ let handle_root (self:t) : unit =
         mk_file_summary s meta
       | None ->
         (* lazy loading *)
-        [mk_a ~cls:["disabled"; "lazy-load"]
-           ~a:[a_href url_show;
-               Unsafe.string_attrib "x_src" url_meta]
-           [txt s0]]
+        [div ~a:[
+            a_hx "get" url_meta;
+            a_hx "swap" "outerHTML";
+            a_hx "trigger" "load";
+          ] [mk_a ~a:[a_href url_show] [txt s0]]
+        ]
     in
-    li ~a:[a_class ["list-group-item"]] [
+    let a =
+      if idx+1 = limit && more=`More then
+        [ a_hx "trigger" "revealed";
+          a_hx "swap" "afterend";
+          a_hx "get" (uri_list_benchs ~off:(off+limit) ());
+        ]
+      else []
+    in
+    let a = a_class ["list-group-item"] :: a in
+
+    li ~a [
       div ~a:[a_class ["row"]] [
         (* lazy loading of status *)
         div ~a:[a_class ["col-md-9"; "justify-self-left"]] descr;
@@ -1125,6 +1144,34 @@ let handle_root (self:t) : unit =
           [input ~a:[a_input_type `Checkbox; a_name s] ()];
       ]]
   in
+
+  let l = CCList.mapi mk_entry entries in
+  l
+
+(* serve list of benchmarks *)
+let handle_list_benchs (self:t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "list-benchs" @/ return)
+  @@ fun req ->
+  let@ chrono = query_wrap (Error.wrap "serving /list-benchs/") in
+
+  let params = H.Request.query req in
+  let off = try int_of_string (List.assoc "off" params) with _ -> 0 in
+  let limit = try int_of_string (List.assoc "limit" params) with _ -> 20 in
+
+  Log.debug (fun k->k"list-benchs off=%d limit=%d" off limit);
+
+  let html = html_of_files self ~off ~limit in
+  let resp = String.concat "\n" @@ List.map Html.to_string_elt html in
+  Log.debug (fun k->k "listed %d results in %.3fs" limit (Misc.Chrono.since_last chrono));
+  H.Response.make_string (Ok resp)
+
+(* index *)
+let handle_root (self:t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(return)
+  @@ fun _req ->
+  let@ chrono = query_wrap (Error.wrap "serving /") in
 
   let h =
     let open Html in
@@ -1140,8 +1187,6 @@ let handle_root (self:t) : unit =
                [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
           ];
         ];
-        let l = CCList.map mk_entry entries in
-        Log.info (fun k->k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
         div ~a:[a_class ["container"]] [
           h2 [txt "list of results"];
           form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
@@ -1160,11 +1205,14 @@ let handle_root (self:t) : unit =
               ]
               else [];
             ];
-            mk_ul l
+            (* initial list *)
+            mk_ul ~a:[a_id "list-of-res"] @@
+            html_of_files ~off:0 ~limit:20 self
           ]
         ];
       ]
   in
+  Log.info (fun k->k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
   Jemalloc.epoch();
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
@@ -1173,7 +1221,7 @@ let handle_file_summary (self:t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "file-sum" @/ string_urlencoded @/ return)
   @@ fun file _req ->
-  let@@ chrono = query_wrap (Error.wrapf "serving /file-summary/%s" file) in
+  let@ chrono = query_wrap (Error.wrapf "serving /file-summary/%s" file) in
   let file_full = Bin_utils.mk_file_full file in
   let s = Filename.basename file_full in
   let h =
@@ -1258,6 +1306,7 @@ module Cmd = struct
       (* maybe serve the API *)
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       handle_root self;
+      handle_list_benchs self;
       handle_file_summary self;
       handle_css server;
       handle_show self;

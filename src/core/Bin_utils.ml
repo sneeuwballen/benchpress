@@ -112,7 +112,11 @@ let printbox_results (results:Test_top_result.t) : unit =
   end;
   ()
 
-let list_entries data_dir =
+(** List entries in main directory.
+    @param off offset in the list
+    @param limit max number of files returned
+    @return list of pairs (file, size), and an indicator if there's more. *)
+let list_entries ?(off=0) ?(limit=max_int) data_dir : _ list * [`Done | `More] =
   CCIO.File.walk_l data_dir
   |> CCList.filter_map
     (function
@@ -124,6 +128,10 @@ let list_entries data_dir =
         Some (s,size)
       | _ -> None)
   |> List.sort (fun x y->CCOrd.(pair CCString.compare_natural int) y x)
+  |> (fun l ->
+      let l = CCList.drop off l in
+      let len = List.length l in
+      if len>limit then CCList.take limit l, `More else l, `Done)
 
 (* find absolute path of [f] in the data dir *)
 let mk_file_full (f:string) : string =
