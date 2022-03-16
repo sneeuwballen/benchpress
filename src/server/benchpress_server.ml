@@ -129,6 +129,7 @@ module Html = struct
           PB_html.style;
           link ~rel:[`Icon] ~href:"/favicon.png" ();
           meta ~a:(a_charset "utf-8" :: my_meta) ();
+          meta ~a:[a_name "viewport"; a_content "width=device-width, initial-scale=1"] ();
           script ~a:[a_src "/js"; Unsafe.string_attrib "type" "module"] (txt "");
           script ~a:[a_src "https://unpkg.com/htmx.org@1.7.0"] (txt "");
         ])
@@ -167,7 +168,7 @@ let mk_navigation ?(btns=[]) path =
   let open Html in
   let path = ("/", "root", false) :: path in
   div1 ~a:[a_class ["sticky-top"; "container"]] @@
-  nav ~a:[a_class ["navbar"; "navbar-expand-md"]] @@
+  nav ~a:[a_class ["breadcrumb"]] @@
     List.flatten [
       [ol ~a:[a_class ["breadcrumb"; "navbar-header"; "col-sm-6"; "m-1"]] @@
        CCList.map (fun (uri, descr, active) ->
@@ -1168,10 +1169,10 @@ let handle_root (self:t) : unit =
         h1 [txt "Benchpress"];
         div ~a:[a_class ["container"]] [
           h2 [txt "configuration"];
-          ul ~a:[a_class ["list-group"]] @@ List.flatten [
-            [li ~a:[a_class ["list-group-item"]]
+          ul ~a:[a_class ["nav nav-tabs"]] @@ List.flatten [
+            [li ~a:[a_class ["nav-item"]]
                [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
-             li ~a:[a_class ["list-group-item"]]
+             li ~a:[a_class ["nav-item"]]
                [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
           ];
         ];
