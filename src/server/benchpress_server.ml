@@ -29,17 +29,13 @@ type t = {
 
 (** {2 printbox -> html} *)
 module PB_html : sig
-  open Tyxml
-  type 'a html = 'a Html.elt
-  val style : [>`Style] html
-  val to_html : PrintBox.t -> [`Div] html
+  open Tiny_httpd_html
+  val style : elt
+  val to_html : PrintBox.t -> elt
 end = struct
-  open Tyxml
-
   module B = PrintBox
-  module H = Html
-
-  type 'a html = 'a Html.elt
+  module H = Tiny_httpd_html
+  module A = H.A
 
   let style =
     let l = [
@@ -47,7 +43,7 @@ end = struct
       "table.framed th, table.framed td { border: 1px solid black; }";
       "th, td { padding: 3px; }";
     ] in
-    H.style (CCList.map H.txt l)
+    H.style [] (CCList.map H.txt l)
 
   let attrs_of_style (s:B.Style.t) : _ list * _ =
     let open B.Style in
@@ -68,119 +64,125 @@ end = struct
     in
     let a = match s with
       | [] -> []
-      | s -> [H.a_style @@ String.concat ";" @@ CCList.map (fun (k,v) -> k ^ ": " ^ v) s] in
+      | s -> [A.style @@ String.concat ";" @@ CCList.map (fun (k,v) -> k ^ ": " ^ v) s] in
     a, bold
 
-  let rec to_html_rec (b: B.t) : [< Html_types.flow5 > `Div `Ul `Table `P] html =
+  let rec to_html_rec (b: B.t) : H.elt =
     match B.view b with
-    | B.Empty -> H.div []
+    | B.Empty -> H.span [] []
     | B.Text {l; style} ->
       let a, bold = attrs_of_style style in
       let l = CCList.map H.txt l in
-      let l = if bold then CCList.map (fun x->H.b [x]) l else l in
-      H.div ~a l
+      let l = if bold then CCList.map (fun x->H.b [] [x]) l else l in
+      H.div a l
     | B.Pad (_, b)
     | B.Frame b -> to_html_rec b
     | B.Align {h=`Right;inner=b;v=_} ->
-      H.div ~a:[H.a_class ["align-right"]] [ to_html_rec b ]
+      H.div [A.class_ "align-right"] [ to_html_rec b ]
     | B.Align {h=`Center;inner=b;v=_} ->
-      H.div ~a:[H.a_class ["center"]] [ to_html_rec b ]
+      H.div [A.class_ "center"] [ to_html_rec b ]
     | B.Align {inner=b;_} -> to_html_rec b
     | B.Grid (bars, a) ->
       let class_ = match bars with
-        | `Bars -> ["table-bordered"; "framed"]
-        | `None -> ["table-borderless"]
+        | `Bars -> "table-bordered framed"
+        | `None -> "table-borderless"
       in
       let to_row a =
         Array.to_list a
-        |> CCList.map (fun b -> H.td ~a:[H.a_class ["thead"]] [to_html_rec b])
-        |> (fun x -> H.tr x)
+        |> CCList.map (fun b -> H.td [A.class_ "thead"] [to_html_rec b])
+        |> (fun x -> H.tr [] x)
       in
       let rows =
         Array.to_list a |> CCList.map to_row
       in
-      H.table ~a:[H.a_class ("table" :: "table-hover" ::
-                             "table-striped" :: class_)] rows
+      H.table [A.class_ @@ "table table-hover table-striped " ^ class_] rows
     | B.Tree (_, b, l) ->
       let l = Array.to_list l in
-      H.div
-        [ to_html_rec b
-        ; H.ul (CCList.map (fun x -> H.li [to_html_rec x]) l)
+      H.div []
+        [ to_html_rec b;
+          H.ul [] (CCList.map (fun x -> H.li [] [to_html_rec x]) l)
         ]
     | B.Link {uri; inner} ->
-      H.div [H.a ~a:[H.a_class ["btn-link"]; H.a_href uri] [to_html_rec inner]]
+      H.div [] [H.a [A.class_ "btn-link"; A.href uri] [to_html_rec inner]]
     | _ ->
       (* catch-all to be more resilient to newer versions of printbox *)
-      H.div [H.pre [H.txt @@ PrintBox_text.to_string b]] (* remaining cases *)
+      H.div [] [H.pre [] [H.txt @@ PrintBox_text.to_string b]] (* remaining cases *)
       [@@warning "-11"]
 
-  let to_html b = H.div [to_html_rec b]
+  let to_html b = H.div [] [to_html_rec b]
 end
 
 module Html = struct
-  include Tyxml_html
+  include Tiny_httpd_html
 
-  let b_style = link ~rel:[`Stylesheet] ~href:"/css/" ()
+  let b_style = link [A.rel "stylesheet"; A.href "/css/"]
 
-  let mk_page ?meta:(my_meta=[]) ~title:s my_body =
-    html
-      (head (title @@ txt s) [
-          b_style;
-          PB_html.style;
-          link ~rel:[`Icon] ~href:"/favicon.png" ();
-          meta ~a:(a_charset "utf-8" :: my_meta) ();
-          meta ~a:[a_name "viewport"; a_content "width=device-width, initial-scale=1"] ();
-          script ~a:[a_src "/js"; Unsafe.string_attrib "type" "module"] (txt "");
-          script ~a:[a_src "https://unpkg.com/htmx.org@1.7.0"] (txt "");
-        ])
-      (body [
-          div ~a:[a_class ["container"]] my_body
-        ])
+  let mk_page_ ?meta:(my_meta=[]) ~title:my_title my_body =
+    html [] [
+      head [] [
+        title [] [txt my_title];
+        b_style;
+        PB_html.style;
+        link [A.rel "icon"; A.href "/favicon.png"];
+        meta (A.charset "utf-8" :: my_meta);
+        meta [A.name "viewport"; A.content "width=device-width, initial-scale=1"];
+        script [A.src "/js"; "type", "module"] [txt ""];
+        script [A.src "https://unpkg.com/htmx.org@1.7.0"] [txt ""];
+      ];
+      body [] [
+        my_body
+      ];
+    ]
 
-  let div1 ?a x = div ?a [x]
-  let mk_a ?(cls=["btn-link"]) ?a:(al=[]) x = a ~a:(a_class ("btn" :: cls) :: al) x
-  let mk_row ?(cls=[]) x = div ~a:[a_class ("row"::cls)] x
-  let mk_col ?(a=[]) ?(cls=[]) x = div ~a:(a_class ("col"::cls) :: a) x
-  let mk_li x = li ~a:[a_class ["list-group-item"]] x
-  let mk_ul ?(a=[]) l = ul ~a:(a_class ["list-group"]::a) l
-  let mk_button ?(a=[]) ?(cls=[]) x =
-    button ~a:(a_button_type `Submit :: a_class ("btn" :: cls) :: a) x
+  let mk_page ?meta ~title my_body =
+    mk_page_ ?meta ~title @@ div [A.class_ "container"] my_body
+
+  let mk_page' ?meta ~title my_body =
+    mk_page_ ?meta ~title @@ div' [A.class_ "container"] my_body
+
+  let div1 a x = div a [x]
+  let mk_a ?(cls="btn-link") al x = a (A.class_ ("btn " ^ cls) :: al) x
+  let mk_row ?(cls="") al x = div ((A.class_ @@ "row " ^ cls) :: al) x
+  let mk_col ?(cls="") al x = div ((A.class_ @@ "col" ^ cls) :: al) x
+  let mk_li al x = li (A.class_ "list-group-item" :: al) x
+  let mk_ul al l = ul (A.class_ "list-group" ::al) l
+  let mk_button ?(cls="") al x =
+    button (A.type_ "submit" :: A.class_ ("btn " ^ cls) :: al) x
 
   (** [hx-…] attribute *)
-  let a_hx key v = Unsafe.string_attrib ("hx-" ^ key) v
+  let a_hx key v = ("hx-" ^ key), v
 
   let pb_html pb =
-    div ~a:[a_class ["table"]] [PB_html.to_html pb]
+    div [A.class_ "table"] [PB_html.to_html pb]
 
-  let to_string h = Format.asprintf "@[%a@]@." (pp ()) h
-  let to_string_elt h = Format.asprintf "@[%a@]@." (pp_elt ()) h
+  let to_string_elt h = to_string ~top:false h
+  let to_string = to_string_top
 end
 
-let html_redirect ~href (s:string) =
+let html_redirect ~href (str:string) : Html.elt =
   let open Html in
   mk_page
-    ~meta:[a_http_equiv "Refresh"; a_content (spf "0; url=%s" href)]
-    ~title:s
-    [txt s]
+    ~meta:[A.http_equiv "Refresh"; A.content (spf "0; url=%s" href)]
+    ~title:str
+    [txt str]
 
 (* navigation bar *)
 let mk_navigation ?(btns=[]) path =
   let open Html in
   let path = ("/", "root", false) :: path in
-  div1 ~a:[a_class ["sticky-top"; "container"]] @@
-  nav ~a:[a_class ["breadcrumb"]] @@
-    List.flatten [
-      [ol ~a:[a_class ["breadcrumb"; "navbar-header"; "col-sm-6"; "m-1"]] @@
-       CCList.map (fun (uri, descr, active) ->
-           li ~a:[a_class ("breadcrumb-item" :: if active then ["active"] else [])] [
-             mk_a ~a:[a_href uri] [txt descr]
-           ])
-         path;
-      ];
-      (if btns=[] then []
-       else [div ~a:[a_class ["btn-group-vertical"; "col-sm-1"; "align-items-center";
-                              "navbar-right"; "m-2"]]
-               btns]);
+  div1 [A.class_ "sticky-top container"] @@
+  nav' [A.class_ "breadcrumb"] [
+    sub_e (ol [A.class_ "breadcrumb navbar-header col-sm-6 m-1"] @@
+           CCList.map (fun (uri, descr, active) ->
+               li [A.class_ ("breadcrumb-item " ^ if active then "active" else "")] [
+                 mk_a [A.href uri] [txt descr]
+               ])
+             path);
+    (if btns=[] then `Nil
+     else sub_e (
+         div [A.class_ "btn-group-vertical col-sm-1 align-items-center navbar-right m-2"]
+           btns
+       ));
   ]
 
 (* default reply headers *)
@@ -313,54 +315,51 @@ let handle_show (self:t) : unit =
   Log.info (fun k->k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let h =
     let open Html in
-    mk_page ~title:"show" @@
-    List.flatten [
-      [mk_navigation [uri_show file, "show", true];
-       h3 [txt file];
-       mk_row @@
-       CCList.map (fun x -> mk_col ~cls:["col-auto"] [x]) @@
-       List.flatten [
-         [ mk_a ~cls:["btn-info";"btn-sm"]
-             ~a:[a_href (uri_show_detailed file)]
-             [txt "show individual results"];
-           mk_a ~cls:["btn-info";"btn-sm"]
-             ~a:[a_href (uri_show_csv file)]
-             [txt "download as csv"];
-           mk_a ~cls:["btn-info";"btn-sm"]
-             ~a:[a_href (uri_show_table file)]
-             [txt "show table of results"];
-         ];
-       ]
-      ];
-      [h3 [txt "Summary"]; div [pb_html box_meta]];
-      [h3 [txt "stats"]; div [pb_html box_stat]];
-      [
-        h3 [txt "summary"];
-        mk_a ~cls:["btn-link"; "btn-sm"; "h-50"]
-          ~a:[a_href (Printf.sprintf "/show_csv/%s/"
-                        (U.percent_encode file))]
+    mk_page' ~title:"show" [
+      sub_l [
+        mk_navigation [uri_show file, "show", true];
+        h3 [] [txt file];
+        mk_row [] (
+          CCList.map (fun x -> mk_col ~cls:"col-auto" [] [x]) [
+            mk_a ~cls:"btn-info btn-sm"
+              [A.href (uri_show_detailed file)]
+              [txt "show individual results"];
+            mk_a ~cls:"btn-info btn-sm"
+              [A.href (uri_show_csv file)]
+              [txt "download as csv"];
+            mk_a ~cls:"btn-info btn-sm"
+              [A.href (uri_show_table file)]
+              [txt "show table of results"];
+          ]
+        );
+        h3 [] [txt "Summary"];
+        div [] [pb_html box_meta];
+        h3 [] [txt "stats"];
+        div [] [pb_html box_stat];
+        h3 [] [txt "summary"];
+        mk_a ~cls:"btn-link btn-sm h-50"
+          [A.href (Printf.sprintf "/show_csv/%s/"
+                     (U.percent_encode file))]
           [txt "download as csv"];
-        mk_a ~cls:["btn-link"; "btn-sm"]
-          ~a:[a_href (uri_show_detailed file)]
+        mk_a ~cls:"btn-link btn-sm"
+          [A.href (uri_show_detailed file)]
           [txt "see detailed results"];
-        div [pb_html box_summary];
+        div [] [pb_html box_summary];
       ];
-      (* lazy loading *)
-      [div ~a:[a_class ["lazy-load"];
-               Unsafe.string_attrib "x_src" uri_err ] []];
-      [div ~a:[a_class ["lazy-load"];
-               Unsafe.string_attrib "x_src" uri_invalid ] []];
-      [img
-         ~src:uri_plot
-         ~a:[a_class ["img-fluid"];
-             Unsafe.string_attrib "loading" "lazy";
-            ]
-         ~alt:"cactus plot of provers" ()];
-      (if box_compare_l=PB.empty then []
-       else [
-         h3 [txt "comparisons"];
-         div [pb_html box_compare_l];
-       ]);
+      sub_l [
+        div [A.class_ "lazy-load"; "x_src", uri_err] [];
+        div [A.class_ "lazy-load"; "x_src", uri_invalid] [];
+        img [
+          A.src uri_plot;
+          A.class_ "img-fluid";
+          "loading", "lazy";
+          A.alt "cactus plot of provers"];
+      ];
+      (if box_compare_l=PB.empty then `Nil
+       else sub_l [
+           h3 [] [txt "comparisons"];
+           div [] [pb_html box_compare_l];
+         ]);
     ]
   in
   Log.info (fun k->k "show: turned into html in %.3fs"
@@ -384,12 +383,12 @@ let handle_prover_in (self:t) : unit =
           uri_show file, "file", false;
           uri_prover_in file p_name, "prover", true;
         ];
-        div [
-          pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
+        div [] [
+          pre [] [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover];
           begin match prover.Prover.defined_in with
-            | None -> span[]
+            | None -> span[][]
             | Some f ->
-              div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+              div [] [txt "defined in"; mk_a [A.href (uri_get_file f)] [txt f]]
           end;
         ]
       ]
@@ -447,31 +446,39 @@ let handle_show_errors (self:t) : unit =
     let data =
       "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
     in
-    mk_a ~cls:["btn"; "btn-link";"btn-sm"]
-      ~a:[a_download (Some "problems.txt"); a_href data]
+    mk_a [A.class_ "btn btn-link btn-sm";
+          A.download "problems.txt"; A.href data]
       [txt "download list"]
   in
   let h =
     let open Html in
     (* FIXME: only optional? *)
-    div @@
-    (*           mk_page ~title:"show-err" @@ *)
-    List.flatten [
-      CCList.flat_map
-        (fun (n,l,p) ->
-           [h3 [txt ("bad for " ^ n)];
-            details ~a:[a_open()]
-              (summary ~a:[a_class ["alert";"alert-danger"]]
-                 [txt "list of bad results"])
-              [div [mk_dl_file l; pb_html p]]])
-        bad;
-      CCList.flat_map
-        (fun (n,l,p) ->
-           [h3 [txt ("errors for " ^ n)];
-            details (summary ~a:[a_class ["alert"; "alert-warning"]]
-                       [txt "list of errors"; ])
-              [div [mk_dl_file l; pb_html p]]])
-        errors;
+    div' [] [
+      (*           mk_page ~title:"show-err" @@ *)
+      sub_l (
+        CCList.flat_map
+          (fun (n,l,p) ->
+             [h3 [] [txt ("bad for " ^ n)];
+              details [A.open_ ""] [
+                summary [A.class_ "alert alert-danger"]
+                  [txt "list of bad results"];
+                div [] [mk_dl_file l; pb_html p]
+              ];
+             ])
+          bad
+      );
+      sub_l (
+        CCList.flat_map
+          (fun (n,l,p) ->
+             [h3 [] [txt ("errors for " ^ n)];
+              details [] [
+                summary [A.class_ "alert alert-warning"]
+                  [txt "list of errors"; ];
+                div [] [mk_dl_file l; pb_html p]
+              ];
+             ])
+          errors;
+      )
     ]
   in
   Log.info (fun k->k "show:turned into html in %.3fs"
@@ -496,25 +503,26 @@ let handle_show_invalid (self:t) : unit =
     let data =
       "data:text/plain;base64, "^Base64.encode_string (String.concat "\n" l)
     in
-    mk_a ~cls:["btn"; "btn-link";"btn-sm"]
-      ~a:[a_download (Some "problems.txt"); a_href data]
+    mk_a ~cls:"btn btn-link btn-sm"
+      [A.download "problems.txt"; A.href data]
       [txt "download list"]
   in
   let h =
     let open Html in
     (* FIXME: only optional? *)
-    div @@
-    (*           mk_page ~title:"show-err" @@ *)
-    List.flatten [
+    div [] (
+      (*           mk_page ~title:"show-err" @@ *)
       CCList.flat_map
         (fun (n,l,p) ->
-           [h3 [txt ("bad for " ^ n)];
-            details ~a:[a_open()]
-              (summary ~a:[a_class ["alert";"alert-danger"]]
-                 [txt "list of invalid proofs"])
-              [div [mk_dl_file l; pb_html p]]])
+           [h3 [] [txt ("bad for " ^ n)];
+            details [A.open_ ""] [
+              summary [A.class_ "alert alert-danger"]
+                [txt "list of invalid proofs"];
+              div [] [mk_dl_file l; pb_html p]
+            ];
+           ])
         invalid
-    ]
+    )
   in
   Log.info (fun k->k "show:turned into html in %.3fs"
                (Misc.Chrono.since_last chrono));
@@ -565,89 +573,85 @@ let handle_show_as_table (self:t) : unit =
     let params = List.remove_assoc "offset" params in
     let btns = [
       mk_a
-        ~cls:((if offset>0 then [] else ["disabled"]) @
-              ["page-link";"link-sm";"my-1"; "p-1"])
-        ~a:[a_href
-              (uri_show_table ~params ~offset:(max 0 (offset-page_size)) file)]
+        ~cls:((if offset>0 then "" else "disabled ") ^
+              "page-link link-sm my-1 p-1")
+        [A.href
+           (uri_show_table ~params ~offset:(max 0 (offset-page_size)) file)]
         [txt "prev"];
-      mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
-        ~a:[a_href
-              (uri_show_table ~params ~offset:(offset+page_size) file)]
+      mk_a ~cls:"page-link link-sm my-1 p-1"
+        [A.href
+           (uri_show_table ~params ~offset:(offset+page_size) file)]
         [txt "next"];
     ]
     in
-    mk_page ~title:"show full table" @@
-    List.flatten [
-      [mk_navigation ~btns [
-          uri_show file, "file", false;
-          uri_show_table file,
-          (if offset=0 then "full" else spf "full[%d..]" offset),
-          true;
-        ];
+    mk_page ~title:"show full table" [
+      mk_navigation ~btns [
+        uri_show file, "file", false;
+        uri_show_table file,
+        (if offset=0 then "full" else spf "full[%d..]" offset),
+        true;
       ];
-      [div ~a:[a_class ["container-fluid"]] @@
-       [form ~a:[a_action (uri_show_table file);
-                 a_method `Get;
-                 a_class ["form-row"; "form-inline"]]
-          [
-            input ~a:[a_name "pb";
-                      a_class ["form-control"; "form-control-sm"; "m-3"; "p-3"];
-                      a_value filter_pb;
-                      a_placeholder "problem";
-                      a_input_type `Text] ();
-            select ~a:[a_name "res";
-                       a_class ["form-control"; "select"; "m-3"];
-                      ] @@
+      div [A.class_ "container-fluid"] [
+        form [A.action (uri_show_table file);
+              A.method_ "GET";
+              A.class_ "form-row form-inline"] [
+          input [A.name "pb";
+                 A.class_ "form-control form-control-sm m-3 p-3";
+                 A.value filter_pb;
+                 A.placeholder "problem";
+                 A.type_ "text"];
+          select [A.name "res";
+                  A.class_ "form-control select m-3"] (
             List.map
               (fun trf ->
-                 let sel = if Some trf = filter_res then [a_selected()] else [] in
+                 let sel = if Some trf = filter_res then [A.selected ""] else [] in
                  let s = Test_top_result.string_of_trf trf in
-                 option ~a:(sel @[a_value s]) (txt s))
-              [Test_top_result.TRF_all; TRF_bad; TRF_different];
-            mk_button
-              ~cls:["btn-info"; "btn-sm"; "btn-success"; "m-3";]
-              [txt "filter"];
-          ];
-       ]
+                 option (sel @[A.value s]) [txt s])
+              [Test_top_result.TRF_all; TRF_bad; TRF_different]
+          );
+          mk_button
+            ~cls:"btn-info btn-sm btn-success m-3" []
+            [txt "filter"];
+        ];
       ];
-      [h3 [txt "full results"];
-       div [pb_html full_table]];
+      h3 [] [txt "full results"];
+      div [] [pb_html full_table];
     ]
   in
   Log.debug (fun k->k "successful reply for %S" file);
   H.Response.make_string (Ok (Html.to_string h))
 
 (* html for the summary of [file] with metadata [m] *)
-let mk_file_summary filename (m:Test_metadata.t) : _ Html.elt list =
+let mk_file_summary filename (m:Test_metadata.t) : Html.elt list =
   let open Html in
 
   let add_title =
-    let title = [a_title (Test_metadata.to_string m)] in
+    let title = [A.title (Test_metadata.to_string m)] in
     let url_show = uri_show filename in
-    fun x -> mk_a ~a:(a_href url_show :: title) [x]
+    fun x -> mk_a (A.href url_show :: title) [x]
   in
 
   let nres =
     let hd = add_title @@ txt (spf "%d res" m.n_results)
     and tl =
       if m.n_bad > 0
-      then [span ~a:[a_class ["badge"; "bg-danger"]]
+      then [span [A.class_ "badge bg-danger"]
               [txt (spf "%d bad" m.n_bad)]]
       else []
     in
-    span ~a:[a_class ["col-md-3"]] (hd :: tl)
+    span [A.class_ "col-md-3"] (hd :: tl)
   and provers =
-    span ~a:[a_class ["col-md-3"]]
+    span [A.class_ "col-md-3"]
       [txt (spf "{%s}" @@ String.concat "," m.provers)]
   and date =
-    span ~a:[a_class ["col-md-3"; "text-secondary"]]
+    span [A.class_ "col-md-3 text-secondary"]
       [txt @@ CCOpt.map_or ~default:"<unknown date>"
          Misc.human_datetime m.timestamp]
   and dirs =
     if CCList.is_empty m.dirs then []
     else
       let title = String.concat "\n" m.dirs in
-      [span ~a:[a_title title] [
+      [span [A.title title] [
           txt @@ spf "dirs {%s}" @@ String.concat "," @@
           List.map (Misc.truncate_left 10) m.dirs]]
   in
@@ -697,16 +701,16 @@ let handle_show_detailed (self:t) : unit =
   (* pagination buttons *)
   let btns = [
     mk_a
-      ~cls:((if offset>0 then [] else ["disabled"]) @
-            ["page-link";"link-sm";"my-1";"p-1"])
-      ~a:[a_href
-            (uri_show_detailed ~offset:(max 0 (offset-page_size))
-               ~filter_res ~filter_pb ~filter_prover db_file)]
+      ~cls:((if offset>0 then "" else "disabled ") ^
+            "page-link link-sm my-1 p-1")
+      [A.href
+         (uri_show_detailed ~offset:(max 0 (offset-page_size))
+            ~filter_res ~filter_pb ~filter_prover db_file)]
       [txt "prev"];
-    mk_a ~cls:["page-link";"link-sm"; "my-1"; "p-1"]
-      ~a:[a_href
-            (uri_show_detailed ~offset:(offset+page_size)
-               ~filter_res ~filter_pb ~filter_prover db_file)]
+    mk_a ~cls:"page-link link-sm my-1 p-1"
+      [A.href
+         (uri_show_detailed ~offset:(offset+page_size)
+            ~filter_res ~filter_pb ~filter_prover db_file)]
       [txt "next"];
   ]
   in
@@ -717,42 +721,40 @@ let handle_show_detailed (self:t) : unit =
         (if offset=0 then "detailed" else spf "detailed [%d..%d]" offset (offset+List.length l-1)),
         true;
       ];
-     div ~a:[a_class ["container"]] [
-       h2 [txt (spf "detailed results (%d total)" n)];
-       div ~a:[a_class ["navbar"; "navbar-expand-lg"]] @@
-       [div ~a:[a_class ["container-fluid"]] @@
-        [form ~a:[a_action (uri_show_detailed db_file);
-                  a_method `Get;
-                  a_class ["form-row"; "form-inline"]]
+     div [A.class_ "container"] [
+       h2 [] [txt (spf "detailed results (%d total)" n)];
+       div [A.class_ "navbar navbar-expand-lg"] @@
+       [div [A.class_ "container-fluid"] @@
+        [form [A.action (uri_show_detailed db_file);
+               A.method_ "GET";
+               A.class_ "form-row form-inline"]
            [
-             input ~a:[a_name "prover";
-                       a_class ["form-control"; "form-control-sm"; "m-1"; "p-1"];
-                       a_value filter_prover;
-                       a_placeholder "prover";
-                       a_input_type `Text] ();
-             input ~a:[a_name "pb";
-                       a_class ["form-control"; "form-control-sm"; "m-1"; "p-1"];
-                       a_value filter_pb;
-                       a_placeholder "problem";
-                       a_input_type `Text] ();
-             input ~a:[a_name "res";
-                       a_class ["form-control"; "form-control-sm"; "m-1"; "p-1"];
-                       a_value filter_res;
-                       a_placeholder "result";
-                       a_input_type `Text] ();
-             input ~a:[a_name "expect";
-                       a_class ["form-control-sm"; "m-1"; "p-1"];
-                       a_value (try List.assoc "expect" params with _ -> "");
-                       a_list "expect_l"] ();
+             input [A.name "prover";
+                    A.class_ "form-control form-control-sm m-1 p-1";
+                    A.value filter_prover;
+                    A.placeholder "prover";
+                    A.type_ "text"];
+             input [A.name "pb";
+                    A.class_ "form-control form-control-sm m-1 p-1";
+                    A.value filter_pb;
+                    A.placeholder "problem";
+                    A.type_ "text"];
+             input [A.name "res";
+                    A.class_ "form-control form-control-sm m-1 p-1";
+                    A.value filter_res;
+                    A.placeholder "result";
+                    A.type_ "text"];
+             input [A.name "expect";
+                    A.class_ "form-control form-control-sm m-1 p-1";
+                    A.value (try List.assoc "expect" params with _ -> "");
+                    A.list "expect_l"];
              mk_button
-               ~cls:["btn-info"; "btn-sm"; "btn-success";
-                     "m-1"; "p-1"]
+               ~cls:"btn-info btn-sm btn-success m-1 p-1" []
                [txt "filter"];
            ];
-         datalist ~a:[a_id "expect_l"; a_class ["datalist"; "m-1"]; ]
-           ~children:(`Options (
-               List.map (fun v -> option ~a:[a_value v] @@ txt v) l_all_expect))
-          ();
+         datalist [A.id "expect_l"; A.class_ "datalist m-1"; ] (
+           List.map (fun v -> option [A.value v] [txt v]) l_all_expect
+         );
         ];
        ]];
      let rows =
@@ -760,24 +762,24 @@ let handle_show_detailed (self:t) : unit =
          (fun {Test_detailed_res.prover;file=pb_file;res;file_expect;rtime} ->
             let url_file_res = uri_show_single db_file prover pb_file in
             let url_file = uri_get_file pb_file in
-            tr [
-              td [txt prover];
-              td [
-                mk_a ~a:[a_href url_file_res; a_title pb_file] [txt pb_file];
-                mk_a ~a:[a_href url_file; a_title pb_file] [txt "(content)"];
+            tr [] [
+              td [] [txt prover];
+              td [] [
+                mk_a [A.href url_file_res; A.title pb_file] [txt pb_file];
+                mk_a [A.href url_file; A.title pb_file] [txt "(content)"];
               ];
-              td [txt (Res.to_string res)];
-              td [txt (Res.to_string file_expect)];
-              td [txt (Misc.human_duration rtime)]
+              td [] [txt (Res.to_string res)];
+              td [] [txt (Res.to_string file_expect)];
+              td [] [txt (Misc.human_duration rtime)]
             ])
          l
      in
      let thead =
-       CCList.map (fun x->th [txt x])
+       CCList.map (fun x->th [][txt x])
          ["prover"; "file"; "res"; "expected"; "time"]
-       |> tr |> CCList.return |> thead
+       |> tr[] |> CCList.return |> thead[]
      in
-     table ~a:[a_class ["framed"; "table"; "table-striped"]] ~thead rows;
+     table [A.class_ "framed table table-striped"] (thead :: rows);
     ];
   ]
   |> Html.to_string
@@ -805,26 +807,34 @@ let handle_show_single (self:t) : unit =
   in
   let open Html in
   let h = mk_page ~title:"single result" [
-    mk_navigation [
-      uri_show db_file, "file", false;
-      uri_show_detailed db_file, "detailed", false;
-      uri_show_single db_file prover pb_file, "single", true;
-    ];
-    h2 [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
-    div [pb_html pb];
-    details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stdout"])
-      [pre [txt stdout]];
-    details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "full stderr"])
-      [pre [txt stderr]];
-    details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "prover config"])
-      [pb_html pb_prover];
-    (match proof_stdout with
-     | None -> div[]
-     | Some s ->
-       details (summary ~a:[a_class ["alert";"alert-secondary"]] [txt "proof checker stdout"])
-         [pre [txt s]];
-    );
-  ] in
+      mk_navigation [
+        uri_show db_file, "file", false;
+        uri_show_detailed db_file, "detailed", false;
+        uri_show_single db_file prover pb_file, "single", true;
+      ];
+      h2 [] [txt @@ Printf.sprintf "results for %s on %s" prover pb_file];
+      div [] [pb_html pb];
+      details [] [
+        summary [A.class_ "alert alert-secondary"] [txt "full stdout"];
+        pre [] [txt stdout]
+      ];
+      details [] [
+        summary [A.class_ "alert alert-secondary"] [txt "full stderr"];
+        pre [] [txt stderr]
+      ];
+      details [] [
+        summary [A.class_ "alert alert-secondary"] [txt "prover config"];
+        pb_html pb_prover
+      ];
+      (match proof_stdout with
+       | None -> div[][]
+       | Some s ->
+         details [] [
+           summary [A.class_ "alert alert-secondary"] [txt "proof checker stdout"];
+           pre [] [txt s];
+         ]
+      );
+    ] in
   Log.debug (fun k->k"render page in %.3fs" (Misc.Chrono.elapsed chrono));
   Ok (Html.to_string h)
 
@@ -905,18 +915,19 @@ let handle_compare self : unit =
     let h =
       let open Html in
       let uri_plot = uri_gnuplot (String.concat "," names) in
-      mk_page ~title:"compare"
-        [
-          mk_navigation [];
-          h3 [txt "comparison"];
-          div [pb_html box_compare_l];
-          div [img
-             ~src:uri_plot
-             ~a:[a_class ["img-fluid"];
-                 Unsafe.string_attrib "loading" "lazy";
-                ]
-             ~alt:"cactus plot of provers" ()];
+      mk_page ~title:"compare" [
+        mk_navigation [];
+        h3 [] [txt "comparison"];
+        div [] [pb_html box_compare_l];
+        div [] [
+          img [
+            A.src uri_plot;
+            A.class_ "img-fluid";
+            "loading", "lazy";
+            A.alt "cactus plot of provers"
+          ];
         ]
+      ]
     in
     H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
   ) else (
@@ -973,12 +984,12 @@ let handle_provers (self:t) : unit =
   let h =
     let open Html in
     let mk_prover p =
-      mk_li [
-        pre [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p];
+      mk_li [] [
+        pre [] [txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p];
         begin match p.Prover.defined_in with
-          | None -> span[]
+          | None -> span[][]
           | Some f ->
-            div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+            div [] [txt "defined in"; mk_a [A.href (uri_get_file f)] [txt f]]
         end;
       ]
     in
@@ -986,8 +997,8 @@ let handle_provers (self:t) : unit =
     mk_page ~title:"provers"
       [
         mk_navigation ["/provers/", "provers", true];
-        h3 [txt "list of provers"];
-        mk_ul l
+        h3 [] [txt "list of provers"];
+        mk_ul [] l
       ]
   in
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
@@ -1004,29 +1015,30 @@ let handle_tasks (self:t) : unit =
       CCList.map
         (fun t ->
            let s = t.Task.name in
-           mk_li [
-             mk_row [
-               mk_col ~cls:["col-1"] [
-                 form ~a:[a_id (uri_of_string @@ "launch_task"^s);
-                          a_action (uri_of_string @@ "/run/" ^ U.percent_encode s);
-                          a_method `Post;]
-                   [mk_button ~cls:["btn-primary";"btn-sm"] [txt "run"]];
+           mk_li [] [
+             mk_row [] [
+               mk_col ~cls:"col-1" [] [
+                 form [
+                   A.id ("launch_task"^s);
+                   A.action ("/run/" ^ U.percent_encode s);
+                   A.method_ "POST";
+                 ]
+                   [mk_button ~cls:"btn-primary btn-sm" [] [txt "run"]];
                ];
-               mk_col ~cls:["col-auto"] [pre [txt @@Format.asprintf "%a@?" Task.pp t]];
+               mk_col ~cls:"col-auto" [] [pre [] [txt @@Format.asprintf "%a@?" Task.pp t]];
                begin match t.Task.defined_in with
-                 | None -> span[]
+                 | None -> span[][]
                  | Some f ->
-                   div [txt "defined in"; mk_a ~a:[a_href (uri_get_file f)] [txt f]]
+                   div [] [txt "defined in"; mk_a [A.href (uri_get_file f)] [txt f]]
                end;
              ]])
         tasks
     in
-    mk_page ~title:"tasks"
-      [
-        mk_navigation ["/tasks/", "tasks", true];
-        h3 [txt "list of tasks"];
-        mk_ul l;
-      ]
+    mk_page ~title:"tasks" [
+      mk_navigation ["/tasks/", "tasks", true];
+      h3 [] [txt "list of tasks"];
+      mk_ul [] l;
+    ]
   in
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
@@ -1076,10 +1088,10 @@ let get_meta (self:t) (p:string) : Test_metadata.t =
     );
     res
 
-let html_of_files (self:t) ~off ~limit : _ Html.elt list =
+let html_of_files (self:t) ~off ~limit : Html.elt list =
   let entries, more = Bin_utils.list_entries self.data_dir ~off ~limit in
 
-  let mk_entry idx (file_path, size) : _ Html.elt =
+  let mk_entry idx (file_path, size) : Html.elt =
     let open Html in
     let file_basename = Filename.basename file_path in
     let meta = CCHashtbl.get self.meta_cache file_path in
@@ -1094,44 +1106,44 @@ let html_of_files (self:t) ~off ~limit : _ Html.elt list =
         mk_file_summary file_basename meta
       | None ->
         (* lazy loading *)
-        [div ~a:[
-            a_hx "get" url_meta;
-            a_hx "swap" "outerHTML";
-            a_hx "trigger" "load";
-          ] [mk_a ~a:[a_href url_show] [txt file_path]]
+        [div [
+            "hx-get", url_meta;
+            "hx-swap", "outerHTML";
+            "hx-trigger", "load";
+          ] [mk_a [A.href url_show] [txt file_path]]
         ]
     in
     let a =
       if idx+1 = limit && more=`More then
-        [ a_hx "trigger" "revealed";
-          a_hx "swap" "afterend";
-          a_hx "get" (uri_list_benchs ~off:(off+limit) ());
+        [ "hx-trigger", "revealed";
+          "hx-swap", "afterend";
+          "hx-get", (uri_list_benchs ~off:(off+limit) ());
         ]
       else []
     in
-    let a = a_class ["list-group-item"] :: a_id id :: a in
+    let a = A.class_ "list-group-item" :: A.id id :: a in
 
-    li ~a [
-      div ~a:[a_class ["row"; "row-cols-12"]] [
+    li a [
+      div [A.class_ "row row-cols-12"] [
         (* lazy loading of status *)
-        div ~a:[a_class ["col-md-7"; "justify-self-left"]] descr;
-        h4 ~a:[a_class ["col-md-2"; "justify-self-right"]] [
-          span ~a:[a_class ["badge"; "text-secondary"]]
+        div [A.class_ "col-md-7 justify-self-left"] descr;
+        h4 [A.class_ "col-md-2 justify-self-right"] [
+          span [A.class_ "badge text-secondary"]
             [txt (Printf.sprintf "(%s)" (Misc.human_size size))];
         ];
         if self.allow_delete then
-          div ~a:[a_class ["col-md-2"; "justify-self-right"]] [
+          div [A.class_ "col-md-2 justify-self-right"] [
             mk_button
-              ~cls:["btn-danger";"btn-sm"]
-              ~a:[a_hx "delete" ("/delete1/" ^ U.percent_encode file_path ^ "/");
-                  a_hx "confirm" "Confirm deletion?";
-                  a_hx "target" (spf "#%s" id); (* remove whole "li" element *)
-                  a_hx "swap" "outerHTML";
-                  a_title "delete file"; ]
+              ~cls:"btn-danger btn-sm"
+              ["hx-delete", ("/delete1/" ^ U.percent_encode file_path ^ "/");
+               "hx-confirm", "Confirm deletion?";
+               "hx-target", (spf "#%s" id); (* remove whole "li" element *)
+               "hx-swap", "outerHTML";
+               A.title "delete file"; ]
               [txt "delete"]
-          ] else div [];
-        div ~a:[a_class ["col-md-1"; "justify-self-right"]]
-          [input ~a:[a_input_type `Checkbox; a_name file_basename] ()];
+          ] else div [] [];
+        div [A.class_ "col-md-1 justify-self-right"]
+          [input [A.type_ "checkbox"; A.name file_basename]];
       ];
     ]
   in
@@ -1166,30 +1178,29 @@ let handle_root (self:t) : unit =
     let open Html in
     mk_page ~title:"benchpress"
       [
-        h1 [txt "Benchpress"];
-        div ~a:[a_class ["container"]] [
-          h2 [txt "configuration"];
-          ul ~a:[a_class ["nav nav-tabs"]] @@ List.flatten [
-            [li ~a:[a_class ["nav-item"]]
-               [mk_a ~a:[a_href "/provers/"] [txt "provers"]];
-             li ~a:[a_class ["nav-item"]]
-               [mk_a ~a:[a_href "/tasks/"] [txt "tasks"]]];
+        h1 [] [txt "Benchpress"];
+        div [A.class_ "container"] [
+          h2 [] [txt "configuration"];
+          ul [A.class_ "nav nav-tabs"] @@ List.flatten [
+            [li [A.class_ "nav-item"]
+               [mk_a [A.href "/provers/"] [txt "provers"]];
+             li [A.class_ "nav-item"]
+               [mk_a [A.href "/tasks/"] [txt "tasks"]]];
           ];
         ];
-        div ~a:[a_class ["container"]] [
-          h2 [txt "list of results"];
-          form ~a:[a_id (uri_of_string "compare"); a_method `Post;] [
-            mk_row ~cls:["m-2"] @@
-            List.flatten [
-              [mk_col ~cls:["col-auto";"p-1"] [
-                  mk_button ~cls:["btn-primary";"btn-sm"]
-                    ~a:[a_formaction "/compare/"]
-                    [txt "compare selected"]];
-              ];
+        div [A.class_ "container"] [
+          h2 [] [txt "list of results"];
+          form [A.id "compare"; A.method_ "POST";] [
+            mk_row ~cls:"m-2" [] [
+              mk_col ~cls:"col-auto p-1" [] [
+                mk_button ~cls:"btn-primary btn-sm"
+                  [A.formaction "/compare/"]
+                  [txt "compare selected"];
+              ]
             ];
             (* initial list *)
-            mk_ul ~a:[
-              a_id "list-of-res";
+            mk_ul [
+              A.id "list-of-res";
             ] @@
             html_of_files ~off:0 ~limit:20 self
           ]
@@ -1207,16 +1218,16 @@ let handle_file_summary (self:t) : unit =
   @@ fun file _req ->
   let@ chrono = query_wrap (Error.wrapf "serving /file-summary/%s" file) in
   let file_full = Bin_utils.mk_file_full file in
-  let s = Filename.basename file_full in
+  let fname = Filename.basename file_full in
   let h =
     let open Html in
     try
       let m = get_meta self file_full in
-      div (mk_file_summary s m)
+      div [] (mk_file_summary fname m)
     with
     | Error.E e | E(e,_) ->
-      let title = [a_title @@ "<no metadata>: "  ^ Error.show e] in
-      mk_a ~a:(a_href (uri_show s) :: title) [txt s]
+      let title = [A.title @@ "<no metadata>: "  ^ Error.show e] in
+      mk_a (A.href (uri_show fname) :: title) [txt fname]
   in
   let r =
     H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string_elt h))
