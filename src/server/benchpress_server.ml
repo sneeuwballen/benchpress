@@ -143,7 +143,7 @@ module Html = struct
   let div1 a x = div a [x]
   let mk_a ?(cls="btn-link") al x = a (A.class_ ("btn " ^ cls) :: al) x
   let mk_row ?(cls="") al x = div ((A.class_ @@ "row " ^ cls) :: al) x
-  let mk_col ?(cls="") al x = div ((A.class_ @@ "col" ^ cls) :: al) x
+  let mk_col ?(cls="") al x = div ((A.class_ @@ "col " ^ cls) :: al) x
   let mk_li al x = li (A.class_ "list-group-item" :: al) x
   let mk_ul al l = ul (A.class_ "list-group" ::al) l
   let mk_button ?(cls="") al x =
