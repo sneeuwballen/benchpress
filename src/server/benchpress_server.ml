@@ -1134,7 +1134,7 @@ let html_of_files (self:t) ~off ~limit : Html.elt list =
         if self.allow_delete then
           div [A.class_ "col-md-2 justify-self-right"] [
             mk_button
-              ~cls:"btn-danger btn-sm"
+              ~cls:"btn-warning btn-sm"
               ["hx-delete", ("/delete1/" ^ U.percent_encode file_path ^ "/");
                "hx-confirm", "Confirm deletion?";
                "hx-target", (spf "#%s" id); (* remove whole "li" element *)
