@@ -31,7 +31,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
   and debug =
     Logs_cli.level ()
   in
-  Term.(ret (pure aux $ args $ with_default $ debug))
+  Term.(ret (const aux $ args $ with_default $ debug))
 
 let get_definitions () : Definitions.t =
   let conf_files =

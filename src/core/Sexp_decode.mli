@@ -1,6 +1,4 @@
 
-open Common
-
 type sexp = Sexp_loc.t
 
 type +'a t

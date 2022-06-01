@@ -1,7 +1,6 @@
 
 (** Compare two result files *)
 
-open Common
 type filename = string
 
 module Short : sig

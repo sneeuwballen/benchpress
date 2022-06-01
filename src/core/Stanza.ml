@@ -449,7 +449,7 @@ let parse_string_list_ ~filename str : _ list =
   in
   iter []
 
-let parse_prelude, parse_files, parse_string =
+let _parse_prelude, parse_files, parse_string =
   let st = {
     parse_prelude=true;
     tags=[];

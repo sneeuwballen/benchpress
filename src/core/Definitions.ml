@@ -82,7 +82,6 @@ let all_tasks self : _ list =
 
 (* compute a version for the prover *)
 let get_version ?(binary="") (v:Stanza.version_field) : Prover.version =
-  let open Prover in
   begin match v with
     | Stanza.Version_git {dir} ->
       Git {branch=Misc.Git.get_branch dir; commit=Misc.Git.get_commit dir}

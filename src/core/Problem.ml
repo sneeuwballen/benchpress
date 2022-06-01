@@ -11,7 +11,7 @@ let basename t = Filename.basename t.name
 
 let same_name t1 t2 = t1.name = t2.name
 let hash_name t = CCHash.string t.name
-let compare_name t1 t2 = CCOrd.compare t1.name t2.name
+let compare_name t1 t2 = CCOrd.poly t1.name t2.name
 
 let make name expected =
   { name; expected; }

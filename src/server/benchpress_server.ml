@@ -1339,16 +1339,19 @@ module Cmd = struct
     let doc = "serve embedded web UI on given port" in
     let aux defs port local_only allow_delete () =
       main ?port ~local_only ~allow_delete defs () in
-    Term.(pure aux $ defs $ port $ local_only $ allow_delete $ pure () ),
-    Term.info ~doc "serve"
+    Term.(const aux $ defs $ port $ local_only $ allow_delete $ const () ),
+    Cmd.info ~doc "serve"
 end
 
 let () =
   CCFormat.set_color_default true;
   if Sys.getenv_opt "PROFILE"=Some "1" then Profile.enable();
-  match Profile.with1 "cmdliner" Cmdliner.Term.eval Cmd.cmd with
-  | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
-  | `Ok (Ok ()) | `Version | `Help -> ()
-  | `Ok (Error e) ->
+  let eval (t, i) =
+    Cmdliner.Cmd.eval_value (Cmdliner.Cmd.v i t)
+  in
+  match Profile.with1 "cmdliner" eval Cmd.cmd with
+  | Error (`Parse | `Term | `Exn) -> exit 2
+  | Ok (`Ok (Ok ()) | `Version | `Help) -> ()
+  | Ok `Ok (Error e) ->
     print_endline ("error: " ^ Error.show e);
     exit 1
