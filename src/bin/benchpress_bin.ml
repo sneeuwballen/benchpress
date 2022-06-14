@@ -60,10 +60,10 @@ module Run = struct
     and summary =
       Arg.(value & opt (some string) None & info ["summary"] ~doc:"write summary in FILE")
     in
-    Term.(pure aux $ j $ pp_results $ dyn $ paths
-          $ dir_file $ proof_dir $ defs $ task $ timeout $ memory
-          $ meta $ provers $ csv $ summary $ no_color $ save),
-    Term.info ~doc "run"
+    Cmd.v (Cmd.info ~doc "run")
+      (Term.(const aux $ j $ pp_results $ dyn $ paths
+             $ dir_file $ proof_dir $ defs $ task $ timeout $ memory
+             $ meta $ provers $ csv $ summary $ no_color $ save))
 end
 
 module List_files = struct
@@ -86,7 +86,8 @@ module List_files = struct
     in
     let doc = "list benchmark result files" in
     let aux abs () = main ~abs () in
-    Term.(pure aux $ abs $ pure () ), Term.info ~doc "list-files"
+    Cmd.v (Cmd.info ~doc "list-files")
+      Term.(const aux $ abs $ const () )
 end
 
 module Show = struct
@@ -116,8 +117,8 @@ module Show = struct
       Show.main ~check ~bad ?csv ?summary file
     in
     let doc = "show benchmark results (see `list-files`)" in
-    Term.(pure aux $ check $ bad $ csv $ summary $ no_color $ debug $ file),
-    Term.info ~doc "show"
+    Cmd.v (Cmd.info ~doc "show")
+      Term.(const aux $ check $ bad $ csv $ summary $ no_color $ debug $ file)
 end
 
 (** {2 plot results} *)
@@ -147,8 +148,8 @@ module Plot = struct
       main file
     in
     let doc = "plot benchmark results" in
-    Term.(pure aux $ debug $ file),
-    Term.info ~doc "plot"
+    Cmd.v (Cmd.info ~doc "plot")
+      Term.(const aux $ debug $ file)
 end
 
 (** {2 Sample} *)
@@ -189,7 +190,8 @@ module Sample = struct
     and n =
       Arg.(value & opt int 1 & info ["n"] ~docv:"N" ~doc:"number of files to sample")
     and doc = "sample N files in the given directories" in
-    Term.(pure aux $ n $ dir), Term.info ~doc "sample"
+    Cmd.v (Cmd.info ~doc "sample")
+      Term.(const aux $ n $ dir)
 end
 
 (** {2 Show directories} *)
@@ -214,8 +216,8 @@ module Dir = struct
       Arg.(required & pos 0 (some which_conv) None & info ~doc:"directory to list (config|state)" [])
     in
     let doc = "show directories where benchpress stores its state (config|state)" in
-    Term.(pure run $ which),
-    Term.info ~doc "dir"
+    Cmd.v (Cmd.info ~doc "dir")
+      Term.(const run $ which)
 
 end
 
@@ -246,7 +248,8 @@ module Check_config = struct
     in
     let doc = "parse and print configuration file(s)" in
     let aux debug with_default files () = run debug with_default files in
-    Term.(pure aux $ debug $ with_default $ files $ pure () ), Term.info ~doc "check-config"
+    Cmd.v (Cmd.info ~doc "check-config")
+      Term.(const aux $ debug $ with_default $ files $ const () )
 end
 
 (** {2 See prover(s)} *)
@@ -262,7 +265,8 @@ module Prover_show = struct
     let open Cmdliner in
     let doc = "show definitions of given prover(s)" in
     let names = Arg.(value & pos_all string [] & info []) in
-    Term.(pure run $ Bin_utils.definitions_term $ names ), Term.info ~doc "show-prover"
+    Cmd.v (Cmd.info ~doc "show-prover")
+      Term.(const run $ Bin_utils.definitions_term $ names)
 end
 
 (** {2 List provers} *)
@@ -277,7 +281,8 @@ module Prover_list = struct
   let cmd =
     let open Cmdliner in
     let doc = "list prover(s) defined in config" in
-    Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "list-prover"
+    Cmd.v (Cmd.info ~doc "list-prover")
+      Term.(const run $ Bin_utils.definitions_term)
 end
 
 (** {2 Show Task} *)
@@ -293,7 +298,8 @@ module Task_show = struct
     let open Cmdliner in
     let doc = "show definitions of given task(s)" in
     let names = Arg.(value & pos_all string [] & info []) in
-    Term.(pure run $ Bin_utils.definitions_term $ names ), Term.info ~doc "show-task"
+    Cmd.v (Cmd.info ~doc "show-task")
+      Term.(const run $ Bin_utils.definitions_term $ names)
 end
 
 (** {2 List Tasks} *)
@@ -308,7 +314,8 @@ module Task_list = struct
   let cmd =
     let open Cmdliner in
     let doc = "list task(s) defined in config" in
-    Term.(pure run $ Bin_utils.definitions_term), Term.info ~doc "list-task"
+    Cmd.v (Cmd.info ~doc "list-task")
+      Term.(const run $ Bin_utils.definitions_term)
 end
 
 (** {2 Convert results to Sql} *)
@@ -326,15 +333,15 @@ module Sql_convert = struct
            info [] ~docv:"FILES" ~doc:"files to read")
     in
     let doc = "convert result(s) into sqlite files" in
-    Term.(pure run $ Bin_utils.definitions_term $ files),
-    Term.info ~doc "sql-convert"
+    Cmd.v (Cmd.info ~doc "sql-convert")
+      Term.(const run $ Bin_utils.definitions_term $ files)
 end
 
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
   let open Cmdliner in
-  let help =
+  let default, info =
     let doc = "Tool to test logic solver and automatic theorem provers." in
     let man = [
       `S "DESCRIPTION";
@@ -343,11 +350,10 @@ let parse_opt () =
       `S "COMMANDS";
       `S "OPTIONS"; (* TODO: explain config file *)
     ] in
-    Term.(ret (pure (fun () -> `Help (`Pager, None)) $ pure ())),
-    Term.info ~version:"dev" ~man ~doc "benchpress"
+    Term.(ret (const (fun () -> `Help (`Pager, None)) $ const ())),
+    Cmd.info ~version:"dev" ~man ~doc "benchpress"
   in
-
-  Cmdliner.Term.eval_choice help [
+  let cmds = [
     Dir.cmd;
     Run.cmd;
     Sample.cmd;
@@ -360,12 +366,13 @@ let parse_opt () =
     Task_list.cmd;
     Task_show.cmd;
     Plot.cmd;
-  ]
+  ] in
+  Cmd.eval_value (Cmd.group info ~default cmds)
 
 let () =
   CCFormat.set_color_default true;
   if Sys.getenv_opt "PROFILE"=Some "1" then Profile.enable();
   match parse_opt () with
-  | `Error `Parse | `Error `Term | `Error `Exn -> exit 2
-  | `Ok true | `Version | `Help -> ()
-  | `Ok false -> exit 1
+  | Error (`Parse | `Term | `Exn) -> exit 2
+  | Ok (`Ok true | `Version | `Help) -> ()
+  | Ok `Ok false -> exit 1

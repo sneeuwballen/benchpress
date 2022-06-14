@@ -72,7 +72,7 @@ module Input = struct
   let find_line_offset (self:t) ~line : int =
     Index.find_line_offset (Lazy.force self.idx) ~line
 
-  let find_offset (self:t) ~line ~col : int =
+  let _find_offset (self:t) ~line ~col : int =
     Index.find_offset (Lazy.force self.idx) ~line ~col
 end
 
