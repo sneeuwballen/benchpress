@@ -15,7 +15,7 @@ depends: [
   "containers-thread" { >= "3.0" & < "4.0" }
   "re" { >= "1.8" & < "2.0" }
   "csv"
-  "cmdliner"
+  "cmdliner" {>= "1.1.0"}
   "iter" { >= "1.0" } # TODO: remove
   "logs"
   "uuidm"

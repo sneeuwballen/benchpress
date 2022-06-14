@@ -13,7 +13,7 @@ depends: [
   "containers" { >= "3.0" & < "4.0" }
   "csv"
   "benchpress" { = version }
-  "cmdliner"
+  "cmdliner" {>= "1.1.0"}
   "logs"
   "uuidm"
   "base64"
