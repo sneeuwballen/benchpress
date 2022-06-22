@@ -102,12 +102,13 @@ end
 let contains loc pos =
   Pos.( loc.start <= pos && pos <= loc.stop )
 
-let tr_position ~left (self:t) (pos:pos) : Lexing.position =
+let tr_position ~left (self:t) (pos:pos) : Pp_loc.Position.t =
   let line_offset = Input.find_line_offset self.input ~line:pos.line in
-  {Lexing.pos_fname=self.file;
-   pos_lnum=pos.line;
-   pos_cnum=line_offset + pos.col + (if left then 0 else 1);
-   pos_bol=line_offset;
+  Pp_loc.Position.of_lexing {
+    Lexing.pos_fname=self.file;
+    pos_lnum=pos.line;
+    pos_cnum=line_offset + pos.col + (if left then 0 else 1);
+    pos_bol=line_offset;
   }
 
 let tr_loc (self:t) : Pp_loc.loc =
