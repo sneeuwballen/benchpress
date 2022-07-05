@@ -1,13 +1,13 @@
 [31;1mError[0m:
   expected a valid Perl regex
-  12 | 
-  13 | ...... "))) ^SATISFIABLE".
+  13 |   (sat "))) ^SATISFIABLE")
+             ^^^^^^^^^^^^^^^^^^
   ------------------------------------------------------------
 [34;1mContext[0m:
   expected a stanza
-   9 | 
   10 | (prover
-  ...
+  11 |   (name minisat)
+  12 |   (unsat "UNSATISFIABLE")
   13 |   (sat "))) ^SATISFIABLE")
-  14 |   (cmd "minisat -cpu-lim=$timeout $file"))
+  14 |   (cmd "minisat -cpu-lim=$timeout $file").
   
