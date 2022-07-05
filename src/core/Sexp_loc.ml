@@ -41,10 +41,12 @@ end = struct
       type nonrec t=t
 
       let make_loc =
-        Some (fun (l1,c1)(l2,c2) file : loc ->
-            let input = !cur_input_ in
-            let file = if file="" then !cur_file_ else file in
-            let loc = {Loc.file; input; start={line=l1;col=c1};stop={line=l2;col=c2}} in
+        Some (fun (l1,c1)(l2,c2) _file : loc ->
+            let loc = Loc.{
+                start = Pos.of_line_col l1 c1;
+                stop = Pos.of_line_col l2 c2;
+                input = !cur_input_
+              } in
             (*Logs.debug (fun k->k"make_loc %S %d:%d - %d:%d@ res %a" file l1 c1 l2 c2 Loc.pp loc);*)
             loc)
 

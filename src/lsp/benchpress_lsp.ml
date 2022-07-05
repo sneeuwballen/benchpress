@@ -25,7 +25,8 @@ type processed_buf = {
 
 let range_of_loc_ (l:loc) : Lsp.Types.Range.t =
   let mk_pos_ p =
-    Lsp.Types.Position.create ~line:(p.Loc.line-1) ~character:p.col in
+    let line, col = Loc.Pos.to_line_col l.input p in
+    Lsp.Types.Position.create ~line:(line - 1) ~character:col in
   Lsp.Types.Range.create ~start:(mk_pos_ l.start) ~end_:(mk_pos_ l.stop)
 
 let diag_of_error ~uri (e0:Error.t) : LT.Diagnostic.t list =
@@ -85,7 +86,7 @@ let find_atom_under_ (s:string) (pos:Loc.pos) : string option =
         match tok with
         | CCSexp_lex.ATOM s -> raise (E s)
         | _ -> raise Exit
-      ) else if Loc.(Pos.(pos <= loc.start)) then (
+      ) else if Loc.Pos.le input pos loc.start then (
         raise Exit
       )
     done;
@@ -121,7 +122,7 @@ class blsp = object(self)
 
   method! on_req_hover ~notify_back:_ ~id:_ ~uri ~pos
       (_ : L.doc_state) : LT.Hover.t option =
-    let pos = {Loc.line=pos.L.Position.line; col=pos.character} in
+    let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
     begin
       match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
       | Some {defs=Ok defs; text; _} ->
@@ -147,7 +148,7 @@ class blsp = object(self)
 
   method! on_req_definition ~notify_back:_ ~id:_ ~uri ~pos
       (_ : L.doc_state) : LT.Locations.t option =
-    let pos = {Loc.line=pos.L.Position.line; col=pos.character} in
+    let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
     begin
       match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
       | Some {defs=Ok defs; text; _} ->
@@ -177,8 +178,10 @@ class blsp = object(self)
         (_ : L.doc_state) :
           [ `CompletionList of LT.CompletionList.t
           | `List of LT.CompletionItem.t list ] option =
-    let pos = {Loc.line=pos.L.Position.line; col=pos.character} in
-    Log.debug (fun k->k"completion request in '%s' at pos %a" uri Loc.Pos.pp pos);
+    Log.debug (
+      fun k->k"completion request in '%s' at pos: %d line, %d col"
+          uri pos.line pos.character);
+    let pos = Loc.Pos.of_line_col pos.line pos.character in
     begin
       match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
       | Some {defs=Ok defs; text; _} ->

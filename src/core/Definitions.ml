@@ -366,6 +366,6 @@ let completions (self:t) ?before_pos (str:string) : def list =
           (fun d ->
              (* keep [d] if it comes before [query_pos] *)
              let loc = Def.loc d in
-             Loc.Pos.(loc.stop <= query_pos))
+             Loc.Pos.le loc.input loc.stop query_pos)
     )
   |> Iter.to_rev_list
