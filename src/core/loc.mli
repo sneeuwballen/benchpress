@@ -1,5 +1,7 @@
 
-open Common
+open Pp_loc
+
+type pos = Position.t
 
 module Input : sig
   type t
@@ -7,33 +9,27 @@ module Input : sig
   val file : string -> t
 end
 
-type pos = {line: int; col: int}
-
 module Pos : sig
-  type t = pos
-  val (<=) : t -> t -> bool
-  val (<) : t -> t -> bool
-  val (=) : t -> t -> bool
-  val min : t -> t -> t
-  val max : t -> t -> t
-  val pp : t Fmt.printer
+  val dummy : pos
+  val of_line_col : int -> int -> pos
+  val to_line_col : Input.t -> pos -> int * int
+  val to_lexing : ?filename:string -> Input.t -> pos -> Lexing.position
+  val le : Input.t -> pos -> pos -> bool
 end
 
 type t = {
-  file: string;
   start: pos;
   stop: pos;
   input: Input.t;
 }
 
 val none : t
-val pp : t Fmt.printer
-val pp_l : t list Fmt.printer
+
+val loc : t -> loc
 
 val contains : t -> pos -> bool
 
-val union : t -> t -> t
-val union_l : t list -> t option
-
 val of_lexbuf : input:Input.t -> Lexing.lexbuf -> t
+
+val pp : Format.formatter -> t -> unit
 
