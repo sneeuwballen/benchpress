@@ -24,7 +24,7 @@ depends: [
   "pp_loc" { >= "2.0" & < "3.0" }
   "gnuplot" { >= "0.6" & < "0.8" }
   "sqlite3"
-  "sqlite3_utils" { >= "0.4" & < "0.5" }
+  "sqlite3_utils" { >= "0.4" & < "0.6" }
   "printbox" { >= "0.6" }
   "printbox-text" { >= "0.6" }
   "ocaml" {>= "4.08" }
