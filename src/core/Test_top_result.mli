@@ -38,13 +38,16 @@ val pp_bad : t Fmt.printer
 val is_ok : t -> bool
 
 val make :
+  analyze_full:bool ->
   meta:Test_metadata.t ->
   provers:Prover.t list ->
   Run_event.t list ->
   t
 (** Make from a list of results *)
 
-val of_db : Db.t -> t
+val of_db :
+  analyze_full:bool ->
+  Db.t -> t
 (** Parse from a DB *)
 
 val db_prepare : Db.t -> unit

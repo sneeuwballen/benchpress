@@ -300,15 +300,15 @@ let to_db (db:Db.t) (self:t) : unit =
       List.iter (fun ev -> Run_event.to_db db ev) self.events);
   ()
 
-let of_db_ ~meta ~provers ~events db : t =
+let of_db_ ~analyze_full ~meta ~provers ~events db : t =
   Logs.debug (fun k->k "computing stats");
   let stats = Test_stat.of_db db in
   Logs.debug (fun k->k "computing analyze");
-  let analyze = Test_analyze.of_db ~full:false db in
+  let analyze = Test_analyze.of_db ~full:analyze_full db in
   Logs.debug (fun k->k "done");
   { db; events; meta; provers; stats; analyze; }
 
-let make ~meta ~provers (events:Run_event.t list) : t =
+let make ~analyze_full ~meta ~provers (events:Run_event.t list) : t =
   Error.guard(Error.wrap "reading top_res from events") @@ fun() ->
   (* create a temporary in-memory DB *)
   let db = Sqlite3.db_open ":memory:" in
@@ -323,9 +323,9 @@ let make ~meta ~provers (events:Run_event.t list) : t =
            Prover.to_db db p)
         provers;
       List.iter (fun ev -> Run_event.to_db db ev) events);
-  of_db_ db ~meta ~provers ~events
+  of_db_ ~analyze_full db ~meta ~provers ~events
 
-let of_db (db:Db.t) : t =
+let of_db ~analyze_full (db:Db.t) : t =
   Error.guard (Error.wrapf "reading top_res from DB") @@ fun () ->
   Logs.debug (fun k->k "loading metadata from DB");
   let meta = Test_metadata.of_db db in
@@ -333,4 +333,4 @@ let of_db (db:Db.t) : t =
   let provers = CCList.map (fun p -> Prover.of_db db p) prover_names in
   Logs.debug (fun k->k "loading events from DB");
   let events = Run_event.of_db_l db in
-  of_db_ ~meta ~provers ~events db
+  of_db_ ~analyze_full ~meta ~provers ~events db

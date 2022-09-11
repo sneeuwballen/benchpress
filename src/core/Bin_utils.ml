@@ -159,7 +159,7 @@ let load_file_full (file:string) : string*Test_top_result.t =
     Error.guard (Error.wrapf "load_file_full '%s'" file) @@ fun () ->
     Db.with_db ~timeout:1500 ~mode:`NO_CREATE file
       (fun db ->
-         let r = Test_top_result.of_db db in
+         let r = Test_top_result.of_db ~analyze_full:true db in
          file, r)
   ) else (
     Error.failf "invalid name %S, expected a .sqlite file" file

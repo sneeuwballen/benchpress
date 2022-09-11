@@ -295,9 +295,9 @@ end = struct
     Test_metadata.to_db db meta;
     let top_res = lazy (
       let provers = CCList.map fst jobs in
-      Test_top_result.make ~meta ~provers res_l
+      Test_top_result.make ~analyze_full:true ~meta ~provers res_l
     ) in
-    let r = Test_compact_result.of_db db in
+    let r = Test_compact_result.of_db ~full:true db in
     on_done r;
     Logs.debug (fun k->k "closing db…");
     ignore (Sqlite3.db_close db : bool);
