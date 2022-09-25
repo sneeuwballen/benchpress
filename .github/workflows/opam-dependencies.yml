@@ -1,5 +1,5 @@
 
-name: Main workflow
+name: upload opam deps
 
 on:
   pull_request:
