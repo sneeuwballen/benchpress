@@ -170,7 +170,10 @@ end = struct
           | None -> db_file_for_uuid ~timestamp uuid
         in
         Log.debug (fun k -> k"output database file %s" db_file);
-        Sqlite3.db_open ~mutex:`FULL db_file
+        let db = Sqlite3.db_open ~mutex:`FULL db_file in
+        match Db.exec0 db "pragma journal_mode=WAL;" with
+        | Ok _ -> db
+        | Error rc -> Error.raise (Misc.err_of_db rc) 
       ) else
         Sqlite3.db_open ":memory:"
     in
