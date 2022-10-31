@@ -5,7 +5,7 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action
-    ?j ?timestamp ?pp_results ?dyn ?limits ?proof_dir ~notify ~uuid ~save
+    ?j ?timestamp ?pp_results ?dyn ?limits ?proof_dir ?output ~notify ~uuid ~save
     (defs: Definitions.t) (r:Action.run_provers)
   : (_ * Test_compact_result.t) =
   begin
@@ -26,6 +26,7 @@ let execute_run_prover_action
         ~on_start_proof_check:(fun() -> progress#on_start_proof_check)
         ~on_proof_check:progress#on_proof_check_res
         ~on_done:(fun _ -> progress#on_done) r
+        ?output
     in
     result
   end
@@ -35,7 +36,7 @@ type top_task =
   | TT_other of Action.t
 
 let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
-    ?meta:_ ?summary ?task ?dir_file ?proof_dir ?(save=true)
+    ?meta:_ ?summary ?task ?dir_file ?proof_dir ?output ?(save=true)
     (defs:Definitions.t) paths () : unit =
   Log.info
     (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
@@ -82,7 +83,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
   in
   begin match tt_task with
     | TT_other a ->
-      Exec_action.run ~save defs a
+      Exec_action.run ?output ~save defs a
     | TT_run_provers (run_provers_action, defs) ->
       let j = CCOpt.Infix.( j <+> Definitions.option_j defs) in
       let progress = CCOpt.Infix.( dyn <+> Definitions.option_progress defs) in
@@ -92,7 +93,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
 
       let (top_res, (results:Test_compact_result.t)) =
         execute_run_prover_action
-          ~uuid ?pp_results ?proof_dir ?dyn:progress ~limits ?j ~notify ~timestamp ~save
+          ~uuid ?pp_results ?proof_dir ?dyn:progress ~limits ?j ?output ~notify ~timestamp ~save
           defs run_provers_action
       in
       if CCOpt.is_some csv then (

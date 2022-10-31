@@ -33,6 +33,7 @@ module Exec_run_provers : sig
     ?on_proof_check:(Test.proof_check_result -> unit) ->
     ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
+    ?output:string ->
     uuid:Uuidm.t ->
     save:bool ->
     expanded ->
@@ -67,6 +68,7 @@ end
 val dump_results_sqlite : Test_top_result.t -> unit
 
 val run :
+  ?output:string ->
   ?save:bool ->
   ?interrupted:(unit -> bool) ->
   ?cb_progress:cb_progress -> Definitions.t -> Action.t -> unit

@@ -18,18 +18,20 @@ module Run = struct
   let cmd =
     let open Cmdliner in
     let aux j pp_results dyn paths dir_file proof_dir defs task timeout memory
-        meta provers csv summary no_color save =
+        meta provers csv summary no_color output save =
       catch_err @@ fun () ->
       if no_color then CCFormat.set_color_default false;
       let dyn = if dyn then Some true else None in
       Run_main.main ~pp_results ?dyn ~j ?timeout ?memory ?csv ~provers
-        ~meta ?task ?summary ?dir_file ?proof_dir ~save defs paths ()
+        ~meta ?task ?summary ?dir_file ?proof_dir ?output ~save defs paths ()
     in
     let defs = Bin_utils.definitions_term
     and dyn =
       Arg.(value & flag & info ["progress"] ~doc:"print progress bar")
     and pp_results =
       Arg.(value & opt bool true & info ["pp-results"] ~doc:"print results as they are found")
+    and output = 
+      Arg.(value & opt (some string) None & info ["o"; "output"] ~doc:"output database file")
     and save =
       Arg.(value & opt bool true & info ["save"] ~doc:"save results on disk")
     and dir_file =
@@ -63,7 +65,7 @@ module Run = struct
     Cmd.v (Cmd.info ~doc "run")
       (Term.(const aux $ j $ pp_results $ dyn $ paths
              $ dir_file $ proof_dir $ defs $ task $ timeout $ memory
-             $ meta $ provers $ csv $ summary $ no_color $ save))
+             $ meta $ provers $ csv $ summary $ no_color $ output $ save))
 end
 
 module List_files = struct
