@@ -46,6 +46,7 @@ module Exec_run_provers : sig
     ?on_proof_check:(Test.proof_check_result -> unit) ->
     ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
+    ?output:string ->
     uuid:Uuidm.t ->
     save:bool ->
     expanded ->
@@ -153,14 +154,19 @@ end = struct
   let run ?(timestamp=Misc.now_s())
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_start_proof_check=_nop)
       ?(on_proof_check = _nop) ?(on_done = _nop)
-      ?(interrupted=fun _->false)
+      ?(interrupted=fun _->false) ?output
       ~uuid ~save
       (self:expanded) : _*_ =
     let start = Misc.now_s() in
     (* prepare DB *)
     let db =
       if save then (
-        let db_file = db_file_for_uuid ~timestamp uuid in
+        let db_file = 
+          match output with 
+          | Some output -> output 
+          | None -> db_file_for_uuid ~timestamp uuid
+        in
+        Log.debug (fun k -> k"output database file %s" db_file);
         Sqlite3.db_open ~mutex:`FULL db_file
       ) else
         Sqlite3.db_open ":memory:"
@@ -482,7 +488,7 @@ module Git_checkout = struct
 end
 
 (** Run the given action *)
-let rec run ?(save=true) ?interrupted ?cb_progress
+let rec run ?output ?(save=true) ?interrupted ?cb_progress
     (defs:Definitions.t) (a:Action.t) : unit =
   Error.guard (Error.wrapf "running action %a" Action.pp a) @@ fun () ->
   begin match a with
@@ -501,13 +507,13 @@ let rec run ?(save=true) ?interrupted ?cb_progress
         Exec_run_provers.run ?interrupted
           ~on_solve:progress#on_res
           ~on_proof_check:progress#on_proof_check_res
-          ~on_done:(fun _ -> progress#on_done) ~save
+          ~on_done:(fun _ -> progress#on_done) ?output ~save
           ~timestamp:(Misc.now_s()) ~uuid r_expanded
       in
       Format.printf "task done: %a@." Test_compact_result.pp res;
       ()
     | Action.Act_progn l ->
-      List.iter (fun a -> run ~save ?interrupted defs a) l
+      List.iter (fun a -> run ?output ~save ?interrupted defs a) l
     | Action.Act_git_checkout git ->
       Git_checkout.run git
     | Action.Act_run_cmd {cmd; loc} ->
