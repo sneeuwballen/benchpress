@@ -31,7 +31,7 @@ module Run = struct
     and pp_results =
       Arg.(value & opt bool true & info ["pp-results"] ~doc:"print results as they are found")
     and output = 
-      Arg.(value & opt (some string) None & info ["output"] ~doc:"output database file")
+      Arg.(value & opt (some string) None & info ["o"; "output"] ~doc:"output database file")
     and save =
       Arg.(value & opt bool true & info ["save"] ~doc:"save results on disk")
     and dir_file =
