@@ -41,6 +41,7 @@ Most of the commands accept `-c <config file>` to specify which config files to 
   * `-F <file>` read list of problems from given file
   * `-p <prover1,prover2>` list of provers to use
   * `--task <profile>` specify which task to use
+  * `-o <file>` specify an output database file
 - `benchpress dir config` shows the configuration directory
 - `benchpress dir state` shows the directory where the state (benchmark results) is stored
 - `benchpress check-config <file>` to check that the file is valid configuration
@@ -60,7 +61,7 @@ Some internal parameters of benchpress can be set using environment variables:
 - "BENCHPRESS_BUSY_TIMEOUT" controls the busy timeout of the sql database used
   by benchpress, in miliseconds. Default is 3000.
 
-
+- "XDG_CONFIG_HOME" override the default value `$HOME/.config`.
 
 ### Web interface
 
