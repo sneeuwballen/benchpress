@@ -49,6 +49,7 @@ module Exec_run_provers : sig
     ?output:string ->
     uuid:Uuidm.t ->
     save:bool ->
+    wal_mode:bool ->
     expanded ->
     Test_top_result.t lazy_t * Test_compact_result.t
     (** Run the given prover(s) on the given problem set, obtaining results
@@ -155,7 +156,7 @@ end = struct
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_start_proof_check=_nop)
       ?(on_proof_check = _nop) ?(on_done = _nop)
       ?(interrupted=fun _->false) ?output
-      ~uuid ~save
+      ~uuid ~save ~wal_mode
       (self:expanded) : _*_ =
     let start = Misc.now_s() in
     (* prepare DB *)
@@ -171,9 +172,11 @@ end = struct
         in
         Log.debug (fun k -> k"output database file %s" db_file);
         let db = Sqlite3.db_open ~mutex:`FULL db_file in
-        match Db.exec0 db "pragma journal_mode=WAL;" with
-        | Ok _ -> db
-        | Error rc -> Error.raise (Misc.err_of_db rc) 
+        if wal_mode then
+          match Db.exec0 db "pragma journal_mode=WAL;" with
+          | Ok _ -> db
+          | Error rc -> Error.raise (Misc.err_of_db rc)
+        else db
       ) else
         Sqlite3.db_open ":memory:"
     in
