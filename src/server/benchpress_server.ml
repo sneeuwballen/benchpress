@@ -1079,7 +1079,7 @@ let get_meta (self:t) (p:string) : Test_metadata.t =
   | exception Not_found ->
     let res =
       guardf 500 (Error.wrapf "obtaining metadata for '%s'" (Filename.basename p)) @@ fun () ->
-      Sqlite3_utils.with_db ~cache:`PRIVATE ~mode:`READONLY p
+      Sqlite3_utils.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY p
         (fun db -> Test_metadata.of_db db)
     in
     (* cache if it's complete *)
