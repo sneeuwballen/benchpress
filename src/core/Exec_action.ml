@@ -161,12 +161,12 @@ end = struct
     (* prepare DB *)
     let db =
       if save then (
-        let db_file = 
-          match output with 
-          | Some output -> 
+        let db_file =
+          match output with
+          | Some output ->
               if Sys.file_exists output then
                 Error.failf "The file %s exists" output
-              else output 
+              else output
           | None -> db_file_for_uuid ~timestamp uuid
         in
         Log.debug (fun k -> k"output database file %s" db_file);
