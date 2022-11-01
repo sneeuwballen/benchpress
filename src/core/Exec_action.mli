@@ -36,6 +36,7 @@ module Exec_run_provers : sig
     ?output:string ->
     uuid:Uuidm.t ->
     save:bool ->
+    wal_mode:bool ->
     expanded ->
     Test_top_result.t lazy_t * Test_compact_result.t
     (** Run the given prover(s) on the given problem set, obtaining results

@@ -5,7 +5,7 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action
-    ?j ?timestamp ?pp_results ?dyn ?limits ?proof_dir ?output ~notify ~uuid ~save
+    ?j ?timestamp ?pp_results ?dyn ?limits ?proof_dir ?output ~notify ~uuid ~save ~wal_mode
     (defs: Definitions.t) (r:Action.run_provers)
   : (_ * Test_compact_result.t) =
   begin
@@ -22,7 +22,7 @@ let execute_run_prover_action
       Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
       Exec_action.Exec_run_provers.run ~uuid ?timestamp
         ~interrupted:(fun () -> CCLock.get interrupted)
-        ~on_solve:progress#on_res ~save
+        ~on_solve:progress#on_res ~save ~wal_mode
         ~on_start_proof_check:(fun() -> progress#on_start_proof_check)
         ~on_proof_check:progress#on_proof_check_res
         ~on_done:(fun _ -> progress#on_done) r
@@ -36,7 +36,7 @@ type top_task =
   | TT_other of Action.t
 
 let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
-    ?meta:_ ?summary ?task ?dir_file ?proof_dir ?output ?(save=true)
+    ?meta:_ ?summary ?task ?dir_file ?proof_dir ?output ?(save=true) ?(wal_mode=false)
     (defs:Definitions.t) paths () : unit =
   Log.info
     (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
@@ -93,7 +93,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
 
       let (top_res, (results:Test_compact_result.t)) =
         execute_run_prover_action
-          ~uuid ?pp_results ?proof_dir ?dyn:progress ~limits ?j ?output ~notify ~timestamp ~save
+          ~uuid ?pp_results ?proof_dir ?dyn:progress ~limits ?j ?output ~notify ~timestamp ~save ~wal_mode
           defs run_provers_action
       in
       if CCOpt.is_some csv then (
