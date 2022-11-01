@@ -35,7 +35,7 @@ module Run = struct
     and save =
       Arg.(value & opt bool true & info ["save"] ~doc:"save results on disk")
     and wal_mode =
-      Arg.(value & opt bool false & info ["wal"] ~doc:"turn on the journal WAL mode")
+      Arg.(value & flag & info ["wal"] ~doc:"turn on the journal WAL mode")
     and dir_file =
       Arg.(value & opt (some string) None & info ["F"] ~doc:"file containing a list of files")
     and proof_dir =
