@@ -487,13 +487,14 @@ module Git_checkout = struct
   let run (self:t) : unit =
     Error.guard (Error.wrapf "running action git-checkout '%s'" self.ref) @@ fun () ->
     let {Action.dir; ref; fetch_first; loc=_} = self in
-    begin match fetch_first with
-      | Some Git_fetch -> run_cmd "git fetch"
-      | Some Git_pull -> run_cmd "git pull --ff-only"
-      | _ -> ()
-    end;
-    with_chdir dir
-      (fun () -> run_cmd ("git checkout " ^ ref))
+    with_chdir dir 
+      (fun () ->
+        begin match fetch_first with
+        | Some Git_fetch -> run_cmd "git fetch"
+        | Some Git_pull -> run_cmd "git pull --ff-only"
+        | _ -> ()
+        end;
+        run_cmd ("git checkout " ^ ref))
 end
 
 (** Run the given action *)
