@@ -516,7 +516,7 @@ let rec run ?output ?(save=true) ?interrupted ?cb_progress
         Exec_run_provers.run ?interrupted
           ~on_solve:progress#on_res
           ~on_proof_check:progress#on_proof_check_res
-          ~on_done:(fun _ -> progress#on_done) ?output ~save
+          ~on_done:(fun _ -> progress#on_done) ?output ~save ~wal_mode:false
           ~timestamp:(Misc.now_s()) ~uuid r_expanded
       in
       Format.printf "task done: %a@." Test_compact_result.pp res;

@@ -21,4 +21,4 @@ let of_db ?full db : t =
     let cr_comparison = Test_comparison_short.of_db db in
     {cr_stat; cr_analyze; cr_comparison; cr_meta; })
 
-let pp out _self = Fmt.fprintf out "<compact result>"
+let pp out (_self : _ lazy_t * t) = Fmt.fprintf out "<compact result>"
