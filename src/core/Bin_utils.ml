@@ -67,7 +67,7 @@ let dump_summary ~summary results : unit =
            Format.fprintf out "%a@." Test_top_result.pp_compact results);
   end
 
-let check_res_an notify a : unit =
+let check_res_an ?(no_failure = false) notify a : unit =
   if List.for_all (fun (_,r) -> Test_analyze.is_ok r) a
   then (
     Notify.send notify "OK";
@@ -76,15 +76,15 @@ let check_res_an notify a : unit =
       List.fold_left (fun n (_,r) -> n + Test_analyze.num_bad r) 0 a
     in
     Notify.sendf notify "FAIL (%d failures)" n_fail;
-    Error.failf "FAIL (%d failures)" n_fail
+    if not no_failure then Error.failf "FAIL (%d failures)" n_fail
   )
 
-let check_compact_res notify (results:Test_compact_result.t) : unit =
-  check_res_an notify (results.Test_compact_result.cr_analyze)
+let check_compact_res ?(no_failure = false) notify (results:Test_compact_result.t) : unit =
+  check_res_an ~no_failure notify (results.Test_compact_result.cr_analyze)
 
-let check_res notify (results:Test_top_result.t) : unit =
+let check_res ?(no_failure = false) notify (results:Test_top_result.t) : unit =
   let a = Test_top_result.analyze results in
-  check_res_an notify a
+  check_res_an ~no_failure notify a
 
 let printbox_stat st : unit =
   let box_st = Test_stat.to_printbox_l st in

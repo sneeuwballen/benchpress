@@ -5,7 +5,7 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action
-    ?j ?timestamp ?pp_results ?dyn ?limits ?proof_dir ?output ~notify ~uuid ~save ~wal_mode
+    ?j ?timestamp ?pp_results ?dyn ?limits ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update
     (defs: Definitions.t) (r:Action.run_provers)
   : (_ * Test_compact_result.t) =
   begin
@@ -26,7 +26,7 @@ let execute_run_prover_action
         ~on_start_proof_check:(fun() -> progress#on_start_proof_check)
         ~on_proof_check:progress#on_proof_check_res
         ~on_done:(fun _ -> progress#on_done) r
-        ?output
+        ?output ~update
     in
     result
   end
@@ -37,6 +37,7 @@ type top_task =
 
 let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
     ?meta:_ ?summary ?task ?dir_file ?proof_dir ?output ?(save=true) ?(wal_mode=false)
+    ~desktop_notification ~no_failure ~update
     (defs:Definitions.t) paths () : unit =
   Log.info
     (fun k->k"run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
@@ -94,7 +95,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
       let (top_res, (results:Test_compact_result.t)) =
         execute_run_prover_action
           ~uuid ?pp_results ?proof_dir ?dyn:progress ~limits ?j ?output ~notify ~timestamp ~save ~wal_mode
-          defs run_provers_action
+          ~update defs run_provers_action
       in
       if CCOpt.is_some csv then (
         let res = Lazy.force top_res in
@@ -105,13 +106,14 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers=[])
         Bin_utils.dump_summary ~summary res
       );
       (* now fail if results were bad *)
-      let r = Bin_utils.check_compact_res notify results in
+      let r = Bin_utils.check_compact_res ~no_failure notify results in
       Notify.sync notify;
       Bin_utils.printbox_compact_results results;
       (* try to send a desktop notification *)
-      (try CCUnix.call "notify-send 'benchmark done (%s)'"
-             (CCOpt.map_or ~default:"?" Misc.human_duration
-                results.cr_meta.total_wall_time) |> ignore
-       with _ -> ());
+      if desktop_notification then
+        (try CCUnix.call "notify-send 'benchmark done (%s)'"
+               (CCOpt.map_or ~default:"?" Misc.human_duration
+                  results.cr_meta.total_wall_time) |> ignore
+         with _ -> ());
       r
   end
