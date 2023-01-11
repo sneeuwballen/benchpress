@@ -47,6 +47,7 @@ module Exec_run_provers : sig
     ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
     ?output:string ->
+    ?update:bool ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
@@ -155,7 +156,7 @@ end = struct
   let run ?(timestamp=Misc.now_s())
       ?(on_start=_nop) ?(on_solve = _nop) ?(on_start_proof_check=_nop)
       ?(on_proof_check = _nop) ?(on_done = _nop)
-      ?(interrupted=fun _->false) ?output
+      ?(interrupted=fun _->false) ?output ?(update = false)
       ~uuid ~save ~wal_mode
       (self:expanded) : _*_ =
     let start = Misc.now_s() in
@@ -165,9 +166,12 @@ end = struct
         let db_file =
           match output with
           | Some output ->
-              if Sys.file_exists output then
-                Error.failf "The file %s exists" output
-              else output
+            if Sys.file_exists output then
+              if update then (
+                Sys.remove output;
+                output
+              ) else Error.failf "The file %s exists" output
+            else output
           | None -> db_file_for_uuid ~timestamp uuid
         in
         Log.debug (fun k -> k"output database file %s" db_file);
@@ -487,7 +491,7 @@ module Git_checkout = struct
   let run (self:t) : unit =
     Error.guard (Error.wrapf "running action git-checkout '%s'" self.ref) @@ fun () ->
     let {Action.dir; ref; fetch_first; loc=_} = self in
-    with_chdir dir 
+    with_chdir dir
       (fun () ->
         begin match fetch_first with
         | Some Git_fetch -> run_cmd "git fetch"

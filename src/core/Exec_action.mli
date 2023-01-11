@@ -34,6 +34,7 @@ module Exec_run_provers : sig
     ?on_done:(Test_compact_result.t -> unit) ->
     ?interrupted:(unit -> bool) ->
     ?output:string ->
+    ?update:bool ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
