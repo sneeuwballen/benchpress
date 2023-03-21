@@ -38,6 +38,7 @@ module Log_report = struct
     | Logs.App -> Fmt.fprintf out "[@{<blue>app@}:%s]" src
 
   let reporter () =
+    let lock = CCLock.create() in
     Fmt.set_color_default true;
     let buf_out, buf_flush = buf_fmt () in
     let pp_header fmt header =
@@ -64,7 +65,8 @@ module Log_report = struct
     let report src level ~over k msgf =
       let k _ =
         let write_str out s =
-          synchronized (fun () -> Printf.fprintf out "%s%s%!" reset_line s)
+          CCLock.with_lock lock @@ fun () ->
+          Printf.fprintf out "%s%s%!" reset_line s
         in
         let msg = buf_flush() in
         write_str (match level with Logs.App -> out | _ -> err) msg;
