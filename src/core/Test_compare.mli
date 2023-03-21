@@ -1,11 +1,10 @@
-
 (** Compare two result files *)
 
 type filename = string
 
 module Short : sig
   type t = {
-    appeared: int;  (* new problems *)
+    appeared: int; (* new problems *)
     disappeared: int; (* problems that disappeared *)
     improved: int;
     regressed: int;
@@ -14,7 +13,6 @@ module Short : sig
   }
 
   val to_printbox : t -> PrintBox.t
-
   val make : filename -> filename -> (Prover.name * t) list
 end
 

@@ -1,8 +1,6 @@
-
-type cb_progress = <
-  on_progress: percent:int -> elapsed_time:float -> eta:float -> unit;
-  on_done: unit;
->
+type cb_progress =
+  < on_progress : percent:int -> elapsed_time:float -> eta:float -> unit
+  ; on_done : unit >
 
 module Exec_run_provers : sig
   type t = Action.run_provers
@@ -12,7 +10,7 @@ module Exec_run_provers : sig
     problems: Problem.t list;
     provers: Prover.t list;
     checkers: Proof_checker.t Misc.Str_map.t;
-    limits : Limit.All.t;
+    limits: Limit.All.t;
     proof_dir: string option;
   }
 
@@ -23,7 +21,8 @@ module Exec_run_provers : sig
     ?proof_dir:string ->
     ?interrupted:(unit -> bool) ->
     Definitions.t ->
-    t -> expanded
+    t ->
+    expanded
 
   val run :
     ?timestamp:float ->
@@ -40,7 +39,7 @@ module Exec_run_provers : sig
     wal_mode:bool ->
     expanded ->
     Test_top_result.t lazy_t * Test_compact_result.t
-    (** Run the given prover(s) on the given problem set, obtaining results
+  (** Run the given prover(s) on the given problem set, obtaining results
         after all the problems have been dealt with.
         @param on_solve called whenever a single problem is solved
         @param on_done called when the whole process is done
@@ -48,18 +47,20 @@ module Exec_run_provers : sig
 end
 
 module Progress_run_provers : sig
-  type t = <
-    on_res: Run_prover_problem.job_res -> unit;
-    on_start_proof_check : unit;
-    on_proof_check_res: Test.proof_check_result -> unit;
-    on_done: unit;
-  >
+  type t =
+    < on_res : Run_prover_problem.job_res -> unit
+    ; on_start_proof_check : unit
+    ; on_proof_check_res : Test.proof_check_result -> unit
+    ; on_done : unit >
+
   val nil : t
+
   val make :
     ?cb_progress:cb_progress ->
     ?pp_results:bool ->
     ?dyn:bool ->
-    Exec_run_provers.expanded -> t
+    Exec_run_provers.expanded ->
+    t
   (** Make a progress tracker.
       @param dyn if true, print a progress bar in the terminal
       @param pp_results if true, print each individual result as it's found
@@ -73,4 +74,7 @@ val run :
   ?output:string ->
   ?save:bool ->
   ?interrupted:(unit -> bool) ->
-  ?cb_progress:cb_progress -> Definitions.t -> Action.t -> unit
+  ?cb_progress:cb_progress ->
+  Definitions.t ->
+  Action.t ->
+  unit

@@ -11,40 +11,34 @@ open Common
 
 type version =
   | Tag of string
-  | Git of {
-      branch: string;
-      commit: string;  (* branch & commit hash *)
-    }
+  | Git of { branch: string; commit: string (* branch & commit hash *) }
 
 type name = string
 
 type t = {
   (* Prover identification *)
-  name : name;
-  version : version;
-
+  name: name;
+  version: version;
   (* Pover execution *)
-  binary: string;       (* name of the program itself *)
+  binary: string; (* name of the program itself *)
   binary_deps: string list; (* list of binaries this depends on *)
-  cmd: string;          (* the command line to run.
-                           possibly contains $binary, $file, $memory and $timeout *)
+  cmd: string;
+      (* the command line to run.
+         possibly contains $binary, $file, $memory and $timeout *)
   produces_proof: bool;
-  proof_ext: string option; (** file extension for proofs *)
-  proof_checker: string option; (** proof checker for its proofs *)
-
+  proof_ext: string option;  (** file extension for proofs *)
+  proof_checker: string option;  (** proof checker for its proofs *)
   (* whether some limits should be enforced/set by ulimit *)
-  ulimits : Ulimit.conf;
-
+  ulimits: Ulimit.conf;
   (* Result analysis *)
-  unsat   : string option;  (* regex for "unsat" *)
-  sat     : string option;  (* regex for "sat" *)
-  unknown : string option;  (* regex for "unknown" *)
-  timeout : string option;  (* regex for "timeout" *)
-  memory  : string option;  (* regex for "out of memory" *)
-  custom  : (string * string) list; (* custom tags *)
+  unsat: string option; (* regex for "unsat" *)
+  sat: string option; (* regex for "sat" *)
+  unknown: string option; (* regex for "unknown" *)
+  timeout: string option; (* regex for "timeout" *)
+  memory: string option; (* regex for "out of memory" *)
+  custom: (string * string) list; (* custom tags *)
   defined_in: string option;
-
-  inherits : name option; (** parent definition *)
+  inherits: name option;  (** parent definition *)
 }
 (** The type of provers configurations *)
 
@@ -59,10 +53,9 @@ val pp : t Fmt.printer
 (** Version *)
 module Version : sig
   type t = version
+
   val pp : t Fmt.printer
-
   val to_string_short : t -> string
-
   val to_sexp : t -> Sexp_loc.t
   val ser_sexp : t -> string
 end
@@ -86,7 +79,9 @@ val subst :
   ?proof_file:string ->
   ?file:string ->
   ?f:(string -> string option) ->
-  unit -> (string -> string)
+  unit ->
+  string ->
+  string
 (** Return a substitution function adequate for {!interpolate_cmd},
     that performs the substitutions of the given parameters (binary,
     memory, timeout, file) or defers to the fallback [?f] argument.
@@ -96,9 +91,7 @@ val subst :
       [?file:None]). *)
 
 val interpolate_cmd :
-  ?env:(string * string) array ->
-  subst:(string -> string) ->
-  string -> string
+  ?env:(string * string) array -> subst:(string -> string) -> string -> string
 (** Interpolate a command using the given substitution function.
     @raise Subst_not_found if a variable is found, that is not substituted
     into any of the parameters nor by [f] *)
@@ -122,17 +115,16 @@ val run :
 val analyze_p_opt : t -> Run_proc_result.t -> Res.t option
 (** Analyze raw result to look for the result *)
 
-(** Map by name *)
 module Map_name : CCMap.S with type key = t
+(** Map by name *)
 
-(** Map with full compare *)
 module Map : CCMap.S with type key = t
+(** Map with full compare *)
+
 module Set : CCSet.S with type elt = t
 
 val db_prepare : Db.t -> unit
-
 val to_db : Db.t -> t -> unit
-
 val of_db : Db.t -> name -> t
 val tags_of_db : Db.t -> string list
 

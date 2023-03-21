@@ -3,33 +3,39 @@
  (public_name benchpress-server)
  (package benchpress-server)
  (modes native)
- (promote (into ../../) (until-clean))
+ (promote
+  (into ../../)
+  (until-clean))
  (libraries benchpress containers cmdliner result uuidm logs logs.cli
-            tiny_httpd sqlite3_utils base64 printbox jemalloc)
+   tiny_httpd sqlite3_utils base64 printbox jemalloc)
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress -linkall))
 
 (rule
-  (targets web_data.ml)
-  (deps (:css bootstrap.min.css) (:js embed.js) (:icon ../../data/favicon.png.b64))
-  (action
-    (with-stdout-to %{targets}
-     (progn
-       (echo "let css = {css|")
-       (cat %{css})
-       (echo "|css}")
-       (echo "let js = {j|")
-       (cat %{js})
-       (echo "|j}")
-       (echo "let favicon = Base64.decode_exn @@ String.trim @@ {fav|")
-       (cat %{icon})
-       (echo "|fav}")
-       ))))
+ (targets web_data.ml)
+ (deps
+  (:css bootstrap.min.css)
+  (:js embed.js)
+  (:icon ../../data/favicon.png.b64))
+ (action
+  (with-stdout-to
+   %{targets}
+   (progn
+    (echo "let css = {css|")
+    (cat %{css})
+    (echo "|css}")
+    (echo "let js = {j|")
+    (cat %{js})
+    (echo "|j}")
+    (echo "let favicon = Base64.decode_exn @@ String.trim @@ {fav|")
+    (cat %{icon})
+    (echo "|fav}")))))
 
 (rule
- (with-stdout-to benchpress-server.1 (run ./benchpress_server.exe --help=groff)))
+ (with-stdout-to
+  benchpress-server.1
+  (run ./benchpress_server.exe --help=groff)))
 
 (install
  (section man)
  (package benchpress-server)
  (files benchpress-server.1))
-

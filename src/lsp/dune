@@ -1,8 +1,7 @@
-
 (executable
-  (name benchpress_lsp)
-  (public_name benchpress-lsp)
-  (modes native)
-  (package benchpress-lsp)
-  (flags :standard -warn-error -a+8 -safe-string)
-  (libraries containers containers-thread benchpress linol))
+ (name benchpress_lsp)
+ (public_name benchpress-lsp)
+ (modes native)
+ (package benchpress-lsp)
+ (flags :standard -warn-error -a+8 -safe-string)
+ (libraries containers containers-thread benchpress linol))

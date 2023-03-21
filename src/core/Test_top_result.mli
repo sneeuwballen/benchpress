@@ -1,4 +1,3 @@
-
 (** Top Result for a benchmark run.
 
     Main result of testing: a snapshot of the work done, + the analysis
@@ -19,8 +18,8 @@ type t = {
 (** Filter on the list of all results *)
 type tr_filter =
   | TRF_all
-  | TRF_different (** different results *)
-  | TRF_bad (** inconsistent results *)
+  | TRF_different  (** different results *)
+  | TRF_bad  (** inconsistent results *)
 
 val string_of_trf : tr_filter -> string
 
@@ -34,7 +33,6 @@ val pp_compact : t Fmt.printer
 (** Print meta-informations + compact results *)
 
 val pp_bad : t Fmt.printer
-
 val is_ok : t -> bool
 
 val make :
@@ -45,9 +43,7 @@ val make :
   t
 (** Make from a list of results *)
 
-val of_db :
-  analyze_full:bool ->
-  Db.t -> t
+val of_db : analyze_full:bool -> Db.t -> t
 (** Parse from a DB *)
 
 val db_prepare : Db.t -> unit
@@ -59,7 +55,6 @@ val stat : t -> (Prover.name * Test_stat.t) list
 (** Compute or retrieve stats *)
 
 val analyze : t -> (Prover.name * Test_analyze.t) list
-
 val to_compact_result : t -> Test_compact_result.t
 
 (* TODO: move to another file
@@ -80,52 +75,54 @@ type table_row = {
   tr_res: (string * Res.t * float) list; (* prover, result, time *)
 }
 
-type table = {
-  t_meta: string;
-  t_rows: table_row list;
-  t_provers: string list;
-}
+type table = { t_meta: string; t_rows: table_row list; t_provers: string list }
 
 val db_to_table :
-  ?offset:int -> ?page_size:int ->
+  ?offset:int ->
+  ?page_size:int ->
   ?provers:string list ->
   ?filter_pb:string ->
   ?filter_res:tr_filter ->
-  Db.t -> table
+  Db.t ->
+  table
+
 val to_table :
-  ?offset:int -> ?page_size:int ->
-  ?provers:string list ->
-  t -> table
+  ?offset:int -> ?page_size:int -> ?provers:string list -> t -> table
 
 val table_to_csv : table -> Csv.t
 
 val table_to_printbox :
-  ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
-  table -> PrintBox.t
+  ?link_pb:path_linker ->
+  ?link_res:prover_path_res_linker ->
+  table ->
+  PrintBox.t
 
 val to_printbox_summary : t -> PrintBox.t
 val to_printbox_stat : t -> PrintBox.t
 
 val to_printbox_table :
-  ?offset:int -> ?page_size:int ->
-  ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
-  t -> PrintBox.t
+  ?offset:int ->
+  ?page_size:int ->
+  ?link_pb:path_linker ->
+  ?link_res:prover_path_res_linker ->
+  t ->
+  PrintBox.t
 
 val db_to_printbox_table :
-  ?offset:int -> ?page_size:int ->
-  ?link_pb:path_linker -> ?link_res:prover_path_res_linker ->
+  ?offset:int ->
+  ?page_size:int ->
+  ?link_pb:path_linker ->
+  ?link_res:prover_path_res_linker ->
   ?filter_pb:string ->
   ?filter_res:tr_filter ->
-  Db.t -> PrintBox.t
+  Db.t ->
+  PrintBox.t
 
 val to_printbox_bad : t -> (string * PrintBox.t) list
 val to_printbox_errors : t -> (string * PrintBox.t) list
-
 val db_to_csv : ?provers:string list -> Db.t -> Csv.t
 val to_csv : ?provers:string list -> t -> Csv.t
-
 val to_csv_chan : ?provers:string list -> out_channel -> t -> unit
-
 val db_to_csv_string : ?provers:string list -> Db.t -> string
 val to_csv_string : ?provers:string list -> t -> string
 

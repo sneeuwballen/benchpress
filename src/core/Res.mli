@@ -2,15 +2,9 @@
 
 (** {1 Result of a single job} *)
 
-type t =
-  | Sat
-  | Unsat
-  | Unknown
-  | Timeout
-  | Error
-  | Tag of string
+type t = Sat | Unsat | Unknown | Timeout | Error | Tag of string
 
-val compare: t -> t -> [`Same | `LeftBetter | `RightBetter | `Mismatch]
+val compare : t -> t -> [ `Same | `LeftBetter | `RightBetter | `Mismatch ]
 (** [compare a b] compares results [a] and [b] (assuming they are results
     of two distinct provers on the same problem), and returns:
 
@@ -25,4 +19,3 @@ val compare: t -> t -> [`Same | `LeftBetter | `RightBetter | `Mismatch]
 val pp : t CCFormat.printer
 val to_string : t -> string
 val of_string : tags:string list -> string -> t
-
