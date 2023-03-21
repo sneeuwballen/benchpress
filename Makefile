@@ -11,6 +11,9 @@ clean:
 test:
 	@dune runtest --no-buffer -f
 
+fmt:
+	@dune build @fmt --auto-promote
+
 WATCH?= @all
 watch:
 	@dune build $(WATCH) -w
