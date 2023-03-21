@@ -1,4 +1,3 @@
-
 (** Task queue for the server *)
 
 open Common
@@ -11,8 +10,7 @@ module Job : sig
   val interrupt : t -> unit
   val pp : t Fmt.printer
   val to_string : t -> string
-
-  val time_elapsed: t -> float
+  val time_elapsed : t -> float
 end
 
 type t
@@ -36,4 +34,3 @@ val loop : t -> unit
 
 val interrupt : t -> uuid:string -> bool
 (** Interrupt task. Returns true on success *)
-

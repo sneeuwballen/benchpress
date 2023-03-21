@@ -1,36 +1,40 @@
-
 (executable
-  (name cleanup)
-  (libraries containers)
-  (flags :standard -warn-error -a+8))
+ (name cleanup)
+ (libraries containers)
+ (flags :standard -warn-error -a+8))
 
 (rule
-  (targets conf_invalid.out)
-  (deps (:conf conf_invalid.sexp))
-  (package benchpress)
-  (action
-    (progn
-      (with-accepted-exit-codes
-        1
-        (with-outputs-to
-          %{targets}
-          (run ../src/bin/benchpress_bin.exe check-config -v %{conf})))
-      (run ./cleanup.exe %{targets}))))
+ (targets conf_invalid.out)
+ (deps
+  (:conf conf_invalid.sexp))
+ (package benchpress)
+ (action
+  (progn
+   (with-accepted-exit-codes
+    1
+    (with-outputs-to
+     %{targets}
+     (run ../src/bin/benchpress_bin.exe check-config -v %{conf})))
+   (run ./cleanup.exe %{targets}))))
 
 (rule
-  (alias runtest)
-  (package benchpress)
-  (action (diff conf_invalid.expected conf_invalid.out)))
+ (alias runtest)
+ (package benchpress)
+ (action
+  (diff conf_invalid.expected conf_invalid.out)))
 
 (rule
-  (targets fake.out)
-  (deps (source_tree .))
-  (action
-    (with-stdout-to
-      %{targets}
-      (run ../src/bin/benchpress_bin.exe run --save=false --pp-results=false --nc -q -c conf_prover1.sexp --task runall))))
+ (targets fake.out)
+ (deps
+  (source_tree .))
+ (action
+  (with-stdout-to
+   %{targets}
+   (run ../src/bin/benchpress_bin.exe run --save=false --pp-results=false
+     --nc -q -c conf_prover1.sexp --task runall))))
 
 (rule
-  (alias runtest)
-  (package benchpress)
-  (action (diff fake.expected fake.out)))
+ (alias runtest)
+ (package benchpress)
+ (action
+  (diff fake.expected fake.out)))

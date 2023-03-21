@@ -1,12 +1,12 @@
-
 type sexp = Sexp_loc.t
-
 type +'a t
 type 'a m = 'a t
-val return : 'a -> 'a t
 
+val return : 'a -> 'a t
 val fail : string -> _ t
-val failf : ((('a, Format.formatter, unit, string) format4 -> 'a) -> string) -> 'b m
+
+val failf :
+  ((('a, Format.formatter, unit, string) format4 -> 'a) -> string) -> 'b m
 
 module Infix : sig
   val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
@@ -14,6 +14,7 @@ module Infix : sig
   val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
 end
+
 include module type of Infix
 
 val value : sexp t
@@ -33,19 +34,17 @@ val atom_or_atom_list : string list t
 (** Parse either ["foo"] or [("a" "b" "c")] *)
 
 val keyword : msg:string -> (string * 'a) list -> 'a t
-
 val is_atom : bool t
-
 val is_list : bool t
 
-val succeeds: 'a t -> bool t
+val succeeds : 'a t -> bool t
 (** [succeeds d] returns [true] if [d] parses the S-expr, and [false] otherwise. *)
 
 val is_applied : string -> bool t
 (** [is_applied "foo"] is the recognizer that
     accepts expressions of the form [("foo" …)] *)
 
-val try_succeed : 'a t -> (bool t * 'a t)
+val try_succeed : 'a t -> bool t * 'a t
 (** [try_succeed d] is [succeeds d, d] *)
 
 val try_l : msg:string -> (bool t * 'a t) list -> 'a t
@@ -62,10 +61,8 @@ val with_msg : msg:string -> 'a t -> 'a t
 
 val map_l : ('a -> 'b t) -> 'a list -> 'b list t
 val fold_l : ('b -> 'a -> 'b t) -> 'b -> 'a list -> 'b t
-
 val fix : ('a t -> 'a t) -> 'a t
 val sub : 'a t -> sexp -> 'a t
-
 val applied : string -> 'a t -> 'a list t
 val applied0 : string -> unit t
 val applied1 : string -> 'a t -> 'a t
@@ -116,6 +113,7 @@ val run' : 'a t -> sexp -> ('a, string) result
 
 module Err : sig
   type t = err
+
   val loc : t -> Loc.t
   val to_error : t -> Error.t
 end

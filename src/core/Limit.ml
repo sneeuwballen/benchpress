@@ -1,17 +1,12 @@
 (* This file is free software. See file "license" for more details. *)
 
-
 (* Time limits aka Timeouts *)
 module Time = struct
-
   (* Timeout are stored in **seconds** *)
   type t = int
 
   (* The view of a time *)
-  type view =
-    | Seconds
-    | Minutes
-    | Hours (**)
+  type view = Seconds | Minutes | Hours (**)
 
   (* useful constants *)
   let t_min = 60
@@ -23,15 +18,11 @@ module Time = struct
   let equal x y = compare x y = 0
 
   (* printing *)
-  let pp out t =
-    CCFormat.fprintf out "%ds" t
+  let pp out t = CCFormat.fprintf out "%ds" t
 
   (* Creation *)
-  let mk ?(s=0) ?(m=0) ?(h=0) () =
-    s + m * t_min + h * t_hour
-
+  let mk ?(s = 0) ?(m = 0) ?(h = 0) () = s + (m * t_min) + (h * t_hour)
   let default = mk ~h:1 ()
-
   let add x y = x + y
 
   (* Int (i.e. partial) View *)
@@ -47,24 +38,15 @@ module Time = struct
     | Seconds -> float t
     | Minutes -> float t /. float t_min
     | Hours -> float t /. float t_hour
-
 end
-
-
 
 (* Memory limits *)
 module Memory = struct
-
   (* Memory limits are stored in number of bytes *)
   type t = int
 
   (* View of a memory limits *)
-  type view =
-    | Bytes
-    | Kilobytes
-    | Megabytes
-    | Gigabytes
-    | Terabytes
+  type view = Bytes | Kilobytes | Megabytes | Gigabytes | Terabytes
 
   (* useful constants *)
   let s_k = 1_000
@@ -85,8 +67,10 @@ module Memory = struct
     let n_mega, n = aux n s_m in
     let n_kilo, n_bytes = aux n s_k in
     let print_aux s n =
-      if n = 0 then ()
-      else CCFormat.fprintf out "%d%s" n s
+      if n = 0 then
+        ()
+      else
+        CCFormat.fprintf out "%d%s" n s
     in
     print_aux "T" n_tera;
     print_aux "G" n_giga;
@@ -95,8 +79,8 @@ module Memory = struct
     print_aux "" n_bytes
 
   (* Creation *)
-  let mk ?(b=0) ?(k=0) ?(m=0) ?(g=0) ?(t=0) () =
-    b + k * s_k + m * s_m + g * s_g + t * s_t
+  let mk ?(b = 0) ?(k = 0) ?(m = 0) ?(g = 0) ?(t = 0) () =
+    b + (k * s_k) + (m * s_m) + (g * s_g) + (t * s_t)
 
   let default = mk ~g:1 ()
 
@@ -117,16 +101,11 @@ module Memory = struct
     | Megabytes -> float t /. float s_m
     | Gigabytes -> float t /. float s_g
     | Terabytes -> float t /. float s_t
-
-
 end
 
 (* Stack size limit *)
 module Stack = struct
-
-  type t =
-    | Unlimited
-    | Limited of Memory.t
+  type t = Unlimited | Limited of Memory.t
 
   (* Usual functions *)
   let hash = Hashtbl.hash
@@ -137,17 +116,15 @@ module Stack = struct
   let pp out = function
     | Unlimited -> CCFormat.fprintf out "unlimited"
     | Limited m -> Memory.pp out m
-
 end
 
 (* Structure to combine all currently supported limits *)
 module All = struct
-
   (* Useful record to represent a complet set of limits for one run *)
   type t = {
-    time : Time.t option;
-    memory : Memory.t option;
-    stack : Stack.t option;
+    time: Time.t option;
+    memory: Memory.t option;
+    stack: Stack.t option;
   }
 
   (* Usual functions *)
@@ -158,20 +135,19 @@ module All = struct
   (* Printing *)
   let pp out t =
     CCFormat.fprintf out "(@[<v 1>limits%a%a%a@])"
-      (Misc.Pp.pp_opt "timeout" Time.pp) t.time
-      (Misc.Pp.pp_opt "memory" Memory.pp) t.memory
-      (Misc.Pp.pp_opt "stack" Stack.pp) t.stack
+      (Misc.Pp.pp_opt "timeout" Time.pp)
+      t.time
+      (Misc.Pp.pp_opt "memory" Memory.pp)
+      t.memory
+      (Misc.Pp.pp_opt "stack" Stack.pp)
+      t.stack
 
   (* Creation *)
-  let mk ?time ?memory ?stack () =
-    { time; memory; stack; }
-
-  let default : t = mk ~time:(Time.default) ~memory:Memory.default ()
-
+  let mk ?time ?memory ?stack () = { time; memory; stack }
+  let default : t = mk ~time:Time.default ~memory:Memory.default ()
   let update_time f t = { t with time = f t.time }
   let update_memory f t = { t with memory = f t.memory }
   let update_stack f t = { t with stack = f t.stack }
-
 
   (* Combination of limits *)
   let with_default ~default = function
@@ -179,9 +155,10 @@ module All = struct
     | Some _ as res -> res
 
   let with_defaults ~defaults t =
-    update_time (with_default ~default:defaults.time) @@
-    update_memory (with_default ~default:defaults.memory) @@
-    update_stack (with_default ~default:defaults.stack) @@ t
+    update_time (with_default ~default:defaults.time)
+    @@ update_memory (with_default ~default:defaults.memory)
+    @@ update_stack (with_default ~default:defaults.stack)
+    @@ t
 
   (* Exception for a missing limit *)
   exception Limit_missing of string
@@ -198,12 +175,10 @@ module All = struct
     | "timeout" | "time" ->
       subst_aux s CCFun.(Time.as_int time_as %> string_of_int) t.time
     | "stack" ->
-      subst_aux s (function
+      subst_aux s
+        (function
           | Stack.Unlimited -> "unlimited"
-          | Stack.Limited m -> string_of_int @@ Memory.as_int stack_as m
-        ) t.stack
+          | Stack.Limited m -> string_of_int @@ Memory.as_int stack_as m)
+        t.stack
     | _ -> None
-
 end
-
-

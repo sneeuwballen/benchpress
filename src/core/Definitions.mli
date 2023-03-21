@@ -1,12 +1,11 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Definitions} *)
 
 open Common
+
 type path = string
 type 'a with_loc = 'a With_loc.t
-
 type t
 
 type def =
@@ -15,10 +14,9 @@ type def =
   | D_proof_checker of Proof_checker.t with_loc
 
 val empty : t
-
 val find_prover : t -> string -> Prover.t with_loc
 val find_prover' : t -> string -> Prover.t
-val find_checker: t -> string -> Proof_checker.t with_loc
+val find_checker : t -> string -> Proof_checker.t with_loc
 val find_task : t -> string -> Task.t with_loc
 val find_task' : t -> string -> Task.t
 val find : t -> string -> def option
@@ -31,6 +29,7 @@ val custom_tags : t -> string list
 
 module Def : sig
   type t = def
+
   val loc : t -> Loc.t
   val pp : t Fmt.printer
   val show : t -> string
@@ -38,13 +37,9 @@ end
 
 val option_j : t -> int option
 val option_progress : t -> bool option
-
 val add_stanza : ?reify_errors:bool -> Stanza.t -> t -> t
-
 val add_stanza_l : ?reify_errors:bool -> Stanza.t list -> t -> t
-
 val of_stanza_l : ?reify_errors:bool -> Stanza.t list -> t
-
 val mk_subdir : t -> string -> Subdir.t
 
 val mk_run_provers :

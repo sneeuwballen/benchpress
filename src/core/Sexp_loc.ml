@@ -2,16 +2,11 @@
 
 open Common
 
-type t = {
-  loc: Loc.t;
-  view: view;
-}
-and view =
-  | Atom of string
-  | List of t list
+type t = { loc: Loc.t; view: view }
+and view = Atom of string | List of t list
 
-let atom_with_loc ~loc s : t= {loc; view=Atom s}
-let list_with_loc ~loc l : t = {loc; view=List l}
+let atom_with_loc ~loc s : t = { loc; view = Atom s }
+let list_with_loc ~loc l : t = { loc; view = List l }
 let atom = atom_with_loc ~loc:Loc.none
 let list = list_with_loc ~loc:Loc.none
 
@@ -19,6 +14,7 @@ let list = list_with_loc ~loc:Loc.none
 
 module Sexp0 : sig
   type 'a or_error = ('a, string) result
+
   val pp : t Fmt.printer
   val of_int : int -> t
   val of_float : float -> t
@@ -29,6 +25,7 @@ module Sexp0 : sig
   val parse_string_l : filename:string -> string -> t list or_error
   val parse_file : string -> t or_error
   val parse_file_l : string -> t list or_error
+
   module Sexp : CCSexp_intf.S with type t = t
 end = struct
   type 'a or_error = ('a, string) result
@@ -36,30 +33,34 @@ end = struct
   let cur_file_ = ref ""
   let cur_input_ = ref (Loc.Input.string "")
 
-  module Sexp = CCSexp.Make(struct
-      type nonrec loc=Loc.t
-      type nonrec t=t
+  module Sexp = CCSexp.Make (struct
+    type nonrec loc = Loc.t
+    type nonrec t = t
 
-      let make_loc =
-        Some (fun (l1,c1)(l2,c2) _file : loc ->
-            let loc = Loc.{
+    let make_loc =
+      Some
+        (fun (l1, c1) (l2, c2) _file : loc ->
+          let loc =
+            Loc.
+              {
                 start = Pos.of_line_col l1 c1;
                 stop = Pos.of_line_col l2 c2;
-                input = !cur_input_
-              } in
-            (*Logs.debug (fun k->k"make_loc %S %d:%d - %d:%d@ res %a" file l1 c1 l2 c2 Loc.pp loc);*)
-            loc)
+                input = !cur_input_;
+              }
+          in
+          (*Logs.debug (fun k->k"make_loc %S %d:%d - %d:%d@ res %a" file l1 c1 l2 c2 Loc.pp loc);*)
+          loc)
 
-      let atom_with_loc ~loc s : t= {loc; view=Atom s}
-      let list_with_loc ~loc l : t = {loc; view=List l}
-      let atom = atom
-      let list = list
+    let atom_with_loc ~loc s : t = { loc; view = Atom s }
+    let list_with_loc ~loc l : t = { loc; view = List l }
+    let atom = atom
+    let list = list
 
-      let match_ s ~atom:fa ~list:fl =
-        match s.view with
-        | Atom s -> fa s
-        | List l -> fl l
-    end)
+    let match_ s ~atom:fa ~list:fl =
+      match s.view with
+      | Atom s -> fa s
+      | List l -> fl l
+  end)
 
   include Sexp
 

@@ -4,7 +4,6 @@
     https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html *)
 
 val name_of_project : string ref
-
 val get_home : unit -> string
 
 val interpolate_home : ?f:(string -> string option) -> string -> string

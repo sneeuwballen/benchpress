@@ -2,13 +2,7 @@
 
 module Fmt = CCFormat
 
-type t =
-  | Sat
-  | Unsat
-  | Unknown
-  | Timeout
-  | Error
-  | Tag of string
+type t = Sat | Unsat | Unknown | Timeout | Error | Tag of string
 
 let to_string = function
   | Sat -> "sat"
@@ -29,12 +23,15 @@ let of_string ~tags = function
 
 let pp out s = Fmt.string out (to_string s)
 
-let compare a b = match a, b with
+let compare a b =
+  match a, b with
   | Unsat, Unsat
   | Sat, Sat
   | (Unknown | Timeout), (Unknown | Timeout)
-  | Error, Error -> `Same
-  | Tag s1, Tag s2 when s1=s2 -> `Same
+  | Error, Error ->
+    `Same
+  | Tag s1, Tag s2 when s1 = s2 ->
+    `Same
     (*
   | Unknown, Timeout -> `LeftBetter
   | Timeout, Unknown -> `RightBetter
@@ -47,8 +44,7 @@ let compare a b = match a, b with
   | Sat, Tag _
   | Tag _, Unsat
   | Tag _, Sat
-  | Unsat , Sat
+  | Unsat, Sat
   | Sat, Unsat
-  | Tag _, Tag _
-    -> `Mismatch
-
+  | Tag _, Tag _ ->
+    `Mismatch

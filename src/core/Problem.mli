@@ -3,25 +3,15 @@
 open Common
 
 type path = string
-type t = {
-  name: path;  (* filename *)
-  expected: Res.t; (* result expected *)
-}
+type t = { name: path; (* filename *) expected: Res.t (* result expected *) }
 
 val make : string -> Res.t -> t
 (** Make a problem. *)
 
-val find_expect :
-  ?default_expect:Res.t ->
-  expect:Dir.expect ->
-  path ->
-  Res.t
+val find_expect : ?default_expect:Res.t -> expect:Dir.expect -> path -> Res.t
 (** FInd the expected result for this given problem *)
 
-val make_find_expect :
-  expect:Dir.expect ->
-  path ->
-  t
+val make_find_expect : expect:Dir.expect -> path -> t
 (** [make_find_expect ~expect file] tries to find the expected
     result of [file] using [expect], and
     makes a problem if it finds the result
@@ -32,10 +22,12 @@ val basename : t -> string
 
 val same_name : t -> t -> bool
 val hash_name : t -> int
+
 val compare_name : t -> t -> int
 (** Compare the names of problems. *)
 
-val compare_res : t -> Res.t -> [`Same | `Improvement | `Mismatch | `Disappoint | `Error]
+val compare_res :
+  t -> Res.t -> [ `Same | `Improvement | `Mismatch | `Disappoint | `Error ]
 (** [compare_res pb res] compares the expected result of [pb] to
     the actual result [res], yielding one of:
 
@@ -51,4 +43,3 @@ val compare_res : t -> Res.t -> [`Same | `Improvement | `Mismatch | `Disappoint 
 val pp : t Fmt.printer
 val name : t -> string
 val to_string : t -> string
-

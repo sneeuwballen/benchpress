@@ -2,19 +2,21 @@
  (name benchpress)
  (public_name benchpress)
  (modes native)
- (synopsis "Benchpress core library, with all the data structures and functions")
+ (synopsis
+   "Benchpress core library, with all the data structures and functions")
  (wrapped true)
- (libraries containers containers.unix containers-thread re
-   re.perl csv iter printbox printbox-text logs logs.cli gnuplot ptime ptime.clock.os
-   uuidm sqlite3 sqlite3_utils cmdliner pp_loc)
+ (libraries containers containers.unix containers-thread re re.perl csv iter
+   printbox printbox-text logs logs.cli gnuplot ptime ptime.clock.os uuidm
+   sqlite3 sqlite3_utils cmdliner pp_loc)
  (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 
 (rule
-  (targets builtin_config.ml)
-  (deps builtin_config.sexp)
-  (action
-    (with-stdout-to %{targets}
-     (progn
-       (echo "let config = {sexp|")
-       (cat %{deps})
-       (echo "|sexp} ;;")))))
+ (targets builtin_config.ml)
+ (deps builtin_config.sexp)
+ (action
+  (with-stdout-to
+   %{targets}
+   (progn
+    (echo "let config = {sexp|")
+    (cat %{deps})
+    (echo "|sexp} ;;")))))

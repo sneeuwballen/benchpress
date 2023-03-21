@@ -1,18 +1,17 @@
 module Fmt = CCFormat
 
 type (+'a, 'res) t = private {
-  program : 'a;
-  problem : Problem.t;
-  res : 'res;
-  timeout : Limit.Time.t;
-  raw : Run_proc_result.t;
+  program: 'a;
+  problem: Problem.t;
+  res: 'res;
+  timeout: Limit.Time.t;
+  raw: Run_proc_result.t;
 }
 
-val program : ('a,_) t -> 'a
+val program : ('a, _) t -> 'a
 val problem : _ t -> Problem.t
 val raw : _ t -> Run_proc_result.t
-
-val map : f:('a -> 'b) -> ('a,'res) t -> ('b,'res) t
+val map : f:('a -> 'b) -> ('a, 'res) t -> ('b, 'res) t
 
 val make_from_prover :
   Prover.t ->
@@ -24,7 +23,7 @@ val make_from_prover :
 
 val analyze_self : (Prover.t, Res.t) t -> (Prover.name, Res.t) t
 
-val make:
+val make :
   'name ->
   timeout:Limit.Time.t ->
   res:'res ->
@@ -41,4 +40,3 @@ val make_from_checker :
   (Prover.name * Proof_checker.name, Proof_check_res.t) t
 
 val pp : 'a Fmt.printer -> 'res Fmt.printer -> ('a, 'res) t Fmt.printer
-
