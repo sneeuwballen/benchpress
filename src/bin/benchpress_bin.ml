@@ -128,6 +128,163 @@ module Run = struct
         $ output $ save $ wal_mode $ desktop_notification $ no_failure $ update)
 end
 
+module Slurm = struct
+  (* sub-command for running tests with slurm *)
+  let cmd =
+    let open Cmdliner in
+    let aux j pp_results dyn paths dir_file proof_dir defs task timeout memory
+        meta provers csv summary no_color output save wal_mode
+        desktop_notification no_failure update partition nodes addr port ntasks
+        =
+      catch_err @@ fun () ->
+      if no_color then CCFormat.set_color_default false;
+      let dyn =
+        if dyn then
+          Some true
+        else
+          None
+      in
+      Run_main.main ~sbatch:true ~pp_results ?dyn ~j ?timeout ?memory ?csv
+        ~provers ~meta ?task ?summary ?dir_file ?proof_dir ?output ~wal_mode
+        ~desktop_notification ~no_failure ~update ~save ?partition ?nodes ?addr
+        ?port ?ntasks defs paths ()
+    in
+    let defs = Bin_utils.definitions_term
+    and doc =
+      "run benchpress using the computing power of a cluster that works with \
+       slurm"
+    and dyn = Arg.(value & flag & info [ "progress" ] ~doc:"print progress bar")
+    and pp_results =
+      Arg.(
+        value & opt bool true
+        & info [ "pp-results" ] ~doc:"print results as they are found")
+    and output =
+      Arg.(
+        value
+        & opt (some string) None
+        & info [ "o"; "output" ] ~doc:"output database file")
+    and save =
+      Arg.(value & opt bool true & info [ "save" ] ~doc:"save results on disk")
+    and wal_mode =
+      Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
+    and dir_file =
+      Arg.(
+        value
+        & opt (some string) None
+        & info [ "F" ] ~doc:"file containing a list of files")
+    and proof_dir =
+      Arg.(
+        value
+        & opt (some string) None
+        & info [ "proof-dir" ] ~doc:"store proofs in given directory")
+    and task =
+      Arg.(value & opt (some string) None & info [ "task" ] ~doc:"task to run")
+    and timeout =
+      Arg.(
+        value
+        & opt (some int) None
+        & info [ "t"; "timeout" ] ~doc:"timeout (in s)")
+    and j =
+      Arg.(
+        value & opt int 1
+        & info [ "j" ]
+            ~doc:
+              "number of parallel threads each worker will launch on the node \
+               on which it's running.")
+    and memory =
+      Arg.(
+        value
+        & opt (some int) None
+        & info [ "m"; "memory" ] ~doc:"memory (in MB)")
+    and meta =
+      Arg.(
+        value & opt string ""
+        & info [ "meta" ] ~doc:"additional metadata to save")
+    and csv =
+      Arg.(
+        value & opt (some string) None & info [ "csv" ] ~doc:"CSV output file")
+    and paths =
+      Arg.(
+        value & pos_all string []
+        & info [] ~docv:"PATH"
+            ~doc:"target paths (or directories containing tests)")
+    and provers =
+      Arg.(
+        value & opt_all string []
+        & info [ "p"; "provers" ] ~doc:"select provers")
+    and no_color =
+      Arg.(
+        value & flag & info [ "no-color"; "nc" ] ~doc:"disable colored output")
+    and summary =
+      Arg.(
+        value
+        & opt (some string) None
+        & info [ "summary" ] ~doc:"write summary in FILE")
+    and partition =
+      Arg.(
+        value
+        & opt (some string) None
+        & info [ "partition" ]
+            ~doc:"partition to which the allocated nodes should belong")
+    and nodes =
+      Arg.(
+        value
+        & opt (some int) None
+        & info [ "n"; "nodes" ] ~doc:"the maximum number of nodes to be used")
+    and addr =
+      Arg.(
+        value
+        & opt (some Misc.ip_addr_conv) None
+        & info [ "a"; "addr" ]
+            ~doc:
+              "IP address of the server on the control node. Needs to be \
+               reachable by the workers which will run on the allocated \
+               calculation nodes.")
+    and port =
+      Arg.(
+        value
+        & opt (some int) None
+        & info [ "port" ]
+            ~doc:
+              "port of the server on the control node. Default is 0 to let the \
+               OS choose a port.")
+    and ntasks =
+      Arg.(
+        value
+        & opt (some int) None
+        & info [ "ntasks" ]
+            ~doc:"The number of tasks to give the workers at a time.")
+    and desktop_notification =
+      Arg.(
+        value & opt bool true
+        & info
+            [ "desktop-notification"; "dn" ]
+            ~doc:
+              "send a desktop notification when the benchmarking is done (true \
+               by default)")
+    and no_failure =
+      Arg.(
+        value & flag
+        & info [ "no-failure"; "nf" ]
+            ~doc:
+              "don't fail if some provers give incorrect answers \
+               (contradictory to what was expected)")
+    and update =
+      Arg.(
+        value & flag
+        & info [ "update"; "u" ]
+            ~doc:
+              "if the output file already exists, overwrite it with the new \
+               one.")
+    in
+    Cmd.v (Cmd.info ~doc "slurm")
+      Term.(
+        const aux $ j $ pp_results $ dyn $ paths $ dir_file $ proof_dir $ defs
+        $ task $ timeout $ memory $ meta $ provers $ csv $ summary $ no_color
+        $ output $ save $ wal_mode $ desktop_notification $ no_failure $ update
+        $ partition $ nodes $ addr $ port $ ntasks)
+end
+
 module List_files = struct
   let main ?(abs = false) () : bool =
     catch_err @@ fun () ->
@@ -465,6 +622,7 @@ let parse_opt () =
       Task_list.cmd;
       Task_show.cmd;
       Plot.cmd;
+      Slurm.cmd;
     ]
   in
   Cmd.eval_value (Cmd.group info ~default cmds)

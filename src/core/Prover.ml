@@ -58,7 +58,7 @@ module Version = struct
   let pp out =
     let open Misc.Pp in
     function
-    | Tag s -> Fmt.fprintf out "(tag %a)" pp_str s
+    | Tag s -> Fmt.fprintf out "%a" pp_str s
     | Git { branch = b; commit = c } ->
       Fmt.fprintf out "(@[git@ branch=%a@ commit=%a@])" pp_str b pp_str c
 

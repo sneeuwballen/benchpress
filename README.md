@@ -42,6 +42,17 @@ Most of the commands accept `-c <config file>` to specify which config files to 
   * `-p <prover1,prover2>` list of provers to use
   * `--task <profile>` specify which task to use
   * `-o <file>` specify an output database file
+- `benchpress slurm`:
+  * `-t <time>` timeout (in seconds) for each run
+  * `-m <memory>` memory limit in MB
+  * `-F <file>` read list of problems from given file
+  * `-p <prover1,prover2>` list of provers to use
+  * `--task <profile>` specify which task to use
+  * `--nodes`: max number of nodes to allocate for the workers (one worker by node)
+  * `--partition`: the partition to which the allocated nodes need to belong
+  * `--ntasks`: number of tasks to give the workers at a time
+  * `--addr`: IP of the server with which the workers communicate
+  * `--port`: port of the server
 - `benchpress dir config` shows the configuration directory
 - `benchpress dir state` shows the directory where the state (benchmark results) is stored
 - `benchpress check-config <file>` to check that the file is valid configuration
@@ -210,9 +221,39 @@ same repository).
   * `(dirs (p1 … pn))` paths containing benchmarks. The paths must be subdirectories
     of already defined directories (see the `dir` stanza above)
   * `(timeout n)` (optional) defines a timeout in seconds
+  * `(memory n)` (optional) defines a memory limit in MB
   * `(pattern regex)` (optional) an additional regex for files to consider in `dirs`
+  * `(j n)` (optional) defines the number of concurrent threads to use when running the provers
+- `(run_provers_slurm fields)` to run some provers on some benchmarks using the computing power of a cluster managed by slurm. Most of the fields are the same as those of the `run_provers` except that they apply to every worker running on the allocated compute nodes. There are also additional fields:
+  * `(j n)` (optional) the number of concurrent threads to be used by each worker deployed on an allocated compute node. (default is 4).
+  * `(partition s)`: (optional) the name of the partition to which the allocated compute nodes need to belong.
+  * `(nodes n)`: (optional) the number of nodes to allocate to the action (default is 1).
+  * `(addr s)`: (optional) the IP address on which the server which will be deployed on the control node should listen on.
+  * `(port n)`: (optional) the port on which the server should listen on.
+  * `(ntasks n)`: (optional) the number of tasks that will be sent to the workers at a time.
 - `(progn a1 … an)` runs actions in sequence. Fails if any action fails.
 - `(run_cmd "the command")` runs the given command.
 - `(git_checkout (dir d) (ref r) [(fetch_first fetch|pull)])` specifies
   a directory in which to go (`(dir d)`), a git reference to checkout (`(ref r)`)
   and optionally a tag to indicate whether to fetch/pull the repo first.
+
+## An example of a task running with slurm
+
+```
+(task
+  (name testrun-slurm)
+  (action
+    (run_provers_slurm
+      (dirs ($PATHS))
+      (provers (z3 cvc4))
+      (timeout 2)
+      (j 4)
+      (nodes 2)
+      (addr "xxx.xxx.xx.xxx")
+      (port 8080)
+      (ntasks 20)
+      )))
+```
+assuming that "PATHS" are paths to directories containing benchmarks which were previously defined in the config file.
+
+Note: Running a task with slurm should be done on a control node. The nodes of the cluster should have at least a shared directory and "XDG_DATA_HOME" should be a path to it or one of its subdirectories. It will be used to store the config file which will be used by the benchpress worker instances which run on the compute nodes of the cluster.

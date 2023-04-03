@@ -1,0 +1,20 @@
+(executable
+ (name benchpress_worker)
+ (public_name benchpress-worker)
+ (package benchpress-worker)
+ (modes native)
+ (promote
+  (into ../../)
+  (until-clean))
+ (libraries benchpress containers)
+ (flags :standard -warn-error -a+8 -safe-string -open Benchpress -linkall))
+
+(rule
+ (with-stdout-to
+  benchpress-worker.1
+  (run ./benchpress_worker.exe --help=groff)))
+
+(install
+ (section man)
+ (package benchpress-worker)
+ (files benchpress-worker.1))
