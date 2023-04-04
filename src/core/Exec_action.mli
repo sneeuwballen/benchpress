@@ -15,13 +15,18 @@ module Exec_run_provers : sig
   }
 
   val expand :
+    ?slurm:bool ->
     ?j:int ->
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?proof_dir:string ->
     ?interrupted:(unit -> bool) ->
     Definitions.t ->
-    t ->
+    Limit.All.t ->
+    int option ->
+    string option ->
+    Subdir.t list ->
+    Prover.t list ->
     expanded
 
   val run :
@@ -44,6 +49,27 @@ module Exec_run_provers : sig
         @param on_solve called whenever a single problem is solved
         @param on_done called when the whole process is done
     *)
+
+  val run_sbatch_job :
+    ?timestamp:float ->
+    ?on_start:(expanded -> unit) ->
+    ?on_solve:(Test.result -> unit) ->
+    ?on_start_proof_check:(unit -> unit) ->
+    ?on_proof_check:(Test.proof_check_result -> unit) ->
+    ?on_done:(Test_compact_result.t -> unit) ->
+    ?interrupted:(unit -> bool) ->
+    ?partition:string ->
+    nodes:int ->
+    addr:Unix.inet_addr ->
+    port:int ->
+    ntasks:int ->
+    ?output:string ->
+    ?update:bool ->
+    uuid:Uuidm.t ->
+    save:bool ->
+    wal_mode:bool ->
+    expanded ->
+    Test_top_result.t lazy_t * Test_compact_result.t
 end
 
 module Progress_run_provers : sig

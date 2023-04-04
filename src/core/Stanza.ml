@@ -30,12 +30,28 @@ type git_fetch = GF_fetch | GF_pull
 
 type action =
   | A_run_provers of {
+      j: int option;
       dirs: string list; (* list of directories to examine *)
       pattern: regex option;
       provers: string list;
       timeout: int option;
       memory: int option;
       stack: stack_limit option;
+      loc: Loc.t;
+    }
+  | A_run_provers_slurm of {
+      j: int option;
+      dirs: string list; (* list of directories to examine *)
+      pattern: regex option;
+      provers: string list;
+      timeout: int option;
+      memory: int option;
+      stack: stack_limit option;
+      partition: string option;
+      nodes: int option;
+      addr: Unix.inet_addr option;
+      port: int option;
+      ntasks: int option;
       loc: Loc.t;
     }
   | A_git_checkout of {
@@ -123,8 +139,9 @@ let pp_stack_limit out = function
 let rec pp_action out =
   let open Misc.Pp in
   function
-  | A_run_provers { dirs; provers; timeout; memory; stack; pattern; loc = _ } ->
-    Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a%a@])"
+  | A_run_provers { dirs; provers; timeout; memory; stack; pattern; j; loc = _ }
+    ->
+    Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a%a%a@])"
       (pp_f "dirs" (pp_l pp_str))
       dirs
       (pp_f "provers" (pp_l pp_str))
@@ -133,7 +150,37 @@ let rec pp_action out =
       pattern (pp_opt "timeout" Fmt.int) timeout (pp_opt "memory" Fmt.int)
       memory
       (pp_opt "stack" pp_stack_limit)
-      stack
+      stack (pp_opt "j" Fmt.int) j
+  | A_run_provers_slurm
+      {
+        dirs;
+        provers;
+        timeout;
+        memory;
+        stack;
+        pattern;
+        j;
+        partition;
+        nodes;
+        addr;
+        port;
+        ntasks;
+        loc = _;
+      } ->
+    Fmt.fprintf out "(@[<v>run_provers_slurm%a%a%a%a%a%a%a%a%a%a%a%a@])"
+      (pp_f "dirs" (pp_l pp_str))
+      dirs
+      (pp_f "provers" (pp_l pp_str))
+      provers
+      (pp_opt "pattern" pp_regex)
+      pattern (pp_opt "timeout" Fmt.int) timeout (pp_opt "memory" Fmt.int)
+      memory
+      (pp_opt "stack" pp_stack_limit)
+      stack (pp_opt "j" Fmt.int) j
+      (pp_opt "partition" Fmt.string)
+      partition (pp_opt "nodes" Fmt.int) nodes
+      (pp_opt "addr" Misc.pp_inet_addr)
+      addr (pp_opt "port" Fmt.int) port (pp_opt "ntasks" Fmt.int) ntasks
   | A_progn l -> Fmt.fprintf out "(@[progn %a@])" (pp_l pp_action) l
   | A_run_cmd { cmd = s; loc = _ } ->
     Fmt.fprintf out "(@[run_cmd %a@])" pp_regex s
@@ -327,13 +374,47 @@ let dec_action : action SD.t =
         let* m = applied_fields "run_provers" in
         let* dirs = Fields.field m "dirs" atom_or_atom_list in
         let* provers = Fields.field m "provers" atom_or_atom_list in
+        let* j = Fields.field_opt m "j" int in
         let* pattern = Fields.field_opt m "pattern" dec_regex in
         let* timeout = Fields.field_opt m "timeout" int in
         let* memory = Fields.field_opt m "memory" int in
         let* stack = Fields.field_opt m "stack" dec_stack_limit in
         let+ () = Fields.check_no_field_left m in
         let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
-        A_run_provers { dirs; provers; timeout; memory; stack; pattern; loc } );
+        A_run_provers { dirs; provers; timeout; memory; stack; pattern; j; loc }
+      );
+      ( is_applied "run_provers_slurm",
+        let* m = applied_fields "run_provers_slurm" in
+        let* dirs = Fields.field m "dirs" atom_or_atom_list in
+        let* provers = Fields.field m "provers" atom_or_atom_list in
+        let* j = Fields.field_opt m "j" int in
+        let* pattern = Fields.field_opt m "pattern" dec_regex in
+        let* timeout = Fields.field_opt m "timeout" int in
+        let* memory = Fields.field_opt m "memory" int in
+        let* stack = Fields.field_opt m "stack" dec_stack_limit in
+        let* partition = Fields.field_opt m "partition" string in
+        let* nodes = Fields.field_opt m "nodes" int in
+        let* addr_str_opt = Fields.field_opt m "addr" string in
+        let* port = Fields.field_opt m "port" int in
+        let* ntasks = Fields.field_opt m "ntasks" int in
+        let+ () = Fields.check_no_field_left m in
+        let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
+        A_run_provers_slurm
+          {
+            dirs;
+            provers;
+            timeout;
+            memory;
+            stack;
+            pattern;
+            j;
+            partition;
+            nodes;
+            addr = CCOpt.map Unix.inet_addr_of_string addr_str_opt;
+            port;
+            ntasks;
+            loc;
+          } );
       ( is_applied "progn",
         let+ l = applied "progn" self in
         A_progn l );
@@ -392,7 +473,7 @@ let dec (st : state) : t list SD.t =
         let* unknown = Fields.field_opt m "unknown" dec_regex in
         let* timeout = Fields.field_opt m "timeout" dec_regex in
         let* memory = Fields.field_opt m "memory" dec_regex in
-        let* ulimits = Fields.field_opt m "ulimit" dec_ulimits in
+        let* ulimits = Fields.field_opt m "ulimits" dec_ulimits in
         let* produces_proof = Fields.field_opt m "produces_proof" bool in
         let* proof_ext = Fields.field_opt m "proof_ext" string in
         let* proof_checker = Fields.field_opt m "proof_checker" string in
@@ -533,3 +614,50 @@ let _parse_prelude, parse_files, parse_string =
       l
   in
   parse_prelude, parse_files, parse_string
+
+let prover_wl_to_st
+    With_loc.
+      {
+        view =
+          Prover.
+            {
+              name;
+              cmd;
+              sat;
+              unsat;
+              timeout;
+              unknown;
+              memory;
+              ulimits;
+              version;
+              custom;
+              inherits;
+              produces_proof;
+              proof_ext;
+              proof_checker;
+              _;
+            };
+        loc;
+      } =
+  St_prover
+    {
+      name;
+      cmd = Some cmd;
+      sat;
+      unsat;
+      timeout;
+      unknown;
+      memory;
+      version = Some (Version_exact version);
+      custom;
+      ulimits = Some ulimits;
+      loc;
+      produces_proof = Some produces_proof;
+      proof_ext;
+      proof_checker;
+      inherits;
+    }
+
+let proof_checker_wl_to_st
+    With_loc.{ view = Proof_checker.{ name; cmd; valid; invalid }; loc } =
+  St_proof_checker { name; cmd; valid; invalid; loc }

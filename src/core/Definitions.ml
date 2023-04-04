@@ -191,22 +191,76 @@ let mk_limits ?timeout ?memory ?stack () =
   Limit.All.mk ?time ?memory ?stack ()
 
 let mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~paths ~provers ~loc
-    (self : t) : _ =
+    (self : t) : Action.run_provers =
   let provers = CCList.map (find_prover' self) provers in
   let dirs = CCList.map (mk_subdir self) paths in
   let limits = mk_limits ?timeout ?memory ?stack () in
-  let act = { Action.j; limits; dirs; provers; pattern; loc } in
-  act
+  Action.{ j; limits; dirs; provers; pattern; loc }
+
+let mk_run_provers_slurm_submission ?j ~paths ?timeout ?memory ?stack ?pattern
+    ~provers ?loc ?partition ?nodes ?addr ?port ?ntasks (self : t) :
+    Action.run_provers_slurm_submission =
+  let ge_val opt min def =
+    match opt with
+    | Some v when v >= min -> v
+    | _ -> def
+  in
+  let provers = CCList.map (find_prover' self) provers in
+  let dirs = CCList.map (mk_subdir self) paths in
+  let limits = mk_limits ?timeout ?memory ?stack () in
+  let nodes = ge_val nodes 1 1 in
+  let addr = CCOpt.value addr ~default:(Misc.localhost_addr ()) in
+  let port = ge_val port 0 0 in
+  let j =
+    match j with
+    | Some v when v > 0 -> j
+    | _ -> None
+  in
+  let ntasks = ge_val ntasks 1 10 in
+  {
+    partition;
+    nodes;
+    j;
+    addr;
+    port;
+    ntasks;
+    provers;
+    dirs;
+    pattern;
+    limits;
+    loc;
+  }
 
 let rec mk_action (self : t) (a : Stanza.action) : _ =
   match a with
-  | Stanza.A_run_provers { provers; memory; dirs; timeout; stack; pattern; loc }
-    ->
+  | Stanza.A_run_provers
+      { provers; memory; dirs; timeout; stack; pattern; j; loc } ->
     let a =
-      mk_run_provers ?timeout ?memory ?stack ?pattern ~loc:(Some loc)
+      mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~loc:(Some loc)
         ~paths:dirs ~provers self
     in
     Action.Act_run_provers a
+  | Stanza.A_run_provers_slurm
+      {
+        provers;
+        memory;
+        dirs;
+        timeout;
+        stack;
+        pattern;
+        j;
+        partition;
+        nodes;
+        addr;
+        port;
+        ntasks;
+        loc;
+      } ->
+    let a =
+      mk_run_provers_slurm_submission ?j ?timeout ?memory ?stack ?pattern ~loc
+        ~paths:dirs ~provers ?partition ?nodes ?addr ?port ?ntasks self
+    in
+    Action.Act_run_slurm_submission a
   | Stanza.A_progn l ->
     let l = CCList.map (mk_action self) l in
     Action.Act_progn l

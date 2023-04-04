@@ -1,0 +1,19 @@
+opam-version: "2.0"
+version: "0.1"
+authors: ["Simon Cruanes" "Guillaume Bury" "Hichem Rami Ait El Hara"]
+synopsis: "A benchpress helper worker"
+maintainer: "simon.cruanes.2007@m4x.org"
+build: [
+  ["dune" "build" "@install" "-p" name "-j" jobs]
+  ["dune" "build" "@doc" "-p" name] {with-doc}
+]
+depends: [
+  "ocaml" {>= "4.08" }
+  "dune" { >= "1.11" }
+  "containers" { >= "3.0" & < "4.0" }
+  "benchpress" { = version }
+  "cmdliner" {>= "1.1.0"}
+]
+homepage: "https://github.com/sneeuwballen/benchpress/"
+dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
+bug-reports: "https://github.com/sneeuwballen/benchpress/issues"

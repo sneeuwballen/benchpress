@@ -58,6 +58,23 @@ val mk_run_provers :
     All the provers must be defined, and the paths must be contained
     in declared [dir]. *)
 
+val mk_run_provers_slurm_submission :
+  ?j:int ->
+  paths:path list ->
+  ?timeout:int ->
+  ?memory:int ->
+  ?stack:Stanza.stack_limit ->
+  ?pattern:path ->
+  provers:path list ->
+  ?loc:Loc.t ->
+  ?partition:path ->
+  ?nodes:int ->
+  ?addr:Unix.inet_addr ->
+  ?port:int ->
+  ?ntasks:int ->
+  t ->
+  Action.run_provers_slurm_submission
+
 val completions : t -> ?before_pos:Loc.pos -> string -> def list
 (** Find possible completions *)
 
