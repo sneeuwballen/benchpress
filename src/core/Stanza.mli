@@ -93,6 +93,7 @@ type t =
       invalid: regex;  (** regex for invalid proofs *)
     }
   | St_dir of {
+      name: string option;
       path: string;
       expect: expect option;
       pattern: regex option;  (** Pattern of problems in this directory *)

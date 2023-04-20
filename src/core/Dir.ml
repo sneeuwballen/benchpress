@@ -12,6 +12,7 @@ type expect =
   | E_try of expect list  (** Try these methods successively *)
 
 type t = {
+  name: string option;
   path: string;
   expect: expect;
   pattern: regex option;  (** Pattern of problems in this directory *)
@@ -24,9 +25,11 @@ let rec pp_expect out = function
   | E_program { prover } -> Fmt.fprintf out "(@[run %a@])" Prover.pp_name prover
   | E_try l -> Fmt.fprintf out "(@[try@ %a@])" (Misc.pp_list pp_expect) l
 
-let pp out { path; expect; pattern; loc = _ } : unit =
+let pp out { name; path; expect; pattern; loc = _ } : unit =
   let open Misc.Pp in
-  Fmt.fprintf out "(@[<v1>dir%a%a%a@])" (pp_f "path" Fmt.string) path
+  Fmt.fprintf out "(@[<v1>dir%a%a%a%a@])"
+    (pp_opt "name" Fmt.string) name
+    (pp_f "path" Fmt.string) path
     (pp_f "expect" pp_expect) expect
     (pp_opt "pattern" pp_regex)
     pattern
