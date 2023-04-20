@@ -17,6 +17,7 @@ type def =
 type t = {
   defs: def Str_map.t;
   dirs: Dir.t list; (* list of directories *)
+  dir_vars : path Str_map.t; (* named directories *)
   errors: Error.t list;
   cur_dir: string; (* for relative paths *)
   config_file: string option;
@@ -30,6 +31,7 @@ let empty : t =
   {
     defs = Str_map.empty;
     dirs = [];
+    dir_vars = Str_map.empty;
     cur_dir = Sys.getcwd ();
     tags = [];
     option_j = None;
@@ -47,7 +49,13 @@ let add_proof_checker (p : Proof_checker.t with_loc) self : t =
 let add_task (t : Task.t with_loc) self : t =
   { self with defs = Str_map.add t.view.Task.name (D_task t) self.defs }
 
-let add_dir (d : Dir.t) self : t = { self with dirs = d :: self.dirs }
+let add_dir (d : Dir.t) self : t =
+  let dir_vars =
+    match d.name with
+    | Some name -> Str_map.add ("dir:" ^ name) d.path self.dir_vars
+    | None -> self.dir_vars
+  in
+  { self with dirs = d :: self.dirs; dir_vars }
 let errors self = self.errors
 let option_j self = self.option_j
 let option_progress self = self.option_progress
@@ -129,17 +137,17 @@ let find_task self name : Task.t with_loc =
 let find_prover' self name = With_loc.view @@ find_prover self name
 let find_task' self name = With_loc.view @@ find_task self name
 
-let norm_path ~cur_dir s =
+let norm_path ?(dir_vars = Str_map.empty) ~cur_dir s =
   let f s =
     match s with
     | "cur_dir" -> Some cur_dir
-    | _ -> None
+    | _ -> Str_map.find_opt s dir_vars
   in
   s |> Xdg.interpolate_home ~f |> Misc.mk_abs_path
 
 (* find a known directory for [path] *)
 let mk_subdir self path : Subdir.t =
-  let path = norm_path ~cur_dir:self.cur_dir path in
+  let path = norm_path ~dir_vars:self.dir_vars ~cur_dir:self.cur_dir path in
   (* helper *)
   let is_parent (dir : string) (f : string) : bool =
     let fd_dir = (Unix.stat dir).Unix.st_dev in
@@ -292,9 +300,9 @@ let add_stanza_ (st : Stanza.t) self : t =
       cur_dir = Misc.mk_abs_path (Filename.dirname file);
       config_file = Some file;
     }
-  | St_dir { path; expect; pattern; loc } ->
+  | St_dir { name; path; expect; pattern; loc } ->
     Log.debug (fun k -> k "cur dir: '%s'" self.cur_dir);
-    let path = norm_path ~cur_dir:self.cur_dir path in
+    let path = norm_path ~dir_vars:self.dir_vars ~cur_dir:self.cur_dir path in
     if Sys.file_exists path && Sys.is_directory path then
       ()
     else
@@ -304,7 +312,7 @@ let add_stanza_ (st : Stanza.t) self : t =
       | None -> Dir.E_comment
       | Some e -> conv_expect self e
     in
-    let d = { Dir.path; expect; loc; pattern } in
+    let d = { Dir.name; path; expect; loc; pattern } in
     add_dir d self
   | St_prover
       {

@@ -93,6 +93,7 @@ type t =
       invalid: regex;  (** regex for invalid proofs *)
     }
   | St_dir of {
+      name: string option;
       path: string;
       expect: expect option;
       pattern: regex option;  (** Pattern of problems in this directory *)
@@ -194,8 +195,10 @@ let pp out =
   let open Misc.Pp in
   function
   | St_enter_file f -> Fmt.fprintf out "(@[enter-file@ %a@])" pp_str f
-  | St_dir { path; expect; pattern; loc = _ } ->
-    Fmt.fprintf out "(@[<v>dir%a%a%a@])" (pp_f "path" Fmt.string) path
+  | St_dir { name; path; expect; pattern; loc = _ } ->
+    Fmt.fprintf out "(@[<v>dir%a%a%a%a@])"
+      (pp_opt "name" Fmt.string) name
+      (pp_f "path" Fmt.string) path
       (pp_opt "expect" pp_expect)
       expect
       (pp_opt "pattern" pp_regex)
@@ -437,11 +440,12 @@ let dec (st : state) : t list SD.t =
     [
       ( is_applied "dir",
         let* m = applied_fields "dir" in
+        let* name = Fields.field_opt m "name" string in
         let* path = Fields.field m "path" string in
         let* expect = Fields.field_opt m "expect" (dec_expect st) in
         let* pattern = Fields.field_opt m "pattern" dec_regex in
         let+ () = Fields.check_no_field_left m in
-        [ St_dir { path; expect; pattern; loc } ] );
+        [ St_dir { name; path; expect; pattern; loc } ] );
       ( is_applied "import-prelude",
         let+ b = applied1 "import-prelude" bool in
         st.parse_prelude <- b;
@@ -454,7 +458,7 @@ let dec (st : state) : t list SD.t =
             return name
           else
             failf (fun k ->
-                k "unknown tag %S, declare it with `cutom-tag`" name)
+                k "unknown tag %S, declare it with `custom-tag`" name)
         in
         let dec_tags =
           list_of ~what:"pairs (tag regex)"

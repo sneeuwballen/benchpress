@@ -201,6 +201,8 @@ same repository).
   * custom tags can be used with `(tag foo regex)`: a tag named `foo` will be
     used when `regex` matches the prover's output.
 - `(dir …)` defines a directory:
+  * `(name …)`: unique name used to refer to this directory in the config. You can
+    refer to previously defined directories using `${dir:…}`.
   * `(path …)` defines the path. The rules below apply to any file within this directory.
   * `(pattern ".*.smt2")` means only files matching the (perl) regex will be considered.
   * `(expect …)` defines how to find the expected result of each file (which will

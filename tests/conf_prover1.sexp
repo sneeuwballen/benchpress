@@ -23,6 +23,7 @@
   (inherits fake1))
 
 (dir
+  (name fake)
   (pattern ".*.fake")
   (path $cur_dir/fake_files/))
 
@@ -31,4 +32,4 @@
   (action
     (run_provers
       (provers (fake1 fake2))
-      (dirs ($cur_dir/fake_files/)))))
+      (dirs (${dir:fake})))))
