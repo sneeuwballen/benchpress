@@ -27,9 +27,7 @@ let rec pp_expect out = function
 
 let pp out { name; path; expect; pattern; loc = _ } : unit =
   let open Misc.Pp in
-  Fmt.fprintf out "(@[<v1>dir%a%a%a%a@])"
-    (pp_opt "name" Fmt.string) name
-    (pp_f "path" Fmt.string) path
-    (pp_f "expect" pp_expect) expect
+  Fmt.fprintf out "(@[<v1>dir%a%a%a%a@])" (pp_opt "name" Fmt.string) name
+    (pp_f "path" Fmt.string) path (pp_f "expect" pp_expect) expect
     (pp_opt "pattern" pp_regex)
     pattern

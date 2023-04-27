@@ -17,7 +17,7 @@ type def =
 type t = {
   defs: def Str_map.t;
   dirs: Dir.t list; (* list of directories *)
-  dir_vars : path Str_map.t; (* named directories *)
+  dir_vars: path Str_map.t; (* named directories *)
   errors: Error.t list;
   cur_dir: string; (* for relative paths *)
   config_file: string option;
@@ -56,6 +56,7 @@ let add_dir (d : Dir.t) self : t =
     | None -> self.dir_vars
   in
   { self with dirs = d :: self.dirs; dir_vars }
+
 let errors self = self.errors
 let option_j self = self.option_j
 let option_progress self = self.option_progress
