@@ -1077,6 +1077,96 @@ let handle_show_csv (self : t) : unit =
       ]
     (Ok csv)
 
+(* get metadata for the file *)
+let get_meta (self : t) (p : string) : Test_metadata.t =
+  match Hashtbl.find self.meta_cache p with
+  | m -> m
+  | exception Not_found ->
+    let res =
+      guardf 500
+        (Error.wrapf "obtaining metadata for '%s'" (Filename.basename p))
+      @@ fun () ->
+      Sqlite3_utils.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY p
+        (fun db -> Test_metadata.of_db db)
+    in
+    (* cache if it's complete *)
+    if Test_metadata.is_complete res then Hashtbl.add self.meta_cache p res;
+    res
+
+(* compare different provers *)
+let handle_compare2 self : unit =
+  let server = self.server in
+  H.add_route_handler server ~meth:`GET H.Route.(exact "compare2" @/ return)
+  @@ fun req ->
+  let@ _chrono = query_wrap (Error.wrap "serving /compare2/") in
+  let provers =
+    List.filter_map (fun (key, value) ->
+        if key = "prover[]" then (
+          match String.split_on_char '/' value with
+          | [ file; prover ] -> Some (file, prover)
+          | _ -> None
+        ) else
+          None)
+    @@ H.Request.query req
+  in
+  (* H.Request.query reverses the query order, so we have to reverse it again *)
+  let provers = List.rev provers in
+  let prover1, prover2 =
+    match provers with
+    | [ prover1; prover2 ] -> Some prover1, Some prover2
+    | _ -> None, None
+  in
+  let entries, _more = Bin_utils.list_entries self.data_dir in
+  let mk_entry ?selected idx (file_path, size) : Html.elt =
+    let open Html in
+    let file_basename = Filename.basename file_path in
+    let meta = get_meta self file_path in
+    optgroup
+      [ A.label (Uuidm.to_string meta.uuid) ]
+      (CCList.map
+         (fun prover ->
+           let attrs =
+             A.value (file_basename ^ "/" ^ prover)
+             ::
+             (if selected = Some (file_basename, prover) then
+               [ A.selected "selected" ]
+             else
+               [])
+           in
+           option attrs [ txt prover ])
+         meta.provers)
+  in
+  let options1 = CCList.mapi (mk_entry ?selected:prover1) entries in
+  let options2 = CCList.mapi (mk_entry ?selected:prover2) entries in
+  let prover_info =
+    match provers with
+    | [ (f1, p1); (f2, p2) ] ->
+      let f1 = Bin_utils.mk_file_full f1 in
+      let f2 = Bin_utils.mk_file_full f2 in
+      [
+        Test_compare.Short.make_provers (f1, p1) (f2, p2)
+        |> Test_compare.Short.to_printbox |> Html.pb_html;
+      ]
+    | _ -> []
+  in
+  let html =
+    let open Html in
+    mk_page ~title:"compare2"
+      ([
+         mk_navigation [ "/compare2/", "compare", true ];
+         h3 [] [ txt "compare" ];
+         form []
+           [
+             select [ A.name "prover[]" ] options1;
+             select [ A.name "prover[]" ] options2;
+             mk_button ~cls:"btn-primary btn-sm" [] [ txt "Compare" ];
+           ];
+       ]
+      @ prover_info)
+  in
+  H.Response.make_string ~headers:default_html_headers
+    (Ok (Html.to_string html))
+
 (* compare files *)
 let handle_compare self : unit =
   let server = self.server in
@@ -1305,22 +1395,6 @@ let handle_job_interrupt (self : t) : unit =
   let r = Ok (Html.to_string @@ html_redirect ~href:"/" "job interrupted") in
   H.Response.make_string ~headers:default_html_headers r
 
-(* get metadata for the file *)
-let get_meta (self : t) (p : string) : Test_metadata.t =
-  match Hashtbl.find self.meta_cache p with
-  | m -> m
-  | exception Not_found ->
-    let res =
-      guardf 500
-        (Error.wrapf "obtaining metadata for '%s'" (Filename.basename p))
-      @@ fun () ->
-      Sqlite3_utils.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY p
-        (fun db -> Test_metadata.of_db db)
-    in
-    (* cache if it's complete *)
-    if Test_metadata.is_complete res then Hashtbl.add self.meta_cache p res;
-    res
-
 let html_of_files (self : t) ~off ~limit : Html.elt list =
   let entries, more = Bin_utils.list_entries self.data_dir ~off ~limit in
 
@@ -1445,6 +1519,9 @@ let handle_root (self : t) : unit =
                      li
                        [ A.class_ "nav-item" ]
                        [ mk_a [ A.href "/tasks/" ] [ txt "tasks" ] ];
+                     li
+                       [ A.class_ "nav-item" ]
+                       [ mk_a [ A.href "/compare2/ " ] [ txt "compare" ] ];
                    ];
                  ];
           ];
@@ -1591,6 +1668,7 @@ module Cmd = struct
       handle_run self;
       handle_job_interrupt self;
       handle_compare self;
+      handle_compare2 self;
       if allow_delete then handle_delete self;
       handle_file self;
       H.run server |> CCResult.map_err Error.of_exn

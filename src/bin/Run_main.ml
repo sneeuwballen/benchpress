@@ -36,8 +36,8 @@ let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
     (defs : Definitions.t) (r : Action.run_provers_slurm_submission) :
     _ * Test_compact_result.t =
   Error.guard
-    (Error.wrapf "run provers with slurm action@ `@[%a@]`" Action.pp_run_provers_slurm
-       r)
+    (Error.wrapf "run provers with slurm action@ `@[%a@]`"
+       Action.pp_run_provers_slurm r)
   @@ fun () ->
   let interrupted = CCLock.create false in
   let exp_r =

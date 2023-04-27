@@ -196,8 +196,7 @@ let pp out =
   function
   | St_enter_file f -> Fmt.fprintf out "(@[enter-file@ %a@])" pp_str f
   | St_dir { name; path; expect; pattern; loc = _ } ->
-    Fmt.fprintf out "(@[<v>dir%a%a%a%a@])"
-      (pp_opt "name" Fmt.string) name
+    Fmt.fprintf out "(@[<v>dir%a%a%a%a@])" (pp_opt "name" Fmt.string) name
       (pp_f "path" Fmt.string) path
       (pp_opt "expect" pp_expect)
       expect

@@ -14,6 +14,9 @@ module Short : sig
 
   val to_printbox : t -> PrintBox.t
   val make : filename -> filename -> (Prover.name * t) list
+
+  val make_provers : filename * Prover.name -> filename * Prover.name -> t
+  (** Make a single comparison between two provers in (possibly) different files *)
 end
 
 (* TODO
