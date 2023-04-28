@@ -4,10 +4,14 @@ module Gp = Gnuplot
 
 type t = { lines: (string * Prover.name * float list) list }
 
-let of_db db =
+let of_db ?provers db =
   Error.guard (Error.wrap "producting cactus plot") @@ fun () ->
   Profile.with_ "plot.of-db" @@ fun () ->
-  let provers = list_provers db in
+  let provers =
+    match provers with
+    | Some provers -> provers
+    | None -> list_provers db
+  in
   Logs.debug (fun k -> k "provers: [%s]" (String.concat ";" provers));
   let has_custom_tags =
     try
@@ -47,8 +51,8 @@ let combine (l : (_ * t) list) : t =
         l;
   }
 
-let of_file file : t =
-  try Db.with_db ~timeout:500 ~mode:`READONLY file of_db
+let of_file ?provers file : t =
+  try Db.with_db ~timeout:500 ~mode:`READONLY file (of_db ?provers)
   with e -> Error.(raise @@ of_exn e)
 
 let to_gp ~output self =

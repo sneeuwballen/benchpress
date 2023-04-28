@@ -6,8 +6,8 @@ open Misc
 
 type t
 
-val of_db : Db.t -> t
-val of_file : string -> t
+val of_db : ?provers:Prover.name list -> Db.t -> t
+val of_file : ?provers:Prover.name list -> string -> t
 val combine : (string * t) list -> t
 val show : t -> unit
 val save_to_file : t -> string -> unit
