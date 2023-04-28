@@ -23,6 +23,15 @@ let of_string ~tags = function
 
 let pp out s = Fmt.string out (to_string s)
 
+let to_printbox =
+  let open PrintBox in
+  function
+  | (Sat | Unsat) as r ->
+    text_with_style Style.(set_fg_color Green @@ bold) @@ to_string r
+  | Error as r ->
+    text_with_style Style.(set_fg_color Red @@ bold) @@ to_string r
+  | r -> text @@ to_string r
+
 let compare a b =
   match a, b with
   | Unsat, Unsat

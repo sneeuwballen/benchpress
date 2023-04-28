@@ -242,6 +242,13 @@ let uri_gnuplot pb = spf "/show-gp/%s/" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s/" (U.percent_encode pb)
 let uri_invalid pb = spf "/show-invalid/%s/" (U.percent_encode pb)
 
+let gnuplot_img ?(alt = "cactus plot of provers") pb =
+  let open Html in
+  img
+    [
+      A.src (uri_gnuplot pb); A.class_ "img-fluid"; "loading", "lazy"; A.alt alt;
+    ]
+
 let uri_show_detailed ?(offset = 0) ?(filter_prover = "") ?(filter_pb = "")
     ?(filter_res = "") ?(filter_expect = "") pb =
   spf "/show_detailed/%s/?%s%s%s%soffset=%d" (U.percent_encode pb)
@@ -477,17 +484,24 @@ let handle_show_gp (self : t) : unit =
   let@ chrono = query_wrap (Error.wrapf "serving /show-gp/%s" q_arg) in
   Log.info (fun k -> k "----- start show-gp %s -----" q_arg);
   let files = CCString.split_on_char ',' q_arg |> List.map String.trim in
-  let files_full = CCList.map (fun file -> Bin_utils.mk_file_full file) files in
+  let files_full =
+    CCList.map
+      (fun file ->
+        match CCString.split_on_char '/' file with
+        | [ file; prover ] -> Bin_utils.mk_file_full file, Some [ prover ]
+        | _ -> Bin_utils.mk_file_full file, None)
+      files
+  in
   let plot =
     let plot =
       match files_full with
-      | [ f ] -> Cactus_plot.of_file f
+      | [ (f, provers) ] -> Cactus_plot.of_file f
       | fs ->
         fs
-        |> List.mapi (fun i file ->
+        |> List.mapi (fun i (file, provers) ->
                guardf 500 (Error.wrapf "building cactus plot for %s" file)
                @@ fun () ->
-               let p = Cactus_plot.of_file file in
+               let p = Cactus_plot.of_file ?provers file in
                spf "file %d (%s)" i (Filename.basename file), p)
         |> Cactus_plot.combine
     in
@@ -1139,15 +1153,63 @@ let handle_compare2 self : unit =
   let options1 = CCList.mapi (mk_entry ?selected:prover1) entries in
   let options2 = CCList.mapi (mk_entry ?selected:prover2) entries in
   let prover_info =
+    let file_link fname text =
+      PrintBox.link ~uri:(uri_get_file fname) (PrintBox.text text)
+    in
     match provers with
     | [ (f1, p1); (f2, p2) ] ->
-      let f1 = Bin_utils.mk_file_full f1 in
-      let f2 = Bin_utils.mk_file_full f2 in
-      [
-        Test_compare.Short.make_provers (f1, p1) (f2, p2)
-        |> Test_compare.Short.to_printbox |> Html.pb_html;
-      ]
+      let ff1 = Bin_utils.mk_file_full f1 in
+      let ff2 = Bin_utils.mk_file_full f2 in
+      let get (short : Test_compare.Short.t) = function
+        | `Improved -> short.improved
+        | `Regressed -> short.regressed
+        | `Mismatch -> short.mismatch
+        | `Same -> short.same
+      in
+      let filter_to_string = function
+        | `Improved -> "Improved"
+        | `Regressed -> "Regressed"
+        | `Mismatch -> "Mismatch"
+        | `Same -> "Same"
+      in
+      let short = Test_compare.Short.make_provers (ff1, p1) (ff2, p2) in
+      let make filter =
+        let total = get short filter in
+        let page_size = min total 500 in
+        let limit_info =
+          if total <= page_size then
+            string_of_int total
+          else
+            Format.asprintf "1-%d of %d" page_size total
+        in
+        if total > 0 then
+          [
+            Html.(
+              details []
+                [
+                  summary []
+                    [ txtf "%s (%s)" (filter_to_string filter) limit_info ];
+                  Test_compare.Full.make_filtered ~page_size ~filter (ff1, p1)
+                    (ff2, p2)
+                  |> Test_compare.Full.to_printbox ~file_link
+                  |> Html.pb_html;
+                ]);
+          ]
+        else
+          []
+      in
+      [ short |> Test_compare.Short.to_printbox |> Html.pb_html ]
+      @ make `Mismatch @ make `Regressed @ make `Improved
     | _ -> []
+  in
+  let plot_html =
+    match provers with
+    | [] -> []
+    | _ ->
+      [
+        List.map (fun (f, p) -> f ^ "/" ^ p) provers
+        |> String.concat "," |> gnuplot_img;
+      ]
   in
   let html =
     let open Html in
@@ -1162,7 +1224,8 @@ let handle_compare2 self : unit =
              mk_button ~cls:"btn-primary btn-sm" [] [ txt "Compare" ];
            ];
        ]
-      @ prover_info)
+      @ prover_info
+      @ [ div [] plot_html ])
   in
   H.Response.make_string ~headers:default_html_headers
     (Ok (Html.to_string html))
@@ -1228,22 +1291,12 @@ let handle_compare self : unit =
     in
     let h =
       let open Html in
-      let uri_plot = uri_gnuplot (String.concat "," names) in
       mk_page ~title:"compare"
         [
           mk_navigation [];
           h3 [] [ txt "comparison" ];
           div [] [ pb_html box_compare_l ];
-          div []
-            [
-              img
-                [
-                  A.src uri_plot;
-                  A.class_ "img-fluid";
-                  "loading", "lazy";
-                  A.alt "cactus plot of provers";
-                ];
-            ];
+          div [] [ gnuplot_img (String.concat "," names) ];
         ]
     in
     H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
