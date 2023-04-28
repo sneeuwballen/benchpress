@@ -183,14 +183,7 @@ let to_printbox ?link:(mk_link = default_pp_linker) (self : t)
     PB.t * PB.t * string * string * string option =
   let open PB in
   Logs.debug (fun k -> k "coucou");
-  let pp_res r =
-    match r with
-    | Res.Sat | Res.Unsat ->
-      text_with_style Style.(set_fg_color Green @@ bold) @@ Res.to_string r
-    | Res.Error ->
-      text_with_style Style.(set_fg_color Red @@ bold) @@ Res.to_string r
-    | _ -> text @@ Res.to_string r
-  and pp_proof_res = function
+  let pp_proof_res = function
     | Proof_check_res.Valid ->
       text_with_style Style.(set_fg_color Green @@ bold) "valid"
     | Proof_check_res.Invalid ->
@@ -208,8 +201,8 @@ let to_printbox ?link:(mk_link = default_pp_linker) (self : t)
          [
            ( "problem.path",
              mk_link self.program.Prover.name self.problem.Problem.name );
-           "problem.expected_res", pp_res self.problem.Problem.expected;
-           "res", pp_res self.res;
+           "problem.expected_res", Res.to_printbox self.problem.Problem.expected;
+           "res", Res.to_printbox self.res;
          ];
          [
            "rtime", text (Misc.human_duration self.raw.rtime);

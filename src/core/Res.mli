@@ -19,3 +19,4 @@ val compare : t -> t -> [ `Same | `LeftBetter | `RightBetter | `Mismatch ]
 val pp : t CCFormat.printer
 val to_string : t -> string
 val of_string : tags:string list -> string -> t
+val to_printbox : t -> PrintBox.t

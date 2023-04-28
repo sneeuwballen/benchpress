@@ -1153,14 +1153,53 @@ let handle_compare2 self : unit =
   let options1 = CCList.mapi (mk_entry ?selected:prover1) entries in
   let options2 = CCList.mapi (mk_entry ?selected:prover2) entries in
   let prover_info =
+    let file_link fname text =
+      PrintBox.link ~uri:(uri_get_file fname) (PrintBox.text text)
+    in
     match provers with
     | [ (f1, p1); (f2, p2) ] ->
       let ff1 = Bin_utils.mk_file_full f1 in
       let ff2 = Bin_utils.mk_file_full f2 in
-      [
-        Test_compare.Short.make_provers (ff1, p1) (ff2, p2)
-        |> Test_compare.Short.to_printbox |> Html.pb_html;
-      ]
+      let get (short : Test_compare.Short.t) = function
+        | `Improved -> short.improved
+        | `Regressed -> short.regressed
+        | `Mismatch -> short.mismatch
+        | `Same -> short.same
+      in
+      let filter_to_string = function
+        | `Improved -> "Improved"
+        | `Regressed -> "Regressed"
+        | `Mismatch -> "Mismatch"
+        | `Same -> "Same"
+      in
+      let short = Test_compare.Short.make_provers (ff1, p1) (ff2, p2) in
+      let make filter =
+        let total = get short filter in
+        let page_size = min total 500 in
+        let limit_info =
+          if total <= page_size then
+            string_of_int total
+          else
+            Format.asprintf "1-%d of %d" page_size total
+        in
+        if total > 0 then
+          [
+            Html.(
+              details []
+                [
+                  summary []
+                    [ txtf "%s (%s)" (filter_to_string filter) limit_info ];
+                  Test_compare.Full.make_filtered ~page_size ~filter (ff1, p1)
+                    (ff2, p2)
+                  |> Test_compare.Full.to_printbox ~file_link
+                  |> Html.pb_html;
+                ]);
+          ]
+        else
+          []
+      in
+      [ short |> Test_compare.Short.to_printbox |> Html.pb_html ]
+      @ make `Mismatch @ make `Regressed @ make `Improved
     | _ -> []
   in
   let plot_html =
