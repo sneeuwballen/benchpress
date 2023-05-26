@@ -69,7 +69,7 @@ type top_task =
       Action.run_provers_slurm_submission * Definitions.t
 
 let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
-    ?summary ?task ?dir_file ?proof_dir ?output ?(save = true)
+    ?summary ?task ?(dir_files = []) ?proof_dir ?output ?(save = true)
     ?(wal_mode = false) ~desktop_notification ~no_failure ~update
     ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks
     (defs : Definitions.t) paths () : unit =
@@ -78,13 +78,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
   let timestamp = Unix.gettimeofday () in
   let notify = Notify.make defs in
   (* parse list of files, if need be *)
-  let paths =
-    match dir_file with
-    | None -> paths
-    | Some f ->
-      let f_lines = CCIO.with_in f CCIO.read_lines_l in
-      List.rev_append f_lines paths
-  in
+  let paths = Definitions.mk_paths ~dir_files paths in
   (* parse config *)
   let tt_task =
     match task with

@@ -19,7 +19,7 @@ module Run = struct
   (* sub-command for running tests *)
   let cmd =
     let open Cmdliner in
-    let aux j pp_results dyn paths dir_file proof_dir defs task timeout memory
+    let aux j pp_results dyn paths dir_files proof_dir defs task timeout memory
         meta provers csv summary no_color output save wal_mode
         desktop_notification no_failure update =
       catch_err @@ fun () ->
@@ -31,7 +31,7 @@ module Run = struct
           None
       in
       Run_main.main ~pp_results ?dyn ~j ?timeout ?memory ?csv ~provers ~meta
-        ?task ?summary ?dir_file ?proof_dir ?output ~save ~wal_mode
+        ?task ?summary ~dir_files ?proof_dir ?output ~save ~wal_mode
         ~desktop_notification ~no_failure ~update defs paths ()
     in
     let defs = Bin_utils.definitions_term
@@ -49,10 +49,10 @@ module Run = struct
       Arg.(value & opt bool true & info [ "save" ] ~doc:"save results on disk")
     and wal_mode =
       Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
-    and dir_file =
+    and dir_files =
       Arg.(
         value
-        & opt (some string) None
+        & opt_all file []
         & info [ "F" ] ~doc:"file containing a list of files")
     and proof_dir =
       Arg.(
@@ -123,7 +123,7 @@ module Run = struct
     in
     Cmd.v (Cmd.info ~doc "run")
       Term.(
-        const aux $ j $ pp_results $ dyn $ paths $ dir_file $ proof_dir $ defs
+        const aux $ j $ pp_results $ dyn $ paths $ dir_files $ proof_dir $ defs
         $ task $ timeout $ memory $ meta $ provers $ csv $ summary $ no_color
         $ output $ save $ wal_mode $ desktop_notification $ no_failure $ update)
 end
@@ -132,7 +132,7 @@ module Slurm = struct
   (* sub-command for running tests with slurm *)
   let cmd =
     let open Cmdliner in
-    let aux j pp_results dyn paths dir_file proof_dir defs task timeout memory
+    let aux j pp_results dyn paths dir_files proof_dir defs task timeout memory
         meta provers csv summary no_color output save wal_mode
         desktop_notification no_failure update partition nodes addr port ntasks
         =
@@ -145,7 +145,7 @@ module Slurm = struct
           None
       in
       Run_main.main ~sbatch:true ~pp_results ?dyn ~j ?timeout ?memory ?csv
-        ~provers ~meta ?task ?summary ?dir_file ?proof_dir ?output ~wal_mode
+        ~provers ~meta ?task ?summary ~dir_files ?proof_dir ?output ~wal_mode
         ~desktop_notification ~no_failure ~update ~save ?partition ?nodes ?addr
         ?port ?ntasks defs paths ()
     in
@@ -167,10 +167,10 @@ module Slurm = struct
       Arg.(value & opt bool true & info [ "save" ] ~doc:"save results on disk")
     and wal_mode =
       Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
-    and dir_file =
+    and dir_files =
       Arg.(
         value
-        & opt (some string) None
+        & opt_all file []
         & info [ "F" ] ~doc:"file containing a list of files")
     and proof_dir =
       Arg.(
@@ -279,7 +279,7 @@ module Slurm = struct
     in
     Cmd.v (Cmd.info ~doc "slurm")
       Term.(
-        const aux $ j $ pp_results $ dyn $ paths $ dir_file $ proof_dir $ defs
+        const aux $ j $ pp_results $ dyn $ paths $ dir_files $ proof_dir $ defs
         $ task $ timeout $ memory $ meta $ provers $ csv $ summary $ no_color
         $ output $ save $ wal_mode $ desktop_notification $ no_failure $ update
         $ partition $ nodes $ addr $ port $ ntasks)
