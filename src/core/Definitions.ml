@@ -199,6 +199,13 @@ let mk_limits ?timeout ?memory ?stack () =
   in
   Limit.All.mk ?time ?memory ?stack ()
 
+(* Add lines from [files] to [dirs] *)
+let mk_paths ?(dir_files = []) dirs =
+  List.fold_left
+    (fun dirs f ->
+      let f_lines = CCIO.with_in f CCIO.read_lines_l in
+      List.rev_append f_lines dirs) dirs dir_files
+
 let mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~paths ~provers ~loc
     (self : t) : Action.run_provers =
   let provers = CCList.map (find_prover' self) provers in
@@ -243,10 +250,11 @@ let mk_run_provers_slurm_submission ?j ~paths ?timeout ?memory ?stack ?pattern
 let rec mk_action (self : t) (a : Stanza.action) : _ =
   match a with
   | Stanza.A_run_provers
-      { provers; memory; dirs; timeout; stack; pattern; j; loc } ->
+      { provers; memory; dirs; dir_files; timeout; stack; pattern; j; loc } ->
+    let paths = mk_paths ~dir_files dirs in
     let a =
       mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~loc:(Some loc)
-        ~paths:dirs ~provers self
+        ~paths ~provers self
     in
     Action.Act_run_provers a
   | Stanza.A_run_provers_slurm
@@ -254,6 +262,7 @@ let rec mk_action (self : t) (a : Stanza.action) : _ =
         provers;
         memory;
         dirs;
+        dir_files;
         timeout;
         stack;
         pattern;
@@ -265,9 +274,10 @@ let rec mk_action (self : t) (a : Stanza.action) : _ =
         ntasks;
         loc;
       } ->
+    let paths = mk_paths ~dir_files dirs in
     let a =
       mk_run_provers_slurm_submission ?j ?timeout ?memory ?stack ?pattern ~loc
-        ~paths:dirs ~provers ?partition ?nodes ?addr ?port ?ntasks self
+        ~paths ~provers ?partition ?nodes ?addr ?port ?ntasks self
     in
     Action.Act_run_slurm_submission a
   | Stanza.A_progn l ->

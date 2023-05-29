@@ -222,6 +222,10 @@ same repository).
   * `(provers (p1 … pn))` list of (names of) provers defined in other stanzas
   * `(dirs (p1 … pn))` paths containing benchmarks. The paths must be subdirectories
     of already defined directories (see the `dir` stanza above)
+  * `(dir_files (p1 … pn))` paths to files containing problem paths, one
+    problem path per line.  Each line can also be a directory, in which case
+    all the problems in the directory will be added. The same restrictions as
+    for `dirs` apply. This has the same behavior as option `-F`.
   * `(timeout n)` (optional) defines a timeout in seconds
   * `(memory n)` (optional) defines a memory limit in MB
   * `(pattern regex)` (optional) an additional regex for files to consider in `dirs`

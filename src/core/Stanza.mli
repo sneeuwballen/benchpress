@@ -27,6 +27,7 @@ type action =
   | A_run_provers of {
       j: int option;
       dirs: string list; (* list of directories to examine *)
+      dir_files: string list; (* list of files containing directories, as in option -F *)
       pattern: regex option;
       provers: string list;
       timeout: int option;
@@ -37,6 +38,7 @@ type action =
   | A_run_provers_slurm of {
       j: int option;
       dirs: string list; (* list of directories to examine *)
+      dir_files: string list; (* list of files containing directories, as in option -F *)
       pattern: regex option;
       provers: string list;
       timeout: int option;

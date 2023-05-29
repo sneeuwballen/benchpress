@@ -41,6 +41,7 @@ val add_stanza : ?reify_errors:bool -> Stanza.t -> t -> t
 val add_stanza_l : ?reify_errors:bool -> Stanza.t list -> t -> t
 val of_stanza_l : ?reify_errors:bool -> Stanza.t list -> t
 val mk_subdir : t -> string -> Subdir.t
+val mk_paths : ?dir_files:string list -> string list -> string list
 
 val mk_run_provers :
   ?j:int ->

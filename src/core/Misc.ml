@@ -107,6 +107,10 @@ module Pp = struct
     | None -> ()
     | Some x -> Fmt.fprintf out "@ (@[%s@ %a@])" what f x
 
+  let pp_fl1 what f out = function
+    | [] -> ()
+    | l -> pp_f what (pp_l f) out l
+
   let pp_l1 f out l =
     if l = [] then
       ()

@@ -32,6 +32,7 @@ type action =
   | A_run_provers of {
       j: int option;
       dirs: string list; (* list of directories to examine *)
+      dir_files: string list; (* list of files containing directories, as in option -F *)
       pattern: regex option;
       provers: string list;
       timeout: int option;
@@ -42,6 +43,7 @@ type action =
   | A_run_provers_slurm of {
       j: int option;
       dirs: string list; (* list of directories to examine *)
+      dir_files: string list; (* list of files containing directories, as in option -F *)
       pattern: regex option;
       provers: string list;
       timeout: int option;
@@ -140,11 +142,13 @@ let pp_stack_limit out = function
 let rec pp_action out =
   let open Misc.Pp in
   function
-  | A_run_provers { dirs; provers; timeout; memory; stack; pattern; j; loc = _ }
+  | A_run_provers { dirs; dir_files; provers; timeout; memory; stack; pattern; j; loc = _ }
     ->
-    Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a%a%a@])"
+    Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a%a%a%a@])"
       (pp_f "dirs" (pp_l pp_str))
       dirs
+      (pp_fl1 "dir_files" pp_str)
+      dir_files
       (pp_f "provers" (pp_l pp_str))
       provers
       (pp_opt "pattern" pp_regex)
@@ -155,6 +159,7 @@ let rec pp_action out =
   | A_run_provers_slurm
       {
         dirs;
+        dir_files;
         provers;
         timeout;
         memory;
@@ -168,9 +173,11 @@ let rec pp_action out =
         ntasks;
         loc = _;
       } ->
-    Fmt.fprintf out "(@[<v>run_provers_slurm%a%a%a%a%a%a%a%a%a%a%a%a@])"
+    Fmt.fprintf out "(@[<v>run_provers_slurm%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
       (pp_f "dirs" (pp_l pp_str))
       dirs
+      (pp_fl1 "dir_files" pp_str)
+      dir_files
       (pp_f "provers" (pp_l pp_str))
       provers
       (pp_opt "pattern" pp_regex)
@@ -375,6 +382,8 @@ let dec_action : action SD.t =
       ( is_applied "run_provers",
         let* m = applied_fields "run_provers" in
         let* dirs = Fields.field m "dirs" atom_or_atom_list in
+        let* dir_files = Fields.field_opt m "dir_files" atom_or_atom_list in
+        let dir_files = Option.value ~default:[] dir_files in
         let* provers = Fields.field m "provers" atom_or_atom_list in
         let* j = Fields.field_opt m "j" int in
         let* pattern = Fields.field_opt m "pattern" dec_regex in
@@ -383,11 +392,13 @@ let dec_action : action SD.t =
         let* stack = Fields.field_opt m "stack" dec_stack_limit in
         let+ () = Fields.check_no_field_left m in
         let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
-        A_run_provers { dirs; provers; timeout; memory; stack; pattern; j; loc }
+        A_run_provers { dirs; dir_files; provers; timeout; memory; stack; pattern; j; loc }
       );
       ( is_applied "run_provers_slurm",
         let* m = applied_fields "run_provers_slurm" in
         let* dirs = Fields.field m "dirs" atom_or_atom_list in
+        let* dir_files = Fields.field_opt m "dir_files" atom_or_atom_list in
+        let dir_files = Option.value ~default:[] dir_files in
         let* provers = Fields.field m "provers" atom_or_atom_list in
         let* j = Fields.field_opt m "j" int in
         let* pattern = Fields.field_opt m "pattern" dec_regex in
@@ -404,6 +415,7 @@ let dec_action : action SD.t =
         A_run_provers_slurm
           {
             dirs;
+            dir_files;
             provers;
             timeout;
             memory;
