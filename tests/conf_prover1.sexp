@@ -2,11 +2,11 @@
 (import-prelude false)
 
 (prover
-  (cmd "$cur_dir/fake_prover.sh $file") ; yep, pretty fake
+  (name templ1)
+  (cmd "$binary $file")
   (sat "^SAT")
   (unsat "^UNSAT")
-  (unknown "^UNKNOWN")
-  (name fake1))
+  (unknown "^UNKNOWN"))
 
 (proof_checker
   (name gadget)
@@ -15,12 +15,22 @@
   (invalid "^INVALID"))
 
 (prover
-  (name fake2)
-  (cmd "$cur_dir/fake_prover.sh $file $proof_file")
+  (name templ2)
+  (cmd "$binary $file $proof_file")
   (proof_ext "notreallyaproof")
   (produces_proof true)
   (proof_checker gadget)
-  (inherits fake1))
+  (inherits templ1))
+
+(prover
+  (name fake1)
+  (binary "$cur_dir/fake_prover.sh") ; yep, pretty fake
+  (inherits templ1))
+
+(prover
+  (name fake2)
+  (binary "$cur_dir/fake_prover.sh")
+  (inherits templ2))
 
 (dir
   (name fake)

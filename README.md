@@ -196,6 +196,9 @@ same repository).
   * `name`: unique name, used to refer to this prover in results, on the command line, etc
   * `cmd`: how to run the prover. Variables `$timeout`, `$file`, `$memory` are
     available and will refer to parameters used to run the prover on a file.
+    Variable `$binary` refers to the `binary` field if set, see below.
+  * `binary`: path to the prover binary. If not provided, will be inferred as
+    the first argument of the `cmd`.
   * `sat`, `unsat`, `unknown`, `timeout`, `memory` are (perl) regex used to recognize
     the result (or reason for failure by timeout or memory exhaustion) of the prover.
   * custom tags can be used with `(tag foo regex)`: a tag named `foo` will be
