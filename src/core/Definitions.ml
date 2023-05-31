@@ -328,6 +328,7 @@ let add_stanza_ (st : Stanza.t) self : t =
   | St_prover
       {
         name;
+        binary;
         cmd;
         sat;
         unsat;
@@ -359,6 +360,31 @@ let add_stanza_ (st : Stanza.t) self : t =
       | None, None -> Error.failf ~loc "needs 'inherits' or 'cmd'"
     in
     let cmd = Misc.str_replace [ "cur_dir", self.cur_dir ] cmd in
+
+    let binary =
+      match binary, inherits_p with
+      | Some b, _ ->
+        if not (str_mem "$binary" cmd) then
+          Error.failf ~loc "Prover's `cmd` does not contain $binary";
+        Misc.str_replace ["cur_dir", self.cur_dir] b
+      | None, Some p ->
+        if str_mem "$binary" cmd then
+          p.binary
+        else
+          Misc.get_binary_of_cmd cmd
+      | None, None ->
+        (* Don't outright forbid a command using "$binary" without a binary
+           field, because that is useful to define "template" provers. But
+           we also can't use [get_binary_of_cmd] because that would probably
+           return "$binary", which would get confusing. So we put in a
+           (probably) non-existent binary instead *)
+        if str_mem "$binary" cmd then begin
+          Log.warn (fun m ->
+            m "Prover's `cmd` uses $binary, but the prover has no binary");
+          "benchpress-no-prover-binary"
+        end else
+          Misc.get_binary_of_cmd cmd
+    in
 
     let sat =
       match sat, inherits_p with
@@ -414,9 +440,6 @@ let add_stanza_ (st : Stanza.t) self : t =
       Error.failf ~loc
         "Prover does not produce proof, but `cmd` does contains $proof_file.\n\
          It will not be substituted.";
-    let binary =
-      Misc.get_binary_of_cmd cmd |> Misc.str_replace [ "cur_dir", self.cur_dir ]
-    in
     let version =
       match version with
       | Some v -> v

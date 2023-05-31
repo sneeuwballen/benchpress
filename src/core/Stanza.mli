@@ -67,6 +67,8 @@ type t =
       name: string;
       loc: Loc.t;
       version: version_field option;
+      binary: string option;
+          (** Path to the binary to use.  Useful in combination with [inherits] *)
       cmd: string option;
           (** the command line to run.
           possibly contains $binary, $file, $memory and $timeout,

@@ -72,6 +72,7 @@ type t =
       name: string;
       loc: Loc.t;
       version: version_field option;
+      binary: string option;
       cmd: string option;
       produces_proof: bool option;
       proof_ext: string option;
@@ -212,6 +213,7 @@ let pp out =
   | St_prover
       {
         name;
+        binary;
         cmd;
         version;
         unsat;
@@ -230,8 +232,10 @@ let pp out =
     let pp_custom out (x, y) =
       Fmt.fprintf out "(@[tag %a@ %a@])" pp_str x pp_regex y
     in
-    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
-      (pp_f "name" pp_str) name (pp_opt "cmd" pp_str) cmd
+    Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
+      (pp_f "name" pp_str) name
+      (pp_opt "binary" pp_str) binary
+      (pp_opt "cmd" pp_str) cmd
       (pp_opt "version" pp_version_field)
       version
       (pp_opt "ulimits" Ulimit.pp)
@@ -481,6 +485,7 @@ let dec (st : state) : t list SD.t =
           CCOpt.get_or ~default:[] l
         in
         let* name = Fields.field m "name" string in
+        let* binary = Fields.field_opt m "binary" string in
         let* cmd = Fields.field_opt m "cmd" string in
         let* version = Fields.field_opt m "version" dec_version in
         let* sat = Fields.field_opt m "sat" dec_regex in
@@ -505,6 +510,7 @@ let dec (st : state) : t list SD.t =
           St_prover
             {
               name;
+              binary;
               cmd;
               version;
               sat;
@@ -637,6 +643,7 @@ let prover_wl_to_st
           Prover.
             {
               name;
+              binary;
               cmd;
               sat;
               unsat;
@@ -657,6 +664,7 @@ let prover_wl_to_st
   St_prover
     {
       name;
+      binary = Some binary;
       cmd = Some cmd;
       sat;
       unsat;
