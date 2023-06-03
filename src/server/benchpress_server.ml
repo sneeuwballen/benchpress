@@ -495,7 +495,7 @@ let handle_show_gp (self : t) : unit =
   let plot =
     let plot =
       match files_full with
-      | [ (f, provers) ] -> Cactus_plot.of_file f
+      | [ (f, _provers) ] -> Cactus_plot.of_file f
       | fs ->
         fs
         |> List.mapi (fun i (file, provers) ->
@@ -1131,7 +1131,7 @@ let handle_compare2 self : unit =
     | _ -> None, None
   in
   let entries, _more = Bin_utils.list_entries self.data_dir in
-  let mk_entry ?selected idx (file_path, size) : Html.elt =
+  let mk_entry ?selected _idx (file_path, _size) : Html.elt =
     let open Html in
     let file_basename = Filename.basename file_path in
     let meta = get_meta self file_path in
