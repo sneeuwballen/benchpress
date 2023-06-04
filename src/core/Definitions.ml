@@ -151,9 +151,11 @@ let mk_subdir self path : Subdir.t =
   let path = norm_path ~dir_vars:self.dir_vars ~cur_dir:self.cur_dir path in
   (* helper *)
   let is_parent (dir : string) (f : string) : bool =
-    let fd_dir = (Unix.stat dir).Unix.st_dev in
     let same_file f =
-      try (Unix.stat f).Unix.st_dev = fd_dir with _ -> false
+      try
+        Sys.command (Fmt.sprintf "test $(realpath %S) -ef $(realpath %S)" dir f)
+        = 0
+      with _ -> false
     in
     (* check f and its parents *)
     let rec check f =
@@ -522,3 +524,41 @@ let completions (self : t) ?before_pos (str : string) : def list =
            let loc = Def.loc d in
            Loc.Pos.le loc.input loc.stop query_pos))
   |> Iter.to_rev_list
+
+let pp_def out = function
+  | D_prover { view = p; _ } -> Fmt.fprintf out "%a" Prover.pp p
+  | D_task { view = t; _ } -> Fmt.fprintf out "%a" Task.pp t
+  | D_proof_checker { view = pc; _ } -> Fmt.fprintf out "%a" Proof_checker.pp pc
+
+let pp out
+    {
+      defs;
+      dirs;
+      dir_vars;
+      errors;
+      cur_dir;
+      config_file;
+      tags;
+      option_j;
+      option_progress;
+    } =
+  let open Misc.Pp in
+  Fmt.fprintf out "(@[<v1>Definitions%a%a%a%a%a%a%a%a%a@])"
+    (pp_f "def" (Str_map.pp Fmt.string pp_def))
+    defs
+    (pp_f "dirs" (pp_l Dir.pp))
+    dirs
+    (pp_f "dir_vars" (Str_map.pp Fmt.string Fmt.string))
+    dir_vars
+    (pp_f "dirs" (pp_l Error.pp))
+    errors
+    (pp_f "cur_dir" Fmt.string)
+    cur_dir
+    (pp_opt "config_file" Fmt.string)
+    config_file
+    (pp_f "tags" (pp_l Fmt.string))
+    tags
+    (pp_opt "option_j" Fmt.int)
+    option_j
+    (pp_opt "option_progress" Fmt.bool)
+    option_progress
