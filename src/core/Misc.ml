@@ -478,6 +478,39 @@ let establish_server n server_fun sockaddr =
   let sock, _ = mk_socket sockaddr in
   start_server n server_fun sock
 
+(* Not actually a ramdisk on windows *)
+let ramdisk_ref =
+  ref
+    (if Sys.unix then
+      Some "/dev/shm"
+    else
+      None)
+
+let has_ramdisk () = Option.is_some !ramdisk_ref
+
+let get_ramdisk () =
+  match !ramdisk_ref with
+  | Some ramdisk -> ramdisk
+  | None -> Filename.get_temp_dir_name ()
+
+let set_ramdisk ramdisk = ramdisk_ref := Some ramdisk
+
+(* Turns out that [Filename.open_temp_file] is not thread-safe *)
+let open_temp_file = CCLock.create Filename.open_temp_file
+
+let open_ram_file prefix suffix =
+  let temp_dir = get_ramdisk () in
+  CCLock.with_lock open_temp_file @@ fun open_temp_file ->
+  open_temp_file ~temp_dir prefix suffix
+
+let with_ram_file prefix suffix f =
+  let fname, oc = open_ram_file prefix suffix in
+  Fun.protect
+    ~finally:(fun () ->
+      close_out oc;
+      try Sys.remove fname with Sys_error _ -> ())
+    (fun () -> f fname)
+
 let with_affinity cpu f =
   let aff = Processor.Affinity.get_ids () in
   Processor.Affinity.set_ids [ cpu ];
