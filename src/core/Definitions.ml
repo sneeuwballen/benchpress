@@ -207,7 +207,8 @@ let mk_paths ?(dir_files = []) dirs =
   List.fold_left
     (fun dirs f ->
       let f_lines = CCIO.with_in f CCIO.read_lines_l in
-      List.rev_append f_lines dirs) dirs dir_files
+      List.rev_append f_lines dirs)
+    dirs dir_files
 
 let mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~paths ~provers ~loc
     (self : t) : Action.run_provers =
@@ -256,8 +257,8 @@ let rec mk_action (self : t) (a : Stanza.action) : _ =
       { provers; memory; dirs; dir_files; timeout; stack; pattern; j; loc } ->
     let paths = mk_paths ~dir_files dirs in
     let a =
-      mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~loc:(Some loc)
-        ~paths ~provers self
+      mk_run_provers ?j ?timeout ?memory ?stack ?pattern ~loc:(Some loc) ~paths
+        ~provers self
     in
     Action.Act_run_provers a
   | Stanza.A_run_provers_slurm
@@ -369,7 +370,7 @@ let add_stanza_ (st : Stanza.t) self : t =
       | Some b, _ ->
         if not (str_mem "$binary" cmd) then
           Error.failf ~loc "Prover's `cmd` does not contain $binary";
-        Misc.str_replace ["cur_dir", self.cur_dir] b
+        Misc.str_replace [ "cur_dir", self.cur_dir ] b
       | None, Some p ->
         if str_mem "$binary" cmd then
           p.binary
@@ -381,11 +382,11 @@ let add_stanza_ (st : Stanza.t) self : t =
            we also can't use [get_binary_of_cmd] because that would probably
            return "$binary", which would get confusing. So we put in a
            (probably) non-existent binary instead *)
-        if str_mem "$binary" cmd then begin
+        if str_mem "$binary" cmd then (
           Log.warn (fun m ->
-            m "Prover's `cmd` uses $binary, but the prover has no binary");
+              m "Prover's `cmd` uses $binary, but the prover has no binary");
           "benchpress-no-prover-binary"
-        end else
+        ) else
           Misc.get_binary_of_cmd cmd
     in
 
