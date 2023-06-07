@@ -32,7 +32,8 @@ type action =
   | A_run_provers of {
       j: int option;
       dirs: string list; (* list of directories to examine *)
-      dir_files: string list; (* list of files containing directories, as in option -F *)
+      dir_files: string list;
+          (* list of files containing directories, as in option -F *)
       pattern: regex option;
       provers: string list;
       timeout: int option;
@@ -43,7 +44,8 @@ type action =
   | A_run_provers_slurm of {
       j: int option;
       dirs: string list; (* list of directories to examine *)
-      dir_files: string list; (* list of files containing directories, as in option -F *)
+      dir_files: string list;
+          (* list of files containing directories, as in option -F *)
       pattern: regex option;
       provers: string list;
       timeout: int option;
@@ -143,7 +145,8 @@ let pp_stack_limit out = function
 let rec pp_action out =
   let open Misc.Pp in
   function
-  | A_run_provers { dirs; dir_files; provers; timeout; memory; stack; pattern; j; loc = _ }
+  | A_run_provers
+      { dirs; dir_files; provers; timeout; memory; stack; pattern; j; loc = _ }
     ->
     Fmt.fprintf out "(@[<v>run_provers%a%a%a%a%a%a%a%a@])"
       (pp_f "dirs" (pp_l pp_str))
@@ -233,8 +236,7 @@ let pp out =
       Fmt.fprintf out "(@[tag %a@ %a@])" pp_str x pp_regex y
     in
     Fmt.fprintf out "(@[<v>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
-      (pp_f "name" pp_str) name
-      (pp_opt "binary" pp_str) binary
+      (pp_f "name" pp_str) name (pp_opt "binary" pp_str) binary
       (pp_opt "cmd" pp_str) cmd
       (pp_opt "version" pp_version_field)
       version
@@ -396,7 +398,8 @@ let dec_action : action SD.t =
         let* stack = Fields.field_opt m "stack" dec_stack_limit in
         let+ () = Fields.check_no_field_left m in
         let memory = Some (CCOpt.get_or ~default:10_000_000 memory) in
-        A_run_provers { dirs; dir_files; provers; timeout; memory; stack; pattern; j; loc }
+        A_run_provers
+          { dirs; dir_files; provers; timeout; memory; stack; pattern; j; loc }
       );
       ( is_applied "run_provers_slurm",
         let* m = applied_fields "run_provers_slurm" in
