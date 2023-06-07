@@ -511,6 +511,44 @@ let with_ram_file prefix suffix f =
       try Sys.remove fname with Sys_error _ -> ())
     (fun () -> f fname)
 
+let with_copy_to_ram fname f =
+  if has_ramdisk () then (
+    let suffix = Filename.basename fname in
+    let fname =
+      CCIO.with_in ~flags:[ Open_binary ] fname @@ fun ic ->
+      let fname, oc = open_ram_file "" suffix in
+      Fun.protect
+        ~finally:(fun () -> close_out oc)
+        (fun () ->
+          CCIO.with_out ~flags:[ Open_binary ] fname @@ fun oc ->
+          CCIO.copy_into ~bufsize:(64 * 1024) ic oc;
+          fname)
+    in
+    Fun.protect
+      ~finally:(fun () -> try Sys.remove fname with Sys_error _ -> ())
+      (fun () -> f fname)
+  ) else
+    f fname
+
+let with_copy_from_ram fname f =
+  if has_ramdisk () then (
+    let suffix = Filename.basename fname in
+    let ram_fname, oc = open_ram_file "" suffix in
+    Fun.protect
+      ~finally:(fun () ->
+        ( CCIO.with_in ~flags:[ Open_binary ] ram_fname @@ fun ic ->
+          CCIO.copy_into ~bufsize:(64 * 1024) ic oc );
+        close_out oc;
+        Sys.remove ram_fname)
+      (fun () -> f ram_fname)
+  ) else
+    f fname
+
+let with_copy_from_ram_opt fname f =
+  match fname with
+  | Some fname -> with_copy_from_ram fname (fun fname -> f (Some fname))
+  | None -> f None
+
 let with_affinity cpu f =
   let aff = Processor.Affinity.get_ids () in
   Processor.Affinity.set_ids [ cpu ];
