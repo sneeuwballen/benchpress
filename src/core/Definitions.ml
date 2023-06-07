@@ -151,11 +151,12 @@ let mk_subdir self path : Subdir.t =
   let path = norm_path ~dir_vars:self.dir_vars ~cur_dir:self.cur_dir path in
   (* helper *)
   let is_parent (dir : string) (f : string) : bool =
+    let dir_st = Unix.(stat dir) in
     let same_file f =
       try
-        Sys.command (Fmt.sprintf "test $(realpath %S) -ef $(realpath %S)" dir f)
-        = 0
-      with _ -> false
+        let f_st = Unix.(stat f) in
+        dir_st.st_ino = f_st.st_ino && dir_st.st_dev = f_st.st_dev
+      with Unix.Unix_error _ -> false
     in
     (* check f and its parents *)
     let rec check f =
