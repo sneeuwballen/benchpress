@@ -3,16 +3,17 @@ module T = Test
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
-let execute_run_prover_action ?j ?timestamp ?pp_results ?dyn ?limits ?proof_dir
-    ?output ~notify ~uuid ~save ~wal_mode ~update (defs : Definitions.t)
-    (r : Action.run_provers) : _ * Test_compact_result.t =
+let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
+    ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update
+    (defs : Definitions.t) (r : Action.run_provers) : _ * Test_compact_result.t
+    =
   Error.guard
     (Error.wrapf "run prover action@ `@[%a@]`" Action.pp_run_provers r)
   @@ fun () ->
   let interrupted = CCLock.create false in
   let r =
-    Exec_action.Exec_run_provers.expand ?dyn ?j ?proof_dir ?limits defs r.limits
-      r.j r.pattern r.dirs r.provers
+    Exec_action.Exec_run_provers.expand ?dyn ?j ?cpus ?proof_dir ?limits defs
+      r.limits r.j r.pattern r.dirs r.provers
   in
   let len = List.length r.problems in
   Notify.sendf notify "testing with %d provers, %d problems…"
@@ -68,7 +69,7 @@ type top_task =
   | TT_run_slurm_submission of
       Action.run_provers_slurm_submission * Definitions.t
 
-let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
+let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     ?summary ?task ?(dir_files = []) ?proof_dir ?output ?(save = true)
     ?(wal_mode = false) ~desktop_notification ~no_failure ~update
     ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks
@@ -188,7 +189,7 @@ let main ?j ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
 
     let top_res, (results : Test_compact_result.t) =
       execute_run_prover_action ~uuid ?pp_results ?proof_dir ?dyn:progress
-        ~limits ?j ?output ~notify ~timestamp ~save ~wal_mode ~update defs
+        ~limits ?j ?cpus ?output ~notify ~timestamp ~save ~wal_mode ~update defs
         run_provers_action
     in
     if CCOpt.is_some csv then (

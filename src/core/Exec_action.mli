@@ -5,8 +5,13 @@ type cb_progress =
 module Exec_run_provers : sig
   type t = Action.run_provers
 
+  type jobs =
+    | Bounded of int (* [Bounded j] is at most [j] parallel jobs *)
+    | Cpus of int list
+  (* [Cpus cpus] assigns an exclusive cpu from [cpus] to each job *)
+
   type expanded = {
-    j: int;
+    j: jobs;
     problems: Problem.t list;
     provers: Prover.t list;
     checkers: Proof_checker.t Misc.Str_map.t;
@@ -17,6 +22,7 @@ module Exec_run_provers : sig
   val expand :
     ?slurm:bool ->
     ?j:int ->
+    ?cpus:int list ->
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?proof_dir:string ->

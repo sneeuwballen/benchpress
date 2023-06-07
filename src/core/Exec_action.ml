@@ -5,9 +5,10 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.runexec-action"))
 
 module Exec_run_provers : sig
   type t = Action.run_provers
+  type jobs = Bounded of int | Cpus of int list
 
   type expanded = {
-    j: int;
+    j: jobs;
     problems: Problem.t list;
     provers: Prover.t list;
     checkers: Proof_checker.t Misc.Str_map.t;
@@ -18,6 +19,7 @@ module Exec_run_provers : sig
   val expand :
     ?slurm:bool ->
     ?j:int ->
+    ?cpus:int list ->
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?proof_dir:string ->
@@ -73,6 +75,7 @@ module Exec_run_provers : sig
     Test_top_result.t lazy_t * Test_compact_result.t
 end = struct
   type t = Action.run_provers
+  type jobs = Bounded of int | Cpus of int list
 
   let ( >? ) a b =
     match a with
@@ -85,7 +88,7 @@ end = struct
     | Some _ as x -> x
 
   type expanded = {
-    j: int;
+    j: jobs;
     problems: Problem.t list;
     provers: Prover.t list;
     checkers: Proof_checker.t Misc.Str_map.t;
@@ -136,21 +139,27 @@ end = struct
     | exn -> Error.(raise @@ of_exn exn)
 
   (* Expand options into concrete choices *)
-  let expand ?(slurm = false) ?j ?(dyn = false) ?limits ?proof_dir ?interrupted
-      (defs : Definitions.t) s_limits s_j s_pattern s_dirs s_provers : expanded
-      =
+  let expand ?(slurm = false) ?j ?cpus ?(dyn = false) ?limits ?proof_dir
+      ?interrupted (defs : Definitions.t) s_limits s_j s_pattern s_dirs
+      s_provers : expanded =
     let limits =
       match limits with
       | None -> s_limits
       | Some l -> Limit.All.with_defaults l ~defaults:s_limits
     in
     let j =
-      j >?? s_j
-      >?
-      if slurm then
-        0
-      else
-        Misc.guess_cpu_count ()
+      match cpus with
+      | None ->
+        let j =
+          j >?? s_j
+          >?
+          if slurm then
+            0
+          else
+            Misc.guess_cpu_count ()
+        in
+        Bounded j
+      | Some cpus -> Cpus cpus
     in
     let problems =
       CCList.flat_map
@@ -331,10 +340,19 @@ end = struct
     (* run provers *)
     let res_l =
       let db = CCLock.create db in
-      Misc.Par_map.map_p ~j:self.j
-        (fun (prover, pb) -> run_prover_pb ~prover ~pb ~db ())
-        jobs
-      |> CCList.flatten
+      match self.j with
+      | Bounded j ->
+        Misc.Par_map.map_p ~j
+          (fun (prover, pb) -> run_prover_pb ~prover ~pb ~db ())
+          jobs
+        |> CCList.flatten
+      | Cpus cpus ->
+        Misc.Par_map.map_with_resource ~resources:cpus
+          (fun cpu (prover, pb) ->
+            Log.debug (fun m -> m "Running on cpu %d" cpu);
+            Misc.with_affinity cpu (run_prover_pb ~prover ~pb ~db))
+          jobs
+        |> CCList.flatten
     in
 
     if interrupted () then Error.fail "run.interrupted";
@@ -375,6 +393,13 @@ end = struct
       ~port ~ntasks ?output ?(update = false) ~uuid ~save ~wal_mode
       (self : expanded) : _ * _ =
     ignore on_start_proof_check;
+    let j =
+      match self.j with
+      | Bounded j -> j
+      | Cpus cpus ->
+        Log.warn (fun m -> m "cpu affinity ignored in slurm mode");
+        List.length cpus
+    in
     let start = Misc.now_s () in
     let db =
       prepare_db ~wal_mode ?output ~update timestamp uuid save self.provers
@@ -556,7 +581,7 @@ end = struct
           (Unix.string_of_inet_addr addr)
           used_port);
     let sbatch_cmds =
-      Slurm_cmd.mk_sbatch_cmds self.limits self.proof_dir self.j addr used_port
+      Slurm_cmd.mk_sbatch_cmds self.limits self.proof_dir j addr used_port
         partition config_file nodes
     in
     let job_ids =
