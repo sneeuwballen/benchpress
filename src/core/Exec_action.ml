@@ -669,7 +669,7 @@ end = struct
     end
 
   (* callback that prints a result *)
-  let progress_dynamic len =
+  let progress_dynamic ~n_fail len =
     let start = Misc.now_s () in
     let len = ref len in
     let count = ref 0 in
@@ -697,9 +697,15 @@ end = struct
               '-')
       in
       let percent, time_elapsed, eta = get_state () in
+      let fail_indicator =
+        if !n_fail = 0 then
+          ""
+        else
+          spf " !%d" !n_fail
+      in
       Misc.synchronized (fun () ->
-          Format.printf "... %5d/%d | %3.1f%% [%6s: %s] [eta %6s]@?" !count !len
-            percent
+          Format.printf "... %5d/%d%s | %3.1f%% [%6s: %s] [eta %6s]@?" !count
+            !len fail_indicator percent
             (Misc.human_duration time_elapsed)
             bar (Misc.human_duration eta));
       if !count = !len then Misc.synchronized (fun () -> Format.printf "@.")
@@ -707,7 +713,8 @@ end = struct
     pp_bar, get_state, bump, tick
 
   let progress ~w_prover ~w_pb ?cb_progress ~pp_results ~dyn n : t =
-    let pp_bar, get_state, bump, tick = progress_dynamic n in
+    let n_fail = ref 0 in
+    let pp_bar, get_state, bump, tick = progress_dynamic ~n_fail n in
     let pp_common_ () =
       if dyn then (
         output_string stdout Misc.reset_line;
@@ -723,6 +730,9 @@ end = struct
     object
       method on_res res =
         tick ();
+
+        if Run_prover_problem.is_bad res then incr n_fail;
+
         if pp_results then
           Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
         pp_common_ ()

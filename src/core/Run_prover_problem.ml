@@ -50,6 +50,11 @@ let run_proof_check ~limits prover checker pb ~proof_file : check_res =
   in
   res
 
+let is_bad (res : job_res) : bool =
+  match Problem.compare_res res.problem res.res with
+  | `Mismatch -> true
+  | _ -> false
+
 let pp_result ~w_prover ~w_pb out (res : Test.result) : unit =
   let pp_res out () : unit =
     let str =

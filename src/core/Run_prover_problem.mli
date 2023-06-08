@@ -24,6 +24,9 @@ val run_proof_check :
   proof_file:string ->
   check_res
 
+val is_bad : job_res -> bool
+(** Is it a mismatch with the expected result, i.e a bug? *)
+
 val pp_result : w_prover:int -> w_pb:int -> job_res Fmt.printer
 
 val pp_result_progress : w_prover:int -> w_pb:int -> job_res -> unit
