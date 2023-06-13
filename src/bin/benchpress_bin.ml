@@ -19,8 +19,8 @@ module Run = struct
   (* sub-command for running tests *)
   let cmd =
     let open Cmdliner in
-    let aux j pp_results dyn paths dir_files proof_dir defs task timeout memory
-        meta provers csv summary no_color output save wal_mode
+    let aux j cpus pp_results dyn paths dir_files proof_dir defs task timeout
+        memory meta provers csv summary no_color output save wal_mode
         desktop_notification no_failure update =
       catch_err @@ fun () ->
       if no_color then CCFormat.set_color_default false;
@@ -30,8 +30,8 @@ module Run = struct
         else
           None
       in
-      Run_main.main ~pp_results ?dyn ~j ?timeout ?memory ?csv ~provers ~meta
-        ?task ?summary ~dir_files ?proof_dir ?output ~save ~wal_mode
+      Run_main.main ~pp_results ?dyn ~j ?cpus ?timeout ?memory ?csv ~provers
+        ~meta ?task ?summary ~dir_files ?proof_dir ?output ~save ~wal_mode
         ~desktop_notification ~no_failure ~update defs paths ()
     in
     let defs = Bin_utils.definitions_term
@@ -51,8 +51,7 @@ module Run = struct
       Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
     and dir_files =
       Arg.(
-        value
-        & opt_all file []
+        value & opt_all file []
         & info [ "F" ] ~doc:"file containing a list of files")
     and proof_dir =
       Arg.(
@@ -67,6 +66,47 @@ module Run = struct
         & opt (some int) None
         & info [ "t"; "timeout" ] ~doc:"timeout (in s)")
     and j = Arg.(value & opt int 1 & info [ "j" ] ~doc:"level of parallelism")
+    and cpus =
+      let doc =
+        "Limit the specific CPUs or cores to use. When provided, the\n\
+        \      [-j] flag is ignored, and each prover gets allocated its own \
+         CPU core from\n\
+        \      this list. A comma-separated list or hyphen-separated ranges \
+         are allowed."
+      in
+      let parser s =
+        match String.split_on_char '-' s with
+        | [] -> assert false (* [split_on_char] invariant *)
+        | [ n ] -> Result.map (fun x -> x, x) Arg.(conv_parser int n)
+        | [ n; m ] ->
+          Result.bind Arg.(conv_parser int n) @@ fun n ->
+          Result.bind Arg.(conv_parser int m) @@ fun m ->
+          if m < n then
+            Error (`Msg (Format.asprintf "invalid range: %d-%d" n m))
+          else
+            Ok (n, m)
+        | _ -> Error (`Msg (Format.asprintf "invalid cpuset: %s" s))
+      in
+      let printer ppf (n, m) =
+        if n = m then
+          Format.pp_print_int ppf n
+        else
+          Format.fprintf ppf "%d-%d" n m
+      in
+      let cpuspec = Arg.conv ~docv:"MASK" (parser, printer) in
+      let parse xs =
+        let cpus =
+          CCList.flat_map
+            (fun (n, m) -> List.init (m + 1 - n) (fun i -> i + n))
+            xs
+          |> List.sort_uniq Int.compare
+        in
+        match cpus with
+        | [] -> None
+        | _ -> Some cpus
+      in
+      Term.(
+        const parse $ Arg.(value & opt (list cpuspec) [] & info [ "cpus" ] ~doc))
     and memory =
       Arg.(
         value
@@ -123,9 +163,10 @@ module Run = struct
     in
     Cmd.v (Cmd.info ~doc "run")
       Term.(
-        const aux $ j $ pp_results $ dyn $ paths $ dir_files $ proof_dir $ defs
-        $ task $ timeout $ memory $ meta $ provers $ csv $ summary $ no_color
-        $ output $ save $ wal_mode $ desktop_notification $ no_failure $ update)
+        const aux $ j $ cpus $ pp_results $ dyn $ paths $ dir_files $ proof_dir
+        $ defs $ task $ timeout $ memory $ meta $ provers $ csv $ summary
+        $ no_color $ output $ save $ wal_mode $ desktop_notification
+        $ no_failure $ update)
 end
 
 module Slurm = struct
@@ -169,8 +210,7 @@ module Slurm = struct
       Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
     and dir_files =
       Arg.(
-        value
-        & opt_all file []
+        value & opt_all file []
         & info [ "F" ] ~doc:"file containing a list of files")
     and proof_dir =
       Arg.(

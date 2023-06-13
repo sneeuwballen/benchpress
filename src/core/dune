@@ -7,7 +7,7 @@
  (wrapped true)
  (libraries containers containers.unix containers-thread re re.perl csv iter
    printbox printbox-text logs logs.cli gnuplot ptime ptime.clock.os uuidm
-   sqlite3 sqlite3_utils cmdliner pp_loc)
+   sqlite3 sqlite3_utils cmdliner pp_loc processor)
  (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 
 (rule

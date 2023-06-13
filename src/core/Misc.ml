@@ -317,6 +317,34 @@ module Par_map = struct
     Logs.debug (fun k -> k "par-map: stop pool");
     P.stop ();
     res
+
+  (* Map on the list [l] with each call to [f] being associated one of the
+     resources from [resources] that is guaranteed not to be used concurrently
+     by another call to [f]. *)
+  let map_with_resource ~resources f l =
+    match l with
+    | [] -> []
+    | _ ->
+      if CCList.is_empty resources then
+        invalid_arg "map_with_resource: ~resources";
+      die_on_sigterm ();
+      let jobs = List.length resources in
+      let queue = CCBlockingQueue.create jobs in
+      List.iter (CCBlockingQueue.push queue) resources;
+      let f x =
+        let resource = CCBlockingQueue.take queue in
+        Fun.protect
+          ~finally:(fun () -> CCBlockingQueue.push queue resource)
+          (fun () -> f resource x)
+      in
+      Logs.debug (fun m -> m "par-map: create pool j=%d" jobs);
+      let module P = CCPool.Make (struct
+        let max_size = jobs
+      end) in
+      let res = P.Fut.map_l (P.Fut.make1 f) l |> P.Fut.get in
+      Logs.debug (fun m -> m "par-map: stop pool");
+      P.stop ();
+      res
 end
 
 module Git = struct
@@ -449,3 +477,13 @@ let start_server n server_fun sock =
 let establish_server n server_fun sockaddr =
   let sock, _ = mk_socket sockaddr in
   start_server n server_fun sock
+
+let with_affinity cpu f =
+  let aff = Processor.Affinity.get_ids () in
+  Processor.Affinity.set_ids [ cpu ];
+  Fun.protect ~finally:(fun () -> Processor.Affinity.set_ids aff) f
+
+let with_affinity_opt cpu f =
+  match cpu with
+  | None -> f ()
+  | Some cpu -> with_affinity cpu f

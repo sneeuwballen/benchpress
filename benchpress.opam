@@ -21,6 +21,7 @@ depends: [
   "uuidm"
   "base64"
   "ptime"
+  "processor"
   "pp_loc" { >= "2.0" & < "3.0" }
   "gnuplot" { >= "0.6" & < "0.8" }
   "sqlite3"
