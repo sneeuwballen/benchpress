@@ -32,10 +32,10 @@ let pp out t =
       else
         "")
 
-(* Make a command to enforce a set of limits *)
-let cmd ~conf ~limits =
+(* Prefix a command to enforce a set of limits *)
+let prefix_cmd ~conf ~limits ~cmd =
   if (not conf.time) && (not conf.memory) && not conf.stack then
-    None
+    cmd
   else (
     let buf = Buffer.create 32 in
     let subst s =
@@ -50,14 +50,11 @@ let cmd ~conf ~limits =
       | None -> failwith (Printf.sprintf "cannot substitute in %S" s)
     in
     let add_str s = Buffer.add_substitute buf subst s in
-    Buffer.add_string buf "ulimit ";
-    if conf.time && CCOption.is_some limits.time then add_str "-t $timeout ";
-    if conf.memory && CCOption.is_some limits.memory then add_str "-Sm $memory ";
-    if conf.stack && CCOption.is_some limits.stack then add_str "-s $stack ";
-    Some (Buffer.contents buf)
+    if conf.time && CCOption.is_some limits.time then
+      add_str "ulimit -t $timeout ; ";
+    if conf.memory && CCOption.is_some limits.memory then
+      add_str "ulimit -Sm $memory ; ";
+    if conf.stack && CCOption.is_some limits.stack then
+      add_str "ulimit -s $stack ; ";
+    Buffer.contents buf ^ cmd
   )
-
-let prefix_cmd ?prefix ~cmd () =
-  match prefix with
-  | None -> cmd
-  | Some s -> s ^ "; " ^ cmd
