@@ -16,9 +16,6 @@ val pp : conf CCFormat.printer
 val mk : time:bool -> memory:bool -> stack:bool -> conf
 (** Create a ulimit conf. *)
 
-val cmd : conf:conf -> limits:Limit.All.t -> string option
-(** Given a ulimit conf, and a set of limits, return an adequate command
-    (if any is necessary) to enforce the limits using ulimit. *)
-
-val prefix_cmd : ?prefix:string -> cmd:string -> unit -> string
-(** Adequately prefix the given command with the optional given prefix command. *)
+val prefix_cmd : conf:conf -> limits:Limit.All.t -> cmd:string -> string
+(** Given a ulimit configuration and a set of limits, prefix the given command
+    with the adequate `ulimit` calls, if necessary, to enforce the limits. *)

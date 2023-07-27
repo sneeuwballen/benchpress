@@ -202,12 +202,12 @@ let run ?env ?proof_file ~limits ~file (self : t) : Run_proc_result.t =
   let cmd = make_command ?env ?proof_file ~limits self ~file in
   (* Give one more second to the ulimit timeout to account for the startup
      time and the time elasped between starting ulimit and starting the prover *)
-  let prefix =
-    Ulimit.cmd ~conf:self.ulimits
+  let cmd =
+    Ulimit.prefix_cmd ~conf:self.ulimits
       ~limits:
         (Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits)
+      ~cmd
   in
-  let cmd = Ulimit.prefix_cmd ?prefix ~cmd () in
   Run_proc.run cmd
 
 let analyze_p_opt (self : t) (r : Run_proc_result.t) : Res.t option =

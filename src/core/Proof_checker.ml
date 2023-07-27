@@ -43,12 +43,12 @@ let make_cmd ?env ~problem ~proof_file (self : t) : string =
 let run ?(limits = Limit.All.default) ~problem ~proof_file (self : t) =
   let cmd = make_cmd ~problem ~proof_file self in
   let ulimit = Ulimit.mk ~time:true ~memory:true ~stack:true in
-  let prefix =
-    Ulimit.cmd ~conf:ulimit
+  let cmd =
+    Ulimit.prefix_cmd ~conf:ulimit
       ~limits:
         (Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits)
+      ~cmd
   in
-  let cmd = Ulimit.prefix_cmd ?prefix ~cmd () in
   Run_proc.run cmd
 
 let analyze_res (self : t) (res : Run_proc_result.t) : Res.t option =
