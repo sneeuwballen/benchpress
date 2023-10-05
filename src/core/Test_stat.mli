@@ -4,16 +4,18 @@ open Common
 open Test
 module PB = PrintBox
 
+type detail_stats = { n: int; total: float; mean: float; sd: float }
+
 type t = {
-  unsat: int;
-  sat: int;
+  unsat: detail_stats;
+  sat: detail_stats;
   errors: int;
-  unknown: int;
+  unknown: detail_stats;
   timeout: int;
   memory: int;
   valid_proof: int;
   invalid_proof: int;
-  custom: (string * int) list;
+  custom: (string * detail_stats) list;
   total: int;
   total_time: float; (* for sat+unsat *)
 }
