@@ -2,8 +2,8 @@ open Common
 open Test
 module PB = PrintBox
 
-(* Aggregate function computing the mean and the standard deviation
-   of data series using the Welford's algoritm. *)
+(** Aggregate function computing the mean and the standard deviation
+   of data series using the Welford's algorithm. *)
 module Stats = struct
   type acc = { n: int; total: float; mean: float * float; s: float * float }
 
