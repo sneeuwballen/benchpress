@@ -81,23 +81,20 @@ let get_custom s r =
 let get_total r = r.total
 let get_total_time r = r.total_time
 
-let pb_detail_stats_color c { n; total; mean; sd } =
+let pb_details_stats_color ~details c { n; total; mean; sd } =
   let open PB in
-  if n = 0 then
+  if n = 0 || not details then
     align ~h:`Left ~v:`Center (int n)
   else
-    vlist
+    v_record
       [
-        pb_int_color c n;
-        grid
-          [|
-            [| text "total"; text (Misc.human_duration total) |];
-            [| text "mean"; text (Misc.human_duration mean) |];
-            [| text "deviation"; text (Misc.human_duration sd) |];
-          |];
+        "number", pb_int_color c n;
+        "total", text @@ Misc.human_duration total;
+        "mean", text @@ Misc.human_duration mean;
+        "deviation", text @@ Misc.human_duration sd;
       ]
 
-let to_printbox_l ?to_link l : PB.t =
+let to_printbox_l ?(details = false) ?to_link l : PB.t =
   let mk_row ?res lbl get_r mk_box : PB.t list =
     match to_link with
     | Some f ->
@@ -121,9 +118,10 @@ let to_printbox_l ?to_link l : PB.t =
   in
   let r1 =
     [
-      mk_row1 "sat" get_sat @@ pb_detail_stats_color PB.Style.(fg_color Green);
+      mk_row1 "sat" get_sat
+      @@ pb_details_stats_color ~details PB.Style.(fg_color Green);
       mk_row1 "unsat" get_unsat
-      @@ pb_detail_stats_color PB.Style.(fg_color Green);
+      @@ pb_details_stats_color ~details PB.Style.(fg_color Green);
       mk_row1 "sat+unsat" (fun r -> r.sat.n + r.unsat.n)
       @@ pb_int_color PB.Style.(fg_color Green);
       mk_row ~res:"error" "errors" get_errors
@@ -133,7 +131,7 @@ let to_printbox_l ?to_link l : PB.t =
       mk_row1 "invalid_proof" get_invalid_proof
       @@ pb_int_color PB.Style.(fg_color Red);
       mk_row1 "unknown" get_unknown
-      @@ pb_detail_stats_color PB.Style.(fg_color White);
+      @@ pb_details_stats_color ~details PB.Style.(fg_color White);
       mk_row "timeout" get_timeout PB.int;
     ]
   and r2 =

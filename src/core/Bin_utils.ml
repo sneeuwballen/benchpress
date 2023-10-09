@@ -92,8 +92,8 @@ let check_res ?(no_failure = false) notify (results : Test_top_result.t) : unit
   let a = Test_top_result.analyze results in
   check_res_an ~no_failure notify a
 
-let printbox_stat st : unit =
-  let box_st = Test_stat.to_printbox_l st in
+let printbox_stat ~details st : unit =
+  let box_st = Test_stat.to_printbox_l ~details st in
   Printf.printf "STAT:\n%s\n%!" (PrintBox_text.to_string box_st);
   ()
 
@@ -103,13 +103,13 @@ let printbox_analyze a =
   ()
 
 let printbox_compact_results (results : Test_compact_result.t) : unit =
-  printbox_stat results.cr_stat;
+  printbox_stat ~details:false results.cr_stat;
   printbox_analyze results.cr_analyze;
   ()
 
-let printbox_results (results : Test_top_result.t) : unit =
+let printbox_results ~details (results : Test_top_result.t) : unit =
   (let st = Test_top_result.stat results in
-   printbox_stat st);
+   printbox_stat ~details st);
   (let a = Test_top_result.analyze results in
    printbox_analyze a);
   ()
