@@ -28,7 +28,7 @@ depends: [
   "sqlite3_utils" { >= "0.4" & < "0.6" }
   "printbox" { >= "0.6" }
   "printbox-text" { >= "0.6" }
-  "ocaml" {>= "4.08" }
+  "ocaml" {>= "4.12" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"

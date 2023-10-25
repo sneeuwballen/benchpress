@@ -8,7 +8,7 @@ build: [
   ["dune" "build" "@doc" "-p" name] {with-doc}
 ]
 depends: [
-  "ocaml" {>= "4.08" }
+  "ocaml" {>= "4.12" }
   "dune" { >= "1.11" }
   "containers" { >= "3.0" & < "4.0" }
   "benchpress" { = version }

@@ -23,7 +23,7 @@ depends: [
   "tiny_httpd" { >= "0.12" & < "1.0" }
   "printbox" { >= "0.6" }
   "printbox-text" { >= "0.6" }
-  "ocaml" {>= "4.08" }
+  "ocaml" {>= "4.12" }
   "jemalloc" { >= "0.2" & < "0.3" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
