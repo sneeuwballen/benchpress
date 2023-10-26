@@ -16,8 +16,8 @@ jobs:
           #- windows-latest  # depext issue for gnuplot/jemalloc?
           #- macos-latest # slow
         ocaml-compiler:
-          - 4.08.x
           - 4.12.x
+          - 5.0.x
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2

@@ -382,16 +382,21 @@ module Show = struct
         value
         & opt (some string) None
         & info [ "summary" ] ~doc:"write summary in FILE")
-    and debug = Logs_cli.level () in
-    let aux check bad csv summary no_color debug file : bool =
+    and debug = Logs_cli.level ()
+    and details =
+      Arg.(value & flag & info [ "details" ] ~doc:"show more details")
+    in
+    let aux check bad csv summary no_color debug details file : bool =
       catch_err @@ fun () ->
       Misc.setup_logs debug;
       if no_color then CCFormat.set_color_default false;
-      Show.main ~check ~bad ?csv ?summary file
+      Show.main ~check ~bad ~details ?csv ?summary file
     in
     let doc = "show benchmark results (see `list-files`)" in
     Cmd.v (Cmd.info ~doc "show")
-      Term.(const aux $ check $ bad $ csv $ summary $ no_color $ debug $ file)
+      Term.(
+        const aux $ check $ bad $ csv $ summary $ no_color $ debug $ details
+        $ file)
 end
 
 (** {2 plot results} *)

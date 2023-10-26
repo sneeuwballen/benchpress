@@ -2,16 +2,65 @@ open Common
 open Test
 module PB = PrintBox
 
+(** Aggregate function computing the mean and the standard deviation
+   of data series using the Welford's algorithm. *)
+module Stats = struct
+  type acc = { n: int; total: float; mean: float * float; s: float * float }
+
+  let prev = fst
+  let curr = snd
+  let init = { n = 0; total = 0.; mean = 0., 0.; s = 0., 0. }
+
+  let step ({ n; total; mean; s } as acc) x =
+    let x =
+      match x with
+      | Sqlite3.Data.FLOAT f -> f
+      | _ -> assert false
+    in
+    let n = n + 1 in
+    let total = total +. x in
+    if n = 1 then
+      { acc with n; total; mean = x, x }
+    else (
+      let new_mean = prev mean +. ((x -. prev mean) /. Float.of_int n) in
+      let new_s = prev s +. ((x -. prev mean) *. (x -. new_mean)) in
+      { n; total; mean = curr mean, new_mean; s = curr s, new_s }
+    )
+
+  let total { total; _ } = total
+
+  let mean { n; mean = _, mean; _ } =
+    if n = 0 then
+      0.
+    else
+      mean
+
+  let sd { n; s = _, s; _ } =
+    if n <= 1 then
+      0.
+    else
+      Float.(sqrt (s /. of_int (n - 1)))
+
+  let final acc =
+    let res = Fmt.asprintf "%f|%f|%f" (total acc) (mean acc) (sd acc) in
+    Sqlite3.Data.TEXT res
+
+  let attach_aggregate db =
+    Sqlite3.Aggregate.create_fun1 db ~init ~step ~final "stats"
+end
+
+type detail_stats = { n: int; total: float; mean: float; sd: float }
+
 type t = {
-  unsat: int;
-  sat: int;
+  unsat: detail_stats;
+  sat: detail_stats;
   errors: int;
-  unknown: int;
+  unknown: detail_stats;
   timeout: int;
   memory: int;
   valid_proof: int;
   invalid_proof: int;
-  custom: (string * int) list;
+  custom: (string * detail_stats) list;
   total: int;
   total_time: float; (* for sat+unsat *)
 }
@@ -24,11 +73,28 @@ let get_timeout r = r.timeout
 let get_valid_proof r = r.valid_proof
 let get_invalid_proof r = r.invalid_proof
 let get_memory r = r.memory
-let get_custom s r = try List.assoc s r.custom with Not_found -> 0
+
+let get_custom s r =
+  try List.assoc s r.custom
+  with Not_found -> { n = 0; total = 0.; mean = 0.; sd = 0. }
+
 let get_total r = r.total
 let get_total_time r = r.total_time
 
-let to_printbox_l ?to_link l : PB.t =
+let pb_details_stats_color ~details c { n; total; mean; sd } =
+  let open PB in
+  if n = 0 || not details then
+    align ~h:`Left ~v:`Center (int n)
+  else
+    v_record
+      [
+        "number", pb_int_color c n;
+        "total", text @@ Misc.human_duration total;
+        "mean", text @@ Misc.human_duration mean;
+        "deviation", text @@ Misc.human_duration sd;
+      ]
+
+let to_printbox_l ?(details = false) ?to_link l : PB.t =
   let mk_row ?res lbl get_r mk_box : PB.t list =
     match to_link with
     | Some f ->
@@ -47,13 +113,16 @@ let to_printbox_l ?to_link l : PB.t =
            l
     | _ -> PB.text lbl :: List.map (fun (_p, r) -> mk_box (get_r r)) l
   and mk_row1 lbl get_r mk_box =
-    PB.text lbl :: List.map (fun (_, r) -> mk_box @@ get_r r) l
+    PB.(align ~h:`Left ~v:`Center (text lbl))
+    :: List.map (fun (_, r) -> mk_box @@ get_r r) l
   in
   let r1 =
     [
-      mk_row "sat" get_sat @@ pb_int_color PB.Style.(fg_color Green);
-      mk_row "unsat" get_unsat @@ pb_int_color PB.Style.(fg_color Green);
-      mk_row1 "sat+unsat" (fun r -> r.sat + r.unsat)
+      mk_row1 "sat" get_sat
+      @@ pb_details_stats_color ~details PB.Style.(fg_color Green);
+      mk_row1 "unsat" get_unsat
+      @@ pb_details_stats_color ~details PB.Style.(fg_color Green);
+      mk_row1 "sat+unsat" (fun r -> r.sat.n + r.unsat.n)
       @@ pb_int_color PB.Style.(fg_color Green);
       mk_row ~res:"error" "errors" get_errors
       @@ pb_int_color PB.Style.(fg_color Cyan);
@@ -61,7 +130,8 @@ let to_printbox_l ?to_link l : PB.t =
       @@ pb_int_color PB.Style.(fg_color Green);
       mk_row1 "invalid_proof" get_invalid_proof
       @@ pb_int_color PB.Style.(fg_color Red);
-      mk_row "unknown" get_unknown PB.int;
+      mk_row1 "unknown" get_unknown
+      @@ pb_details_stats_color ~details PB.Style.(fg_color White);
       mk_row "timeout" get_timeout PB.int;
     ]
   and r2 =
@@ -70,7 +140,8 @@ let to_printbox_l ?to_link l : PB.t =
       |> CCList.sort_uniq ~cmp:String.compare
     in
     CCList.map
-      (fun tag -> mk_row ~res:tag ("tag." ^ tag) (get_custom tag) PB.int)
+      (fun tag ->
+        mk_row ~res:tag ("tag." ^ tag) (fun t -> (get_custom tag t).n) PB.int)
       all_custom
   and r3 =
     [
@@ -88,12 +159,23 @@ let to_printbox_l ?to_link l : PB.t =
 let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
   Error.guard (Error.wrapf "reading stat(%s) from DB" prover) @@ fun () ->
   let custom = Prover.tags_of_db db in
+  Stats.attach_aggregate db;
+  let convert n stats =
+    let extract_stats stats =
+      String.split_on_char '|' stats |> List.map Float.of_string |> function
+      | [ total; mean; sd ] ->
+        { n = CCOpt.get_or ~default:0 n; total; mean; sd }
+      | _ -> assert false
+    in
+    extract_stats stats
+  in
   let get_res r =
     Error.guard (Error.wrapf "get-res %S" r) @@ fun () ->
     Logs.debug (fun k -> k "get-res %S" r);
-    Db.exec db {| select count(*) from prover_res where prover=? and res=?; |}
+    Db.exec db
+      {| select count(*), stats(rtime) from prover_res where prover=? and res=?; |}
       prover r
-      ~ty:Db.Ty.(p2 text text, p1 (nullable int), CCOpt.get_or ~default:0)
+      ~ty:Db.Ty.(p2 text text, p2 (nullable int) text, convert)
       ~f:Db.Cursor.get_one_exn
     |> Misc.unwrap_db (fun () -> spf "problems with result %s" r)
   in
@@ -119,15 +201,15 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
   let sat = get_res "sat" in
   let unsat = get_res "unsat" in
   let unknown = get_res "unknown" in
-  let timeout = get_res "timeout" in
-  let memory = get_res "memory" in
-  let errors = get_res "error" in
+  let timeout = (get_res "timeout").n in
+  let memory = (get_res "memory").n in
+  let errors = (get_res "error").n in
   let valid_proof = get_proof_res "valid" in
   let invalid_proof = get_proof_res "invalid" in
   let custom = CCList.map (fun tag -> tag, get_res tag) custom in
   let total =
-    sat + unsat + unknown + timeout + memory + errors
-    + List.fold_left (fun n (_, i) -> n + i) 0 custom
+    sat.n + unsat.n + unknown.n + timeout + memory + errors
+    + List.fold_left (fun acc (_, { n; _ }) -> acc + n) 0 custom
   in
   let total_time =
     Db.exec db
@@ -164,7 +246,7 @@ let pp out (s : t) : unit =
     "(@[<hv>:unsat %d@ :sat %d@ :solved %d@ :errors %d@ :unknown %d@ \
      :valid-proof %d@ :invalid-proof %d@ :timeout %d@ :total %d@ :total_time \
      %.2f@])"
-    s.unsat s.sat (s.sat + s.unsat) s.errors s.unknown s.valid_proof
+    s.unsat.n s.sat.n (s.sat.n + s.unsat.n) s.errors s.unknown.n s.valid_proof
     s.invalid_proof s.timeout
-    (s.unsat + s.sat + s.errors + s.unknown + s.timeout)
+    (s.unsat.n + s.sat.n + s.errors + s.unknown.n + s.timeout)
     s.total_time
