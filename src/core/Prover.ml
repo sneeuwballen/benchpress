@@ -191,7 +191,7 @@ module As_key = struct
     if c <> 0 then
       c
     else
-      CCShims_.Stdlib.compare p1.version p2.version
+      Stdlib.compare p1.version p2.version
 end
 
 module Map = CCMap.Make (As_key)
