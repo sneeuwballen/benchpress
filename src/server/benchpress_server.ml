@@ -48,7 +48,7 @@ end = struct
 
   let attrs_of_style (s : B.Style.t) : _ list * _ =
     let open B.Style in
-    let { bold; bg_color; fg_color } = s in
+    let { bold; bg_color; fg_color; _ } = s in
     let encode_color = function
       | Red -> "red"
       | Blue -> "blue"
