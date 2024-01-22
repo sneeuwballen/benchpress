@@ -478,6 +478,77 @@ let establish_server n server_fun sockaddr =
   let sock, _ = mk_socket sockaddr in
   start_server n server_fun sock
 
+(* Not actually a ramdisk on windows *)
+let ramdisk_ref =
+  ref
+    (if Sys.unix then
+      Some "/dev/shm"
+    else
+      None)
+
+let has_ramdisk () = Option.is_some !ramdisk_ref
+
+let get_ramdisk () =
+  match !ramdisk_ref with
+  | Some ramdisk -> ramdisk
+  | None -> Filename.get_temp_dir_name ()
+
+let set_ramdisk ramdisk = ramdisk_ref := Some ramdisk
+
+(* Turns out that [Filename.open_temp_file] is not thread-safe *)
+let open_temp_file = CCLock.create Filename.open_temp_file
+
+let open_ram_file prefix suffix =
+  let temp_dir = get_ramdisk () in
+  CCLock.with_lock open_temp_file @@ fun open_temp_file ->
+  open_temp_file ~temp_dir prefix suffix
+
+let with_ram_file prefix suffix f =
+  let fname, oc = open_ram_file prefix suffix in
+  Fun.protect
+    ~finally:(fun () ->
+      close_out oc;
+      try Sys.remove fname with Sys_error _ -> ())
+    (fun () -> f fname)
+
+let with_copy_to_ram fname f =
+  if has_ramdisk () then (
+    let suffix = Filename.basename fname in
+    let fname =
+      CCIO.with_in ~flags:[ Open_binary ] fname @@ fun ic ->
+      let fname, oc = open_ram_file "" suffix in
+      Fun.protect
+        ~finally:(fun () -> close_out oc)
+        (fun () ->
+          CCIO.with_out ~flags:[ Open_binary ] fname @@ fun oc ->
+          CCIO.copy_into ~bufsize:(64 * 1024) ic oc;
+          fname)
+    in
+    Fun.protect
+      ~finally:(fun () -> try Sys.remove fname with Sys_error _ -> ())
+      (fun () -> f fname)
+  ) else
+    f fname
+
+let with_copy_from_ram fname f =
+  if has_ramdisk () then (
+    let suffix = Filename.basename fname in
+    let ram_fname, oc = open_ram_file "" suffix in
+    Fun.protect
+      ~finally:(fun () ->
+        ( CCIO.with_in ~flags:[ Open_binary ] ram_fname @@ fun ic ->
+          CCIO.copy_into ~bufsize:(64 * 1024) ic oc );
+        close_out oc;
+        Sys.remove ram_fname)
+      (fun () -> f ram_fname)
+  ) else
+    f fname
+
+let with_copy_from_ram_opt fname f =
+  match fname with
+  | Some fname -> with_copy_from_ram fname (fun fname -> f (Some fname))
+  | None -> f None
+
 let with_affinity cpu f =
   let aff = Processor.Affinity.get_ids () in
   Processor.Affinity.set_ids [ cpu ];

@@ -199,6 +199,8 @@ module Set = CCSet.Make (As_key)
 
 let run ?env ?proof_file ~limits ~file (self : t) : Run_proc_result.t =
   Log.debug (fun k -> k "(@[Prover.run %s %a@])" self.name Limit.All.pp limits);
+  Misc.with_copy_to_ram file @@ fun file ->
+  Misc.with_copy_from_ram_opt proof_file @@ fun proof_file ->
   let cmd = make_command ?env ?proof_file ~limits self ~file in
   (* Give one more second to the ulimit timeout to account for the startup
      time and the time elasped between starting ulimit and starting the prover *)
