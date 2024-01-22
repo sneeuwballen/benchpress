@@ -7,7 +7,7 @@
   (into ../../)
   (until-clean))
  (libraries benchpress containers cmdliner result uuidm logs logs.cli
-   tiny_httpd sqlite3_utils base64 printbox jemalloc)
+   tiny_httpd tiny_httpd.prometheus sqlite3_utils base64 printbox jemalloc)
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress -linkall))
 
 (rule
