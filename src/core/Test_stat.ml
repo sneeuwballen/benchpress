@@ -42,7 +42,7 @@ module Stats = struct
       Float.(sqrt (s /. of_int (n - 1)))
 
   let final acc =
-    let res = Fmt.asprintf "%f|%f|%f" (total acc) (mean acc) (sd acc) in
+    let res = Printf.sprintf "%f|%f|%f" (total acc) (mean acc) (sd acc) in
     Sqlite3.Data.TEXT res
 
   let attach_aggregate db =
