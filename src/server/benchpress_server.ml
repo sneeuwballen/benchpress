@@ -10,19 +10,23 @@ let spf = Printf.sprintf
 let[@inline] ( let@ ) f x = f x
 
 module Logger = struct
+  let show_lvl = function
+    | Logs.Debug -> "<7>debug"
+    | Logs.Info -> "<6>info"
+    | Logs.Error -> "<3>error"
+    | Logs.Warning -> "<4>warning"
+    | Logs.App -> "<5>app"
+
   let make_stdout () : Logs.reporter =
     let app = Format.std_formatter in
     let dst = Format.std_formatter in
     let pp_header out (lvl, src) : unit =
-      let now = Ptime_clock.now () in
       let src =
         match src with
         | None -> ""
-        | Some s -> spf ":%s" s
+        | Some s -> spf "[%s]" s
       in
-      Fmt.fprintf out "[%a%s|%a] " Logs.pp_level lvl src
-        (Ptime.pp_human ~frac_s:2 ())
-        now
+      Fmt.fprintf out "%s%s " (show_lvl lvl) src
     in
     Logs.format_reporter ~pp_header ~app ~dst ()
 
