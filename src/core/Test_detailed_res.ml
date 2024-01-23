@@ -169,9 +169,7 @@ let get_res db prover file : _ * proof_check_res option =
       { Run_proc_result.errcode; stdout; stderr; rtime; utime; stime }
   in
   let proof_check_res = get_proof_check db prover file in
-  Logs.info (fun k -> k "try to get prover");
   let prover = Prover.of_db db prover in
-  Logs.info (fun k -> k "got prover");
   Run_result.map ~f:(fun _ -> prover) res, proof_check_res
 
 module PB = PrintBox
