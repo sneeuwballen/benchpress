@@ -171,7 +171,6 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
   in
   let get_res r =
     Error.guard (Error.wrapf "get-res %S" r) @@ fun () ->
-    Logs.debug (fun k -> k "get-res %S" r);
     Db.exec db
       {| select count(*), stats(rtime) from prover_res where prover=? and res=?; |}
       prover r
@@ -181,7 +180,6 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
   in
   let get_proof_res r =
     Error.guard (Error.wrapf "get-proof-res %S %S" prover r) @@ fun () ->
-    Logs.debug (fun k -> k "get-proof-res %S %S" prover r);
     try
       Db.exec db
         {| select count( * ) from proof_check_res where prover=? and res=?; |}
