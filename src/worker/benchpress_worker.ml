@@ -1,6 +1,7 @@
 let parse_cmdline =
   let open Cmdliner in
-  let aux defs id socket_addr_opt socket_port j timeout memory =
+  let aux (log_lvl, defs) id socket_addr_opt socket_port j timeout memory =
+    Misc.setup_logs log_lvl;
     try
       let socket_addr =
         match socket_addr_opt with

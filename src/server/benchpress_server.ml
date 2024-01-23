@@ -9,6 +9,32 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress-serve"))
 let spf = Printf.sprintf
 let[@inline] ( let@ ) f x = f x
 
+module Logger = struct
+  let make_stdout () : Logs.reporter =
+    let app = Format.std_formatter in
+    let dst = Format.std_formatter in
+    let pp_header out (lvl, src) : unit =
+      let now = Ptime_clock.now () in
+      let src =
+        match src with
+        | None -> ""
+        | Some s -> spf ":%s" s
+      in
+      Fmt.fprintf out "[%a%s|%a] " Logs.pp_level lvl src
+        (Ptime.pp_human ~frac_s:2 ())
+        now
+    in
+    Logs.format_reporter ~pp_header ~app ~dst ()
+
+  let setup (lvl : Logs.level option) =
+    let m = Mutex.create () in
+    Logs.set_reporter_mutex
+      ~lock:(fun () -> Mutex.lock m)
+      ~unlock:(fun () -> Mutex.unlock m);
+    Logs.set_level ~all:true lvl;
+    Logs.set_reporter @@ make_stdout ()
+end
+
 type expect_filter =
   | TD_expect_improved
   | TD_expect_ok
@@ -1675,8 +1701,10 @@ let handle_file self : unit =
 (** {2 Embedded web server} *)
 
 module Cmd = struct
-  let main ?(local_only = false) ?port ~allow_delete (defs : Definitions.t) () =
+  let main ?(local_only = false) ?port ~allow_delete ~log_lvl
+      (defs : Definitions.t) () =
     try
+      Logger.setup log_lvl;
       let addr =
         if local_only then
           "127.0.0.1"
@@ -1748,8 +1776,8 @@ module Cmd = struct
         & info [ "allow-delete" ] ~doc:"allow deletion of files")
     and defs = Bin_utils.definitions_term in
     let doc = "serve embedded web UI on given port" in
-    let aux defs port local_only allow_delete () =
-      main ?port ~local_only ~allow_delete defs ()
+    let aux (log_lvl, defs) port local_only allow_delete () =
+      main ?port ~local_only ~allow_delete defs ~log_lvl ()
     in
     ( Term.(const aux $ defs $ port $ local_only $ allow_delete $ const ()),
       Cmd.info ~doc "serve" )

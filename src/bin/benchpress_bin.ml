@@ -19,9 +19,10 @@ module Run = struct
   (* sub-command for running tests *)
   let cmd =
     let open Cmdliner in
-    let aux j cpus pp_results dyn paths dir_files proof_dir defs task timeout
-        memory meta provers csv summary no_color output save wal_mode
+    let aux j cpus pp_results dyn paths dir_files proof_dir (log_lvl, defs) task
+        timeout memory meta provers csv summary no_color output save wal_mode
         desktop_notification no_failure update =
+      Misc.setup_logs log_lvl;
       catch_err @@ fun () ->
       if no_color then CCFormat.set_color_default false;
       let dyn =
@@ -173,10 +174,11 @@ module Slurm = struct
   (* sub-command for running tests with slurm *)
   let cmd =
     let open Cmdliner in
-    let aux j pp_results dyn paths dir_files proof_dir defs task timeout memory
-        meta provers csv summary no_color output save wal_mode
+    let aux j pp_results dyn paths dir_files proof_dir (log_lvl, defs) task
+        timeout memory meta provers csv summary no_color output save wal_mode
         desktop_notification no_failure update partition nodes addr port ntasks
         =
+      Misc.setup_logs log_lvl;
       catch_err @@ fun () ->
       if no_color then CCFormat.set_color_default false;
       let dyn =
@@ -543,7 +545,8 @@ end
 (** {2 See prover(s)} *)
 
 module Prover_show = struct
-  let run defs names =
+  let run (log_lvl, defs) names =
+    Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
     let l = CCList.map (Definitions.find_prover' defs) names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
@@ -561,7 +564,8 @@ end
 (** {2 List provers} *)
 
 module Prover_list = struct
-  let run defs =
+  let run (log_lvl, defs) =
+    Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
     let l = Definitions.all_provers defs in
     Format.printf "@[<v>%a@]@."
@@ -580,7 +584,8 @@ end
 (** {2 Show Task} *)
 
 module Task_show = struct
-  let run defs names =
+  let run (log_lvl, defs) names =
+    Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
     let l = CCList.map (Definitions.find_task' defs) names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
@@ -598,7 +603,8 @@ end
 (** {2 List Tasks} *)
 
 module Task_list = struct
-  let run defs =
+  let run (log_lvl, defs) =
+    Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
     let l = Definitions.all_tasks defs in
     Format.printf "@[<v>%a@]@."

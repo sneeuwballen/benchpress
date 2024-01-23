@@ -2,10 +2,9 @@ module T = Test
 module Db = Misc.Db
 module MStr = Misc.Str_map
 
-let definitions_term : Definitions.t Cmdliner.Term.t =
+let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
   let open Cmdliner in
   let aux conf_files with_default logs_cmd =
-    Misc.setup_logs logs_cmd;
     let conf_files = CCList.flatten conf_files in
     let conf_files =
       let default_conf = Misc.default_config () in
@@ -22,7 +21,7 @@ let definitions_term : Definitions.t Cmdliner.Term.t =
     try
       let stanzas = Stanza.parse_files conf_files in
       let defs = Definitions.add_stanza_l stanzas Definitions.empty in
-      `Ok defs
+      `Ok (logs_cmd, defs)
     with Error.E err -> `Error (false, Error.show err)
   in
   let args =
