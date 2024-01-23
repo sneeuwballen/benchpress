@@ -141,9 +141,8 @@ let get_res db prover file : _ * proof_check_res option =
               float;
               float;
             ],
-            fun x1 x2 x3 x4 x5 x6 x7 x8 x9 ->
-              Logs.info (fun k -> k "got results");
-              x1, x2, x3, x4, x5, x6, x7, x8, x9 ))
+            fun x1 x2 x3 x4 x5 x6 x7 x8 x9 -> x1, x2, x3, x4, x5, x6, x7, x8, x9
+          ))
     |> Misc.unwrap_db (fun () -> spf "listing results")
     |> Error.unwrap_opt' (fun () ->
            spf "expected a non-empty result for prover='%s', file='%s'" prover
@@ -157,7 +156,6 @@ let get_res db prover file : _ * proof_check_res option =
              rtime,
              utime,
              stime ) ->
-    Logs.info (fun k -> k "got results 2");
     let stdout = CCOpt.get_or ~default:"" stdout in
     let stderr = CCOpt.get_or ~default:"" stderr in
     Logs.debug (fun k -> k "res.of_string tags=[%s]" (String.concat "," tags));
