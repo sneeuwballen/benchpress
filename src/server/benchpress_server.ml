@@ -1735,10 +1735,6 @@ module Cmd = struct
       in
       (* thread to execute tasks *)
       let _th_r = Thread.create Task_queue.loop self.task_q in
-      (* trick: see if debug level is active *)
-      Log.debug (fun k ->
-          H._enable_debug true;
-          k "enable http debug");
       (* maybe serve the API *)
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       handle_root self;
