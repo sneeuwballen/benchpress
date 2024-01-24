@@ -11,12 +11,7 @@ module Stats = struct
   let curr = snd
   let init = { n = 0; total = 0.; mean = 0., 0.; s = 0., 0. }
 
-  let step ({ n; total; mean; s } as acc) x =
-    let x =
-      match x with
-      | Sqlite3.Data.FLOAT f -> f
-      | _ -> assert false
-    in
+  let step ({ n; total; mean; s } as acc) (x : float) =
     let n = n + 1 in
     let total = total +. x in
     if n = 1 then
@@ -40,13 +35,6 @@ module Stats = struct
       0.
     else
       Float.(sqrt (s /. of_int (n - 1)))
-
-  let final acc =
-    let res = Printf.sprintf "%f|%f|%f" (total acc) (mean acc) (sd acc) in
-    Sqlite3.Data.TEXT res
-
-  let attach_aggregate db =
-    Sqlite3.Aggregate.create_fun1 db ~init ~step ~final "stats"
 end
 
 type detail_stats = { n: int; total: float; mean: float; sd: float }
@@ -159,25 +147,33 @@ let to_printbox_l ?(details = false) ?to_link l : PB.t =
 let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
   Error.guard (Error.wrapf "reading stat(%s) from DB" prover) @@ fun () ->
   let custom = Prover.tags_of_db db in
-  Stats.attach_aggregate db;
-  let convert n stats =
-    let extract_stats stats =
-      String.split_on_char '|' stats |> List.map Float.of_string |> function
-      | [ total; mean; sd ] ->
-        { n = CCOpt.get_or ~default:0 n; total; mean; sd }
-      | _ -> assert false
-    in
-    extract_stats stats
-  in
   let get_res r =
     Error.guard (Error.wrapf "get-res %S" r) @@ fun () ->
-    Db.exec db
-      {| select count(*), stats(rtime) from prover_res where prover=? and res=?; |}
-      prover r
-      ~ty:Db.Ty.(p2 text text, p2 (nullable int) text, convert)
-      ~f:Db.Cursor.get_one_exn
-    |> Misc.unwrap_db (fun () -> spf "problems with result %s" r)
+    let count : int option =
+      Db.exec db {| select count(*) from prover_res where prover=? and res=?; |}
+        prover r
+        ~ty:Db.Ty.(p2 text text, p1 (nullable int), Fun.id)
+        ~f:Db.Cursor.get_one_exn
+      |> Misc.unwrap_db (fun () -> spf "problems with result %s" r)
+    in
+
+    let stats =
+      let stat = ref Stats.init in
+      Db.exec db {| select rtime from prover_res where prover=? and res=?; |}
+        prover r
+        ~ty:Db.Ty.(p2 text text, p1 float, Fun.id)
+        ~f:(fun cursor ->
+          Db.Cursor.iter cursor ~f:(fun rtime -> stat := Stats.step !stat rtime))
+      |> Misc.unwrap_db (fun () -> spf "problems with result %s" r);
+      !stat
+    in
+
+    let total = Stats.total stats in
+    let mean = Stats.mean stats in
+    let sd = Stats.sd stats in
+    { n = CCOpt.get_or ~default:0 count; total; mean; sd }
   in
+
   let get_proof_res r =
     Error.guard (Error.wrapf "get-proof-res %S %S" prover r) @@ fun () ->
     try
