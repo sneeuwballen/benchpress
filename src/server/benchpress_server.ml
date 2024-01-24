@@ -550,7 +550,7 @@ let handle_show_errors (self : t) : unit =
     H.Route.(exact "show-err" @/ string_urlencoded @/ return)
   @@ fun file _req ->
   let@ chrono = query_wrap (Error.wrapf "serving show-err/%s" file) in
-  Log.info (fun k -> k "----- start show-err %s -----" file);
+  Log.debug (fun k -> k "----- start show-err %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
   Log.info (fun k ->
       k "show-err: loaded full summary in %.3fs" (Misc.Chrono.since_last chrono));
@@ -559,7 +559,7 @@ let handle_show_errors (self : t) : unit =
   let errors =
     Test_analyze.to_printbox_errors_l ~link:link_file cr.cr_analyze
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let mk_dl_file l =
     let open Html in
@@ -607,8 +607,8 @@ let handle_show_errors (self : t) : unit =
              errors);
       ]
   in
-  Log.info (fun k ->
-      k "show:turned into html in %.3fs" (Misc.Chrono.since_last chrono));
+  Log.debug (fun k ->
+      k "show: turned into html in %.3fs" (Misc.Chrono.since_last chrono));
   Log.debug (fun k -> k "successful reply for %S" file);
   H.Response.make_string (Ok (Html.to_string_elt h))
 
@@ -617,15 +617,16 @@ let handle_show_invalid (self : t) : unit =
     H.Route.(exact "show-invalid" @/ string_urlencoded @/ return)
   @@ fun file _req ->
   let@ chrono = query_wrap (Error.wrapf "serving show-invalid/%s" file) in
-  Log.info (fun k -> k "----- start show-invalid %s -----" file);
+  Log.debug (fun k -> k "----- start show-invalid %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
   Log.info (fun k ->
-      k "show-err: loaded full summary in %.3fs" (Misc.Chrono.since_last chrono));
+      k "show-invalid: loaded full summary in %.3fs"
+        (Misc.Chrono.since_last chrono));
   let link_file = link_show_single file in
   let invalid =
     Test_analyze.to_printbox_invalid_proof_l ~link:link_file cr.cr_analyze
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let mk_dl_file l =
     let open Html in
@@ -656,8 +657,8 @@ let handle_show_invalid (self : t) : unit =
            ])
          invalid)
   in
-  Log.info (fun k ->
-      k "show:turned into html in %.3fs" (Misc.Chrono.since_last chrono));
+  Log.debug (fun k ->
+      k "show-info: turned into html in %.3fs" (Misc.Chrono.since_last chrono));
   Log.debug (fun k -> k "successful reply for %S" file);
   H.Response.make_string (Ok (Html.to_string_elt h))
 
