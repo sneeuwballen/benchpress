@@ -378,9 +378,9 @@ let handle_show (self : t) : unit =
     H.Route.(exact "show" @/ string_urlencoded @/ return)
   @@ fun file _req ->
   let@ chrono = query_wrap (Error.wrapf "serving %s" @@ uri_show file) in
-  Log.info (fun k -> k "----- start show %s -----" file);
+  Log.debug (fun k -> k "----- start show %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:false file in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
   let box_meta =
     (* link to the prover locally *)
@@ -407,7 +407,7 @@ let handle_show (self : t) : unit =
   let uri_plot = uri_gnuplot file in
   let uri_err = uri_error_bad file in
   let uri_invalid = uri_invalid file in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let h =
     let open Html in
@@ -465,7 +465,7 @@ let handle_show (self : t) : unit =
             [ h3 [] [ txt "comparisons" ]; div [] [ pb_html box_compare_l ] ]);
       ]
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "show: turned into html in %.3fs" (Misc.Chrono.since_last chrono));
   Log.debug (fun k -> k "show: successful reply for %S" file);
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
@@ -477,7 +477,7 @@ let handle_prover_in (self : t) : unit =
       exact "prover-in" @/ string_urlencoded @/ string_urlencoded @/ return)
   @@ fun file p_name _req ->
   let@ _chrono = query_wrap (Error.wrapf "prover-in-file/%s/%s" file p_name) in
-  Log.info (fun k -> k "----- start prover-in %s %s -----" file p_name);
+  Log.debug (fun k -> k "----- start prover-in %s %s -----" file p_name);
   let@ db =
     Bin_utils.with_file_as_db
       ~map_err:(Error.wrapf "reading file '%s'" file)
@@ -512,7 +512,7 @@ let handle_show_gp (self : t) : unit =
     H.Route.(exact "show-gp" @/ string_urlencoded @/ return)
   @@ fun q_arg _req ->
   let@ chrono = query_wrap (Error.wrapf "serving /show-gp/%s" q_arg) in
-  Log.info (fun k -> k "----- start show-gp %s -----" q_arg);
+  Log.debug (fun k -> k "----- start show-gp %s -----" q_arg);
   let files = CCString.split_on_char ',' q_arg |> List.map String.trim in
   let files_full =
     CCList.map
@@ -552,7 +552,7 @@ let handle_show_errors (self : t) : unit =
   let@ chrono = query_wrap (Error.wrapf "serving show-err/%s" file) in
   Log.debug (fun k -> k "----- start show-err %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "show-err: loaded full summary in %.3fs" (Misc.Chrono.since_last chrono));
   let link_file = link_show_single file in
   let bad = Test_analyze.to_printbox_bad_l ~link:link_file cr.cr_analyze in
@@ -619,7 +619,7 @@ let handle_show_invalid (self : t) : unit =
   let@ chrono = query_wrap (Error.wrapf "serving show-invalid/%s" file) in
   Log.debug (fun k -> k "----- start show-invalid %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "show-invalid: loaded full summary in %.3fs"
         (Misc.Chrono.since_last chrono));
   let link_file = link_show_single file in
@@ -700,7 +700,7 @@ let handle_show_as_table (self : t) : unit =
     Test_top_result.db_to_printbox_table ?filter_res ~filter_pb ~offset
       ~link_pb:link_get_file ~page_size ~link_res db
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "loaded table[offset=%d] in %.3fs" offset
         (Misc.Chrono.since_last chrono));
   let h =
@@ -1632,7 +1632,7 @@ let handle_root (self : t) : unit =
           ];
       ]
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
   Jemalloc.epoch ();
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
@@ -1658,7 +1658,7 @@ let handle_file_summary (self : t) : unit =
     H.Response.make_string ~headers:default_html_headers
       (Ok (Html.to_string_elt h))
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "summary for %s in %.3fs" file (Misc.Chrono.since_last chrono));
   r
 
