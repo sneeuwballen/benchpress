@@ -11,11 +11,11 @@ let[@inline] ( let@ ) f x = f x
 
 module Logger = struct
   let show_lvl = function
-    | Logs.Debug -> "<7>debug"
-    | Logs.Info -> "<6>info"
-    | Logs.Error -> "<3>error"
-    | Logs.Warning -> "<4>warning"
-    | Logs.App -> "<5>app"
+    | Logs.Debug -> "<7>DEBUG"
+    | Logs.Info -> "<6>INFO"
+    | Logs.Error -> "<3>ERROR"
+    | Logs.Warning -> "<4>WARNING"
+    | Logs.App -> "<5>APP"
 
   let make_stdout () : Logs.reporter =
     let app = Format.std_formatter in
@@ -26,7 +26,7 @@ module Logger = struct
         | None -> ""
         | Some s -> spf "[%s]" s
       in
-      Fmt.fprintf out "%s%s " (show_lvl lvl) src
+      Fmt.fprintf out "%s%s: " (show_lvl lvl) src
     in
     Logs.format_reporter ~pp_header ~app ~dst ()
 
