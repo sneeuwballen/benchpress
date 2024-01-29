@@ -347,7 +347,7 @@ let of_db db name : t =
         ~ty:Db.Ty.(p1 text, p2 any_str any_str, mkp2)
         ~f:Db.Cursor.to_list name
     with e ->
-      Log.err (fun k ->
+      Log.debug (fun k ->
           k "prover.of_db: could not find tags: %s" (Printexc.to_string e));
       []
   in

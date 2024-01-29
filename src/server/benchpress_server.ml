@@ -9,6 +9,36 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress-serve"))
 let spf = Printf.sprintf
 let[@inline] ( let@ ) f x = f x
 
+module Logger = struct
+  let show_lvl = function
+    | Logs.Debug -> "<7>DEBUG"
+    | Logs.Info -> "<6>INFO"
+    | Logs.Error -> "<3>ERROR"
+    | Logs.Warning -> "<4>WARNING"
+    | Logs.App -> "<5>APP"
+
+  let make_stdout () : Logs.reporter =
+    let app = Format.std_formatter in
+    let dst = Format.std_formatter in
+    let pp_header out (lvl, src) : unit =
+      let src =
+        match src with
+        | None -> ""
+        | Some s -> spf "[%s]" s
+      in
+      Fmt.fprintf out "%s%s: " (show_lvl lvl) src
+    in
+    Logs.format_reporter ~pp_header ~app ~dst ()
+
+  let setup (lvl : Logs.level option) =
+    let m = Mutex.create () in
+    Logs.set_reporter_mutex
+      ~lock:(fun () -> Mutex.lock m)
+      ~unlock:(fun () -> Mutex.unlock m);
+    Logs.set_level ~all:true lvl;
+    Logs.set_reporter @@ make_stdout ()
+end
+
 type expect_filter =
   | TD_expect_improved
   | TD_expect_ok
@@ -48,7 +78,7 @@ end = struct
 
   let attrs_of_style (s : B.Style.t) : _ list * _ =
     let open B.Style in
-    let { bold; bg_color; fg_color } = s in
+    let { bold; bg_color; fg_color; _ } = s in
     let encode_color = function
       | Red -> "red"
       | Blue -> "blue"
@@ -348,9 +378,9 @@ let handle_show (self : t) : unit =
     H.Route.(exact "show" @/ string_urlencoded @/ return)
   @@ fun file _req ->
   let@ chrono = query_wrap (Error.wrapf "serving %s" @@ uri_show file) in
-  Log.info (fun k -> k "----- start show %s -----" file);
+  Log.debug (fun k -> k "----- start show %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:false file in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "show: loaded summary in %.3fs" (Misc.Chrono.since_last chrono));
   let box_meta =
     (* link to the prover locally *)
@@ -377,7 +407,7 @@ let handle_show (self : t) : unit =
   let uri_plot = uri_gnuplot file in
   let uri_err = uri_error_bad file in
   let uri_invalid = uri_invalid file in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let h =
     let open Html in
@@ -435,7 +465,7 @@ let handle_show (self : t) : unit =
             [ h3 [] [ txt "comparisons" ]; div [] [ pb_html box_compare_l ] ]);
       ]
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "show: turned into html in %.3fs" (Misc.Chrono.since_last chrono));
   Log.debug (fun k -> k "show: successful reply for %S" file);
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
@@ -447,7 +477,7 @@ let handle_prover_in (self : t) : unit =
       exact "prover-in" @/ string_urlencoded @/ string_urlencoded @/ return)
   @@ fun file p_name _req ->
   let@ _chrono = query_wrap (Error.wrapf "prover-in-file/%s/%s" file p_name) in
-  Log.info (fun k -> k "----- start prover-in %s %s -----" file p_name);
+  Log.debug (fun k -> k "----- start prover-in %s %s -----" file p_name);
   let@ db =
     Bin_utils.with_file_as_db
       ~map_err:(Error.wrapf "reading file '%s'" file)
@@ -482,7 +512,7 @@ let handle_show_gp (self : t) : unit =
     H.Route.(exact "show-gp" @/ string_urlencoded @/ return)
   @@ fun q_arg _req ->
   let@ chrono = query_wrap (Error.wrapf "serving /show-gp/%s" q_arg) in
-  Log.info (fun k -> k "----- start show-gp %s -----" q_arg);
+  Log.debug (fun k -> k "----- start show-gp %s -----" q_arg);
   let files = CCString.split_on_char ',' q_arg |> List.map String.trim in
   let files_full =
     CCList.map
@@ -520,16 +550,16 @@ let handle_show_errors (self : t) : unit =
     H.Route.(exact "show-err" @/ string_urlencoded @/ return)
   @@ fun file _req ->
   let@ chrono = query_wrap (Error.wrapf "serving show-err/%s" file) in
-  Log.info (fun k -> k "----- start show-err %s -----" file);
+  Log.debug (fun k -> k "----- start show-err %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "show-err: loaded full summary in %.3fs" (Misc.Chrono.since_last chrono));
   let link_file = link_show_single file in
   let bad = Test_analyze.to_printbox_bad_l ~link:link_file cr.cr_analyze in
   let errors =
     Test_analyze.to_printbox_errors_l ~link:link_file cr.cr_analyze
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let mk_dl_file l =
     let open Html in
@@ -577,8 +607,8 @@ let handle_show_errors (self : t) : unit =
              errors);
       ]
   in
-  Log.info (fun k ->
-      k "show:turned into html in %.3fs" (Misc.Chrono.since_last chrono));
+  Log.debug (fun k ->
+      k "show: turned into html in %.3fs" (Misc.Chrono.since_last chrono));
   Log.debug (fun k -> k "successful reply for %S" file);
   H.Response.make_string (Ok (Html.to_string_elt h))
 
@@ -587,15 +617,16 @@ let handle_show_invalid (self : t) : unit =
     H.Route.(exact "show-invalid" @/ string_urlencoded @/ return)
   @@ fun file _req ->
   let@ chrono = query_wrap (Error.wrapf "serving show-invalid/%s" file) in
-  Log.info (fun k -> k "----- start show-invalid %s -----" file);
+  Log.debug (fun k -> k "----- start show-invalid %s -----" file);
   let _file_full, cr = Bin_utils.load_file_summary ~full:true file in
-  Log.info (fun k ->
-      k "show-err: loaded full summary in %.3fs" (Misc.Chrono.since_last chrono));
+  Log.debug (fun k ->
+      k "show-invalid: loaded full summary in %.3fs"
+        (Misc.Chrono.since_last chrono));
   let link_file = link_show_single file in
   let invalid =
     Test_analyze.to_printbox_invalid_proof_l ~link:link_file cr.cr_analyze
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "rendered to PB in %.3fs" (Misc.Chrono.since_last chrono));
   let mk_dl_file l =
     let open Html in
@@ -626,8 +657,8 @@ let handle_show_invalid (self : t) : unit =
            ])
          invalid)
   in
-  Log.info (fun k ->
-      k "show:turned into html in %.3fs" (Misc.Chrono.since_last chrono));
+  Log.debug (fun k ->
+      k "show-info: turned into html in %.3fs" (Misc.Chrono.since_last chrono));
   Log.debug (fun k -> k "successful reply for %S" file);
   H.Response.make_string (Ok (Html.to_string_elt h))
 
@@ -669,7 +700,7 @@ let handle_show_as_table (self : t) : unit =
     Test_top_result.db_to_printbox_table ?filter_res ~filter_pb ~offset
       ~link_pb:link_get_file ~page_size ~link_res db
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "loaded table[offset=%d] in %.3fs" offset
         (Misc.Chrono.since_last chrono));
   let h =
@@ -1601,7 +1632,7 @@ let handle_root (self : t) : unit =
           ];
       ]
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
   Jemalloc.epoch ();
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
@@ -1627,7 +1658,7 @@ let handle_file_summary (self : t) : unit =
     H.Response.make_string ~headers:default_html_headers
       (Ok (Html.to_string_elt h))
   in
-  Log.info (fun k ->
+  Log.debug (fun k ->
       k "summary for %s in %.3fs" file (Misc.Chrono.since_last chrono));
   r
 
@@ -1675,8 +1706,10 @@ let handle_file self : unit =
 (** {2 Embedded web server} *)
 
 module Cmd = struct
-  let main ?(local_only = false) ?port ~allow_delete (defs : Definitions.t) () =
+  let main ?(local_only = false) ?port ~allow_delete ~log_lvl
+      (defs : Definitions.t) () =
     try
+      Logger.setup log_lvl;
       let addr =
         if local_only then
           "127.0.0.1"
@@ -1684,6 +1717,11 @@ module Cmd = struct
           "0.0.0.0"
       in
       let server = H.create ~max_connections:32 ~addr ?port () in
+
+      let prometheus = Tiny_httpd_prometheus.(global) in
+      Tiny_httpd_prometheus.instrument_server server prometheus;
+      Tiny_httpd_prometheus.GC_metrics.create_and_update_before_emit prometheus;
+
       let data_dir = Misc.data_dir () in
       let self =
         {
@@ -1697,10 +1735,6 @@ module Cmd = struct
       in
       (* thread to execute tasks *)
       let _th_r = Thread.create Task_queue.loop self.task_q in
-      (* trick: see if debug level is active *)
-      Log.debug (fun k ->
-          H._enable_debug true;
-          k "enable http debug");
       (* maybe serve the API *)
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       handle_root self;
@@ -1743,8 +1777,8 @@ module Cmd = struct
         & info [ "allow-delete" ] ~doc:"allow deletion of files")
     and defs = Bin_utils.definitions_term in
     let doc = "serve embedded web UI on given port" in
-    let aux defs port local_only allow_delete () =
-      main ?port ~local_only ~allow_delete defs ()
+    let aux (log_lvl, defs) port local_only allow_delete () =
+      main ?port ~local_only ~allow_delete defs ~log_lvl ()
     in
     ( Term.(const aux $ defs $ port $ local_only $ allow_delete $ const ()),
       Cmd.info ~doc "serve" )
