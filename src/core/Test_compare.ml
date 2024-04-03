@@ -2,6 +2,7 @@ open Common
 
 type filename = string
 type prover = filename * Prover.name
+type status = [ `Sat | `Unsat ]
 
 let pb_v_record = Test.pb_v_record
 let pb_int_color = Test.pb_int_color
@@ -35,6 +36,16 @@ let cmp2sql = function
 
 let pp_cmp = Fmt.of_to_string cmp2sql
 
+let status_to_string = function
+  | `Sat -> {|
+      (r1.res = 'sat' or r2.res = 'sat')
+    |}
+  | `Unsat -> {|
+      (r1.res = 'unsat' or r2.res = 'unsat')
+    |}
+
+let pp_status = Fmt.of_to_string status_to_string
+
 let pp_opt ?(none = Fmt.const_string "") pp ppf = function
   | None -> none ppf ()
   | Some v -> pp ppf v
@@ -43,12 +54,13 @@ let pp_prefix prefix pp ppf v =
   Fmt.fprintf ppf "%s" prefix;
   pp ppf v
 
-let unsafe_sql ?order ?limit ?offset ?filter select =
+let unsafe_sql ?order ?limit ?offset ?filter ?status select =
   let pp_filter ppf filter =
     match filter with
     | None -> ()
     | Some filter -> Format.fprintf ppf "and (%a)" pp_cmp filter
   in
+  let pp_status = pp_opt (pp_prefix " and " pp_status) in
   let pp_select =
     Fmt.list
       ~sep:(fun ppf () -> Fmt.fprintf ppf ",@,")
@@ -58,9 +70,9 @@ let unsafe_sql ?order ?limit ?offset ?filter select =
     {| select %a
         from db1.prover_res r1
         inner join db2.prover_res r2 on r2.file = r1.file
-        where r1.prover = ? and r2.prover = ? %a %a %a %a
+        where r1.prover = ? and r2.prover = ? %a %a %a %a %a
       |}
-    pp_select select pp_filter filter
+    pp_select select pp_filter filter pp_status status
     (pp_opt (pp_prefix " order by " Fmt.string))
     order
     (pp_opt (pp_prefix " limit " Fmt.int))
@@ -90,7 +102,7 @@ module Short = struct
         "regressed", pb_int_color Style.(fg_color Cyan) self.regressed;
       ]
 
-  let make1 db p1 p2 : t =
+  let make1 ?status db p1 p2 : t =
     (* Note: first ? is p1, second ? is p2 *)
     let get_n q =
       Db.exec db q p1 p2
@@ -115,20 +127,22 @@ module Short = struct
                 and not exists (select file from db2.prover_res where
                 db2.prover_res.prover=?
                 and file = r1.file); |}
-    and same = get_n (unsafe_sql ~filter:`Same [ "count(r1.file)" ])
-    and mismatch = get_n (unsafe_sql ~filter:`Mismatch [ "count(r1.file)" ])
-    and improved = get_n (unsafe_sql ~filter:`Improved [ "count(r1.file)" ])
+    and same = get_n (unsafe_sql ?status ~filter:`Same [ "count(r1.file)" ])
+    and mismatch =
+      get_n (unsafe_sql ?status ~filter:`Mismatch [ "count(r1.file)" ])
+    and improved =
+      get_n (unsafe_sql ?status ~filter:`Improved [ "count(r1.file)" ])
     and regressed =
-      get_n (unsafe_sql ~filter:`Regressed [ "count(r1.file)" ])
+      get_n (unsafe_sql ?status ~filter:`Regressed [ "count(r1.file)" ])
     in
     { appeared; disappeared; same; mismatch; improved; regressed }
 
-  let make_provers (f1, p1) (f2, p2) : t =
+  let make_provers ?status (f1, p1) (f2, p2) : t =
     Error.guard
       (Error.wrapf "short comparison of '%s/%s' and '%s/%s'" f1 p1 f2 p2)
-    @@ fun () -> make1 (make_db f1 f2) p1 p2
+    @@ fun () -> make1 ?status (make_db f1 f2) p1 p2
 
-  let make f1 f2 : (_ * t) list =
+  let make ?status f1 f2 : (_ * t) list =
     Error.guard (Error.wrapf "short comparison of '%s' and '%s'" f1 f2)
     @@ fun () ->
     let db = Sqlite3.db_open ":memory:" in
@@ -145,19 +159,20 @@ module Short = struct
       |> Misc.unwrap_db (fun () -> "listing all provers")
     in
     Logs.debug (fun k -> k "provers: [%s]" (String.concat ";" provers));
-    CCList.map (fun prover -> prover, make1 db prover prover) provers
+    CCList.map (fun prover -> prover, make1 ?status db prover prover) provers
 end
 
 module Full = struct
   type filter = [ `Improved | `Regressed | `Mismatch | `Same ]
   type entry = string * Res.t * float * Res.t * float
 
-  let make_filtered ?(page = 0) ?(page_size = 500) ?filter (f1, p1) (f2, p2) =
+  let make_filtered ?(page = 0) ?(page_size = 500) ?filter ?status (f1, p1)
+      (f2, p2) =
     let tags = [] (* TODO? *) in
     let offset = page * page_size in
     let limit = page_size + 1 in
     Db.exec (make_db f1 f2)
-      (unsafe_sql ~order:"r1.file desc" ~limit ~offset ?filter
+      (unsafe_sql ~order:"r1.file desc" ~limit ~offset ?filter ?status
          [ "r1.file"; "r1.res"; "r2.res"; "r1.rtime"; "r2.rtime" ])
       p1 p2
       ~ty:

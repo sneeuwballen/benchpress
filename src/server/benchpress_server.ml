@@ -1154,6 +1154,14 @@ let handle_compare2 self : unit =
           None)
     @@ H.Request.query req
   in
+  let status =
+    match
+      String.lowercase_ascii @@ List.assoc "status" (H.Request.query req)
+    with
+    | "sat" -> Some `Sat
+    | "unsat" -> Some `Unsat
+    | _ | (exception Not_found) -> None
+  in
   (* H.Request.query reverses the query order, so we have to reverse it again *)
   let provers = List.rev provers in
   let prover1, prover2 =
@@ -1183,6 +1191,30 @@ let handle_compare2 self : unit =
   in
   let options1 = CCList.mapi (mk_entry ?selected:prover1) entries in
   let options2 = CCList.mapi (mk_entry ?selected:prover2) entries in
+  let status_opt_to_string = function
+    | Some `Sat -> "sat"
+    | Some `Unsat -> "unsat"
+    | None -> ""
+  in
+  let status_option ?current status =
+    let open Html in
+    let attrs =
+      A.value (status_opt_to_string status)
+      ::
+      (if current = Some status then
+        [ A.selected "selected" ]
+      else
+        [])
+    in
+    option attrs [ txt (status_opt_to_string status) ]
+  in
+  let ostatus =
+    [
+      status_option None;
+      status_option ~current:status (Some `Unsat);
+      status_option ~current:status (Some `Sat);
+    ]
+  in
   let prover_info =
     let file_link fname text =
       PrintBox.link ~uri:(uri_get_file fname) (PrintBox.text text)
@@ -1203,7 +1235,7 @@ let handle_compare2 self : unit =
         | `Mismatch -> "Mismatch"
         | `Same -> "Same"
       in
-      let short = Test_compare.Short.make_provers (ff1, p1) (ff2, p2) in
+      let short = Test_compare.Short.make_provers ?status (ff1, p1) (ff2, p2) in
       let make filter =
         let total = get short filter in
         let page_size = min total 500 in
@@ -1220,8 +1252,8 @@ let handle_compare2 self : unit =
                 [
                   summary []
                     [ txtf "%s (%s)" (filter_to_string filter) limit_info ];
-                  Test_compare.Full.make_filtered ~page_size ~filter (ff1, p1)
-                    (ff2, p2)
+                  Test_compare.Full.make_filtered ?status ~page_size ~filter
+                    (ff1, p1) (ff2, p2)
                   |> Test_compare.Full.to_printbox ~file_link
                   |> Html.pb_html;
                 ]);
@@ -1242,17 +1274,41 @@ let handle_compare2 self : unit =
         |> String.concat "," |> gnuplot_img;
       ]
   in
+  let plot_html =
+    if Option.is_none status then
+      plot_html
+    else
+      Html.(
+        strong []
+          [ txt "Warning: this plot includes BOTH sat and unsat results." ])
+      :: plot_html
+  in
   let html =
     let open Html in
     mk_page ~title:"compare2"
       ([
          mk_navigation [ "/compare2/", "compare", true ];
          h3 [] [ txt "compare" ];
-         form []
+         form
+           [ A.class_ "container" ]
            [
-             select [ A.name "prover[]" ] options1;
-             select [ A.name "prover[]" ] options2;
-             mk_button ~cls:"btn-primary btn-sm" [] [ txt "Compare" ];
+             div
+               [ A.class_ "row" ]
+               [
+                 div
+                   [ A.class_ "col-6" ]
+                   [
+                     select [ A.name "prover[]" ] options1;
+                     select [ A.name "prover[]" ] options2;
+                     mk_button ~cls:"btn-primary btn-sm" [] [ txt "Compare" ];
+                   ];
+                 div
+                   [ A.class_ "col-3" ]
+                   [
+                     Html.label [] [ Html.txt "Limit to:" ];
+                     select [ A.name "status" ] ostatus;
+                   ];
+               ];
            ];
        ]
       @ prover_info
