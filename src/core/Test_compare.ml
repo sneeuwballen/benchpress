@@ -36,15 +36,11 @@ let cmp2sql = function
 
 let pp_cmp = Fmt.of_to_string cmp2sql
 
-let status_to_string = function
-  | `Sat -> {|
-      (r1.res = 'sat' or r2.res = 'sat')
-    |}
-  | `Unsat -> {|
-      (r1.res = 'unsat' or r2.res = 'unsat')
-    |}
+let status_to_sql = function
+  | `Sat -> {| (r1.res = 'sat' or r2.res = 'sat') |}
+  | `Unsat -> {| (r1.res = 'unsat' or r2.res = 'unsat') |}
 
-let pp_status = Fmt.of_to_string status_to_string
+let pp_status_sql = Fmt.of_to_string status_to_sql
 
 let pp_opt ?(none = Fmt.const_string "") pp ppf = function
   | None -> none ppf ()
@@ -60,7 +56,7 @@ let unsafe_sql ?order ?limit ?offset ?filter ?status select =
     | None -> ()
     | Some filter -> Format.fprintf ppf "and (%a)" pp_cmp filter
   in
-  let pp_status = pp_opt (pp_prefix " and " pp_status) in
+  let pp_status = pp_opt (pp_prefix " and " pp_status_sql) in
   let pp_select =
     Fmt.list
       ~sep:(fun ppf () -> Fmt.fprintf ppf ",@,")
