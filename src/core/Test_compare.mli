@@ -2,6 +2,7 @@
 
 type filename = string
 type prover = filename * Prover.name
+type status = [ `Sat | `Unsat ]
 
 module Short : sig
   type t = {
@@ -14,9 +15,9 @@ module Short : sig
   }
 
   val to_printbox : t -> PrintBox.t
-  val make : filename -> filename -> (Prover.name * t) list
+  val make : ?status:status -> filename -> filename -> (Prover.name * t) list
 
-  val make_provers : prover -> prover -> t
+  val make_provers : ?status:status -> prover -> prover -> t
   (** Make a single comparison between two provers in (possibly) different files *)
 end
 
@@ -28,6 +29,7 @@ module Full : sig
     ?page:int ->
     ?page_size:int ->
     ?filter:filter ->
+    ?status:status ->
     prover ->
     prover ->
     entry list
