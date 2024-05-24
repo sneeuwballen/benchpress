@@ -23,6 +23,8 @@ let cmp2sql = function
       or
       (r1.res not in ('sat', 'unsat') and r2.res not in ('sat', 'unsat'))
     |}
+  | `Solved ->
+    {| (r1.res in ('sat', 'unsat') and r1.res = r2.res) |}
   | `Mismatch ->
     {|
       r1.res in ('sat', 'unsat') and
@@ -84,6 +86,9 @@ module Short = struct
     regressed: int;
     mismatch: int;
     same: int; (* same result *)
+    solved: int; (* same solved result *)
+    old_time: float; (* same solved result *)
+    new_time: float; (* same solved result *)
   }
 
   let to_printbox (self : t) =
@@ -93,9 +98,12 @@ module Short = struct
         "appeared", int self.appeared;
         "disappeared", int self.disappeared;
         "same", int self.same;
+        "solved", int self.solved;
         "mismatch", pb_int_color Style.(fg_color Red) self.mismatch;
         "improved", pb_int_color Style.(fg_color Green) self.improved;
         "regressed", pb_int_color Style.(fg_color Cyan) self.regressed;
+        "old time (solved)", text @@ Misc.human_duration self.old_time;
+        "new time (solved)", text @@ Misc.human_duration self.new_time;
       ]
 
   let make1 ?status db p1 p2 : t =
@@ -107,6 +115,12 @@ module Short = struct
           match Db.Cursor.next c with
           | None -> Error.failf "expected result for query\n%s" q
           | Some x -> x)
+      |> Misc.unwrap_db (fun () -> spf "while running\n%s" q)
+    in
+    let get_flt q =
+      Db.exec db q p1 p2
+        ~ty:Db.Ty.(p2 text text, p1 (nullable float), CCOpt.get_or ~default:0.)
+        ~f:Db.Cursor.get_one_exn
       |> Misc.unwrap_db (fun () -> spf "while running\n%s" q)
     in
     let appeared =
@@ -124,6 +138,9 @@ module Short = struct
                 db2.prover_res.prover=?
                 and file = r1.file); |}
     and same = get_n (unsafe_sql ?status ~filter:`Same [ "count(r1.file)" ])
+    and solved = get_n (unsafe_sql ?status ~filter:`Solved [ "count(r1.file)" ])
+    and old_time = get_flt (unsafe_sql ?status ~filter:`Solved [ "sum(r1.rtime)" ])
+    and new_time = get_flt (unsafe_sql ?status ~filter:`Solved [ "sum(r2.rtime)" ])
     and mismatch =
       get_n (unsafe_sql ?status ~filter:`Mismatch [ "count(r1.file)" ])
     and improved =
@@ -131,7 +148,8 @@ module Short = struct
     and regressed =
       get_n (unsafe_sql ?status ~filter:`Regressed [ "count(r1.file)" ])
     in
-    { appeared; disappeared; same; mismatch; improved; regressed }
+    { appeared; disappeared; same; solved; mismatch; improved; regressed
+    ; old_time ; new_time }
 
   let make_provers ?status (f1, p1) (f2, p2) : t =
     Error.guard
@@ -159,7 +177,7 @@ module Short = struct
 end
 
 module Full = struct
-  type filter = [ `Improved | `Regressed | `Mismatch | `Same ]
+  type filter = [ `Improved | `Regressed | `Mismatch | `Same | `Solved ]
   type entry = string * Res.t * float * Res.t * float
 
   let make_filtered ?(page = 0) ?(page_size = 500) ?filter ?status (f1, p1)
