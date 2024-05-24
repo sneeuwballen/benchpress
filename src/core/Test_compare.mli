@@ -12,6 +12,9 @@ module Short : sig
     regressed: int;
     mismatch: int;
     same: int; (* same result *)
+    solved: int; (* same solved result *)
+    old_time: float; (* same solved result *)
+    new_time: float; (* same solved result *)
   }
 
   val to_printbox : t -> PrintBox.t
@@ -22,7 +25,7 @@ module Short : sig
 end
 
 module Full : sig
-  type filter = [ `Improved | `Regressed | `Mismatch | `Same ]
+  type filter = [ `Improved | `Regressed | `Mismatch | `Same | `Solved ]
   type entry = string * Res.t * float * Res.t * float
 
   val make_filtered :

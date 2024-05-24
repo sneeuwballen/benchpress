@@ -1228,12 +1228,14 @@ let handle_compare2 self : unit =
         | `Regressed -> short.regressed
         | `Mismatch -> short.mismatch
         | `Same -> short.same
+        | `Solved -> short.solved
       in
       let filter_to_string = function
         | `Improved -> "Improved"
         | `Regressed -> "Regressed"
         | `Mismatch -> "Mismatch"
         | `Same -> "Same"
+        | `Solved -> "Solved"
       in
       let short = Test_compare.Short.make_provers ?status (ff1, p1) (ff2, p2) in
       let make filter =
