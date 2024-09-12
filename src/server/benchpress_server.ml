@@ -2,7 +2,7 @@
 open Common
 module T = Test
 module H = Tiny_httpd
-module U = Tiny_httpd_util
+module U = Tiny_httpd.Util
 module PB = PrintBox
 module Log = (val Logs.src_log (Logs.Src.create "benchpress-serve"))
 
@@ -1746,9 +1746,9 @@ let handle_file self : unit =
       Log.debug (fun k -> k "get-file: `%s`" file);
       let bytes =
         if file = "prelude" then
-          H.Byte_stream.of_string Builtin_config.config (* magic file! *)
+          H.IO.Input.of_string Builtin_config.config (* magic file! *)
         else (
-          try H.Byte_stream.of_chan @@ open_in file
+          try H.IO.Input.of_in_channel @@ open_in file
           with e ->
             H.Response.fail_raise ~code:404
               "cannot open file %S:\n\
