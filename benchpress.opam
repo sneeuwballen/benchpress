@@ -1,5 +1,6 @@
 opam-version: "2.0"
 version: "0.1"
+license: "BSD-2-Clause"
 authors: ["Simon Cruanes" "Guillaume Bury"]
 synopsis: "Tool to run one or more logic programs, on a set of files, and collect the results"
 maintainer: "simon.cruanes.2007@m4x.org"
