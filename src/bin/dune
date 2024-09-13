@@ -6,8 +6,8 @@
  (promote
   (into ../..)
   (until-clean))
- (libraries benchpress containers cmdliner result uuidm logs logs.cli
-   sqlite3_utils base64)
+ (libraries benchpress containers cmdliner uuidm logs logs.cli sqlite3_utils
+   base64)
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress))
 
 (rule
