@@ -22,8 +22,8 @@ depends: [
   "sqlite3"
   "sqlite3_utils" { >= "0.4" & < "0.5" }
   "tiny_httpd" { >= "0.17" & < "1.0" }
-  "printbox" { >= "0.6" }
-  "printbox-text" { >= "0.6" }
+  "printbox" { >= "0.12" }
+  "printbox-text" { >= "0.12" }
   "ocaml" {>= "4.12" }
   "jemalloc" { >= "0.2" & < "0.3" }
 ]
