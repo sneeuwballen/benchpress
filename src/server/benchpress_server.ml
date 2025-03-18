@@ -122,7 +122,7 @@ end = struct
           l
       in
       H.div a l
-    | B.Pad (_, b) | B.Frame b -> to_html_rec b
+    | B.Pad (_, b) | B.Frame { sub = b; _ } -> to_html_rec b
     | B.Align { h = `Right; inner = b; v = _ } ->
       H.div [ A.class_ "align-right" ] [ to_html_rec b ]
     | B.Align { h = `Center; inner = b; v = _ } ->
