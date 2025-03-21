@@ -8,26 +8,26 @@ let createdb (db : Db.t) =
     CREATE TABLE IF NOT EXISTS test_database (
       id INTEGER PRIMARY KEY,
       path BLOB NOT NULL UNIQUE
-    );
+    ) STRICT;
 
     CREATE TABLE IF NOT EXISTS test_meta (
       database_id INTEGER NOT NULL REFERENCES test_database (id),
       key TEXT NOT NULL,
       value BLOB,
       CONSTRAINT meta_key_unique UNIQUE (database_id, key)
-    );
+    ) STRICT;
 
     CREATE TABLE IF NOT EXISTS test_dirs (
       id INTEGER PRIMARY KEY,
       database_id INTEGER NOT NULL REFERENCES test_database (id),
       dir BLOB NOT NULL
-    );
+    ) STRICT;
 
     CREATE TABLE IF NOT EXISTS test_provers (
       id INTEGER PRIMARY KEY,
       database_id INTEGER NOT NULL REFERENCES test_database (id),
       prover TEXT NOT NULL
-    );
+    ) STRICT;
     |}
 
 let get (db : Db.t) self field =
