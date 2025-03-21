@@ -51,7 +51,7 @@ type t = {
   server: H.t;
   task_q: Task_queue.t;
   data_dir: string;
-  meta_cache: (string, Test_metadata.t) Hashtbl.t;
+  meta_cache: Meta_cache.t;
   allow_delete: bool;
 }
 
@@ -1122,22 +1122,6 @@ let handle_show_csv (self : t) : unit =
       ]
     (Ok csv)
 
-(* get metadata for the file *)
-let get_meta (self : t) (p : string) : Test_metadata.t =
-  match Hashtbl.find self.meta_cache p with
-  | m -> m
-  | exception Not_found ->
-    let res =
-      guardf 500
-        (Error.wrapf "obtaining metadata for '%s'" (Filename.basename p))
-      @@ fun () ->
-      Sqlite3_utils.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY p
-        (fun db -> Test_metadata.of_db db)
-    in
-    (* cache if it's complete *)
-    if Test_metadata.is_complete res then Hashtbl.add self.meta_cache p res;
-    res
-
 (* compare different provers *)
 let handle_compare2 self : unit =
   let server = self.server in
@@ -1173,7 +1157,7 @@ let handle_compare2 self : unit =
   let mk_entry ?selected _idx (file_path, _size) : Html.elt =
     let open Html in
     let file_basename = Filename.basename file_path in
-    let meta = get_meta self file_path in
+    let meta = Meta_cache.find self.meta_cache file_path in
     optgroup
       [ A.label (Uuidm.to_string meta.uuid) ]
       (CCList.map
@@ -1543,7 +1527,7 @@ let html_of_files (self : t) ~off ~limit : Html.elt list =
   let mk_entry idx (file_path, size) : Html.elt =
     let open Html in
     let file_basename = Filename.basename file_path in
-    let meta = CCHashtbl.get self.meta_cache file_path in
+    let meta = Meta_cache.find_if_loaded self.meta_cache file_path in
     let url_show = uri_show file_basename in
     let url_meta =
       Printf.sprintf "/file-sum/%s" (U.percent_encode file_basename)
@@ -1706,7 +1690,7 @@ let handle_file_summary (self : t) : unit =
   let h =
     let open Html in
     try
-      let m = get_meta self file_full in
+      let m = Meta_cache.find self.meta_cache file_full in
       div [] (mk_file_summary fname m)
     with Error.E e | E (e, _) ->
       let title = [ A.title @@ "<no metadata>: " ^ Error.show e ] in
@@ -1781,13 +1765,16 @@ module Cmd = struct
       Tiny_httpd_prometheus.GC_metrics.create_and_update_before_emit prometheus;
 
       let data_dir = Misc.data_dir () in
+      let meta_cache =
+        Meta_cache.create ~path:(Filename.concat data_dir "meta.sqlite3")
+      in
       let self =
         {
           defs;
           server;
           data_dir;
           task_q = Task_queue.create ~defs ();
-          meta_cache = Hashtbl.create ~random:true 16;
+          meta_cache;
           allow_delete;
         }
       in
