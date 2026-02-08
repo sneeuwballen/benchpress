@@ -230,47 +230,30 @@ module List_files = struct
 end
 
 module Show = struct
-  (* sub-command for showing results *)
+  type params = {
+    csv : string option; (** CSV output file *)
+    file : string; [@pos 0] [@docv "FILE"] (** file to read *)
+    no_color : bool; [@names [ "no-color"; "nc" ]]
+    (** disable colored output *)
+    check : bool; [@default true] (** check results *)
+    bad : bool; [@default true] (** list bad results *)
+    summary : string option; (** write summary in FILE *)
+    details : bool; (** show more details *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
+    catch_err @@ fun () ->
+    Misc.setup_logs debug;
+    if p.no_color then CCFormat.set_color_default false;
+    Show.main ~check:p.check ~bad:p.bad ~details:p.details ?csv:p.csv
+      ?summary:p.summary p.file
+
   let cmd =
-    let open Cmdliner in
-    let csv =
-      Arg.(
-        value & opt (some string) None & info [ "csv" ] ~doc:"CSV output file")
-    and file =
-      Arg.(
-        required
-        & pos 0 (some string) None
-        & info [] ~docv:"FILE" ~doc:"file to read")
-    and no_color =
-      Arg.(
-        value & flag & info [ "no-color"; "nc" ] ~doc:"disable colored output")
-    and check =
-      Arg.(
-        value & opt ~vopt:true bool true & info [ "check" ] ~doc:"check results")
-    and bad =
-      Arg.(
-        value & opt ~vopt:true bool true
-        & info [ "bad" ] ~doc:"list bad results")
-    and summary =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "summary" ] ~doc:"write summary in FILE")
-    and debug = Logs_cli.level ()
-    and details =
-      Arg.(value & flag & info [ "details" ] ~doc:"show more details")
-    in
-    let aux check bad csv summary no_color debug details file : bool =
-      catch_err @@ fun () ->
-      Misc.setup_logs debug;
-      if no_color then CCFormat.set_color_default false;
-      Show.main ~check ~bad ~details ?csv ?summary file
-    in
     let doc = "show benchmark results (see `list-files`)" in
-    Cmd.v (Cmd.info ~doc "show")
-      Term.(
-        const aux $ check $ bad $ csv $ summary $ no_color $ debug $ details
-        $ file)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "show")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
 (** {2 plot results} *)
@@ -327,20 +310,19 @@ module Sample = struct
     Misc.synchronized (fun () -> List.iter (Printf.printf "%s\n%!") sample);
     ()
 
-  (* sub-command to sample a directory *)
+  type params = {
+    dirs : string list; [@pos_all] [@docv "DIR"]
+    (** target directories (containing tests) *)
+    n : int; [@default 1] [@docv "N"] (** number of files to sample *)
+  }
+  [@@deriving subliner]
+
   let cmd =
-    let open Cmdliner in
-    let aux n dir = run ~n dir in
-    let dir =
-      Arg.(
-        value & pos_all string []
-        & info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
-    and n =
-      Arg.(
-        value & opt int 1
-        & info [ "n" ] ~docv:"N" ~doc:"number of files to sample")
-    and doc = "sample N files in the given directories" in
-    Cmd.v (Cmd.info ~doc "sample") Term.(const aux $ n $ dir)
+    let doc = "sample N files in the given directories" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "sample")
+      Cmdliner.Term.(
+        const (fun p -> run ~n:p.n p.dirs) $ params_cmdliner_term ())
 end
 
 (** {2 Show directories} *)
