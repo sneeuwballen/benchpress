@@ -126,48 +126,50 @@ end
 module Slurm = struct
   (* sub-command for running tests with slurm *)
   type params = {
-    j : int; [@default 1]
-    (** number of parallel threads each worker will launch on the node on which it's running. *)
-    progress : bool; (** print progress bar *)
-    pp_results : bool; [@default true] (** print results as they are found *)
-    paths : string list; [@pos_all] [@docv "PATH"]
-    (** target paths (or directories containing tests) *)
-    dir_files : string list; [@opt_all] [@names [ "F" ]] [@default []]
-    (** file containing a list of files *)
-    proof_dir : string option; (** store proofs in given directory *)
-    task : string option; (** task to run *)
-    timeout : int option; [@names [ "t"; "timeout" ]] (** timeout (in s) *)
-    memory : int option; [@names [ "m"; "memory" ]] (** memory (in MB) *)
-    meta : string; [@default ""] (** additional metadata to save *)
-    provers : string list; [@opt_all] [@names [ "p"; "provers" ]] [@default []]
-    (** select provers *)
-    csv : string option; (** CSV output file *)
-    summary : string option; (** write summary in FILE *)
-    no_color : bool; [@names [ "no-color"; "nc" ]]
-    (** disable colored output *)
-    output : string option; [@names [ "o"; "output" ]]
-    (** output database file *)
-    save : bool; [@default true] (** save results on disk *)
-    wal_mode : bool; [@names [ "wal" ]]
-    (** turn on the journal WAL mode *)
-    desktop_notification : bool;
-      [@default true]
-      [@names [ "desktop-notification"; "dn" ]]
-    (** send a desktop notification when the benchmarking is done (true by default) *)
-    no_failure : bool; [@names [ "no-failure"; "nf" ]]
-    (** don't fail if some provers give incorrect answers (contradictory to what was expected) *)
-    update : bool; [@names [ "update"; "u" ]]
-    (** if the output file already exists, overwrite it with the new one. *)
-    partition : string option;
-    (** partition to which the allocated nodes should belong *)
-    nodes : int option; [@names [ "n"; "nodes" ]]
-    (** the maximum number of nodes to be used *)
-    addr : string option; [@names [ "a"; "addr" ]]
-    (** IP address of the server on the control node. Needs to be reachable by the workers which will run on the allocated calculation nodes. *)
-    port : int option;
-    (** port of the server on the control node. Default is 0 to let the OS choose a port. *)
-    ntasks : int option;
-    (** The number of tasks to give the workers at a time. *)
+    j: int; [@default 1]
+        (** number of parallel threads each worker will launch on the node on
+            which it's running. *)
+    progress: bool;  (** print progress bar *)
+    pp_results: bool; [@default true]  (** print results as they are found *)
+    paths: string list; [@pos_all] [@docv "PATH"]
+        (** target paths (or directories containing tests) *)
+    dir_files: string list; [@opt_all] [@names [ "F" ]] [@default []]
+        (** file containing a list of files *)
+    proof_dir: string option;  (** store proofs in given directory *)
+    task: string option;  (** task to run *)
+    timeout: int option; [@names [ "t"; "timeout" ]]  (** timeout (in s) *)
+    memory: int option; [@names [ "m"; "memory" ]]  (** memory (in MB) *)
+    meta: string; [@default ""]  (** additional metadata to save *)
+    provers: string list; [@opt_all] [@names [ "p"; "provers" ]] [@default []]
+        (** select provers *)
+    csv: string option;  (** CSV output file *)
+    summary: string option;  (** write summary in FILE *)
+    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    output: string option; [@names [ "o"; "output" ]]
+        (** output database file *)
+    save: bool; [@default true]  (** save results on disk *)
+    wal_mode: bool; [@names [ "wal" ]]  (** turn on the journal WAL mode *)
+    desktop_notification: bool;
+        [@default true] [@names [ "desktop-notification"; "dn" ]]
+        (** send a desktop notification when the benchmarking is done (true by
+            default) *)
+    no_failure: bool; [@names [ "no-failure"; "nf" ]]
+        (** don't fail if some provers give incorrect answers (contradictory to
+            what was expected) *)
+    update: bool; [@names [ "update"; "u" ]]
+        (** if the output file already exists, overwrite it with the new one. *)
+    partition: string option;
+        (** partition to which the allocated nodes should belong *)
+    nodes: int option; [@names [ "n"; "nodes" ]]
+        (** the maximum number of nodes to be used *)
+    addr: string option; [@names [ "a"; "addr" ]]
+        (** IP address of the server on the control node. Needs to be reachable
+            by the workers which will run on the allocated calculation nodes. *)
+    port: int option;
+        (** port of the server on the control node. Default is 0 to let the OS
+            choose a port. *)
+    ntasks: int option;
+        (** The number of tasks to give the workers at a time. *)
   }
   [@@deriving subliner]
 
@@ -175,7 +177,12 @@ module Slurm = struct
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
     if p.no_color then CCFormat.set_color_default false;
-    let dyn = if p.progress then Some true else None in
+    let dyn =
+      if p.progress then
+        Some true
+      else
+        None
+    in
     let addr =
       match p.addr with
       | None -> None
@@ -196,7 +203,8 @@ module Slurm = struct
     in
     Cmdliner.Cmd.v
       (Cmdliner.Cmd.info ~doc "slurm")
-      Cmdliner.Term.(const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 module List_files = struct
@@ -231,14 +239,13 @@ end
 
 module Show = struct
   type params = {
-    csv : string option; (** CSV output file *)
-    file : string; [@pos 0] [@docv "FILE"] (** file to read *)
-    no_color : bool; [@names [ "no-color"; "nc" ]]
-    (** disable colored output *)
-    check : bool; [@default true] (** check results *)
-    bad : bool; [@default true] (** list bad results *)
-    summary : string option; (** write summary in FILE *)
-    details : bool; (** show more details *)
+    csv: string option;  (** CSV output file *)
+    file: string; [@pos 0] [@docv "FILE"]  (** file to read *)
+    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    check: bool; [@default true]  (** check results *)
+    bad: bool; [@default true]  (** list bad results *)
+    summary: string option;  (** write summary in FILE *)
+    details: bool;  (** show more details *)
   }
   [@@deriving subliner]
 
@@ -311,9 +318,9 @@ module Sample = struct
     ()
 
   type params = {
-    dirs : string list; [@pos_all] [@docv "DIR"]
-    (** target directories (containing tests) *)
-    n : int; [@default 1] [@docv "N"] (** number of files to sample *)
+    dirs: string list; [@pos_all] [@docv "DIR"]
+        (** target directories (containing tests) *)
+    n: int; [@default 1] [@docv "N"]  (** number of files to sample *)
   }
   [@@deriving subliner]
 
