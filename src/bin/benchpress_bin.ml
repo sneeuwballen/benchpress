@@ -224,17 +224,15 @@ module List_files = struct
       entries;
     ()
 
-  (* sub-command to sample a directory *)
+  type params = { abs: bool [@default false]  (** show absolute paths *) }
+  [@@deriving subliner]
+
   let cmd =
-    let open Cmdliner in
-    let abs =
-      Arg.(
-        value & opt ~vopt:true bool false
-        & info [ "abs" ] ~doc:"show absolute paths")
-    in
     let doc = "list benchmark result files" in
-    let aux abs () = main ~abs () in
-    Cmd.v (Cmd.info ~doc "list-files") Term.(const aux $ abs $ const ())
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list-files")
+      Cmdliner.Term.(
+        const (fun p -> main ~abs:p.abs ()) $ params_cmdliner_term ())
 end
 
 module Show = struct
@@ -274,22 +272,19 @@ module Plot = struct
         Cactus_plot.show p;
         ())
 
-  (* sub-command for showing results *)
+  type params = { file: string [@pos 0] [@docv "FILE"]  (** file to read *) }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
+    catch_err @@ fun () ->
+    Misc.setup_logs debug;
+    main p.file
+
   let cmd =
-    let open Cmdliner in
-    let file =
-      Arg.(
-        required
-        & pos 0 (some string) None
-        & info [] ~docv:"FILE" ~doc:"file to read")
-    and debug = Logs_cli.level () in
-    let aux debug file =
-      catch_err @@ fun () ->
-      Misc.setup_logs debug;
-      main file
-    in
     let doc = "plot benchmark results" in
-    Cmd.v (Cmd.info ~doc "plot") Term.(const aux $ debug $ file)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "plot")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
 (** {2 Sample} *)
@@ -335,9 +330,7 @@ end
 (** {2 Show directories} *)
 
 module Dir = struct
-  type which = Config | State
-
-  let which_conv = Cmdliner.Arg.(enum [ "config", Config; "state", State ])
+  type which = Config | State [@@deriving subliner_enum]
 
   let run c =
     catch_err @@ fun () ->
@@ -347,14 +340,10 @@ module Dir = struct
       | State -> Misc.data_dir ());
     ()
 
-  (* sub-command for showing results *)
   let cmd =
     let open Cmdliner in
     let which =
-      Arg.(
-        required
-        & pos 0 (some which_conv) None
-        & info ~doc:"directory to list (config|state)" [])
+      Arg.(required & pos 0 (some (which_cmdliner_conv ())) None & info [])
     in
     let doc =
       "show directories where benchpress stores its state (config|state)"
@@ -365,20 +354,27 @@ end
 (** {2 Check config} *)
 
 module Check_config = struct
-  let run debug with_default f =
+  type params = {
+    files: string list; [@pos_all] [@default []]  (** file(s) to check *)
+    with_default: bool; [@default false] [@names [ "d"; "default" ]]
+        (** combine with the default config file(s) *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
     catch_err @@ fun () ->
     Misc.setup_logs debug;
     let default_file = Misc.default_config () in
     let f =
-      if f = [] then
+      if p.files = [] then
         if Sys.file_exists default_file then
           [ default_file ]
         else
           []
-      else if with_default && Sys.file_exists default_file then
-        Misc.default_config () :: f
+      else if p.with_default && Sys.file_exists default_file then
+        Misc.default_config () :: p.files
       else
-        f
+        p.files
     in
     let l = Stanza.parse_files f in
     Format.printf "@[<v>%a@]@." Stanza.pp_l l;
@@ -387,39 +383,31 @@ module Check_config = struct
     ()
 
   let cmd =
-    let open Cmdliner in
-    let files =
-      Arg.(value & pos_all string [] & info [] ~doc:"file(s) to check")
-    and debug = Logs_cli.level ()
-    and with_default =
-      Arg.(
-        value & opt bool false
-        & info [ "d"; "default" ] ~doc:"combine with the default config file(s)")
-    in
     let doc = "parse and print configuration file(s)" in
-    let aux debug with_default files () = run debug with_default files in
-    Cmd.v
-      (Cmd.info ~doc "check-config")
-      Term.(const aux $ debug $ with_default $ files $ const ())
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "check-config")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
 (** {2 See prover(s)} *)
 
 module Prover_show = struct
-  let run (log_lvl, defs) names =
+  type params = { names: string list [@pos_all] [@default []] }
+  [@@deriving subliner]
+
+  let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
-    let l = CCList.map (Definitions.find_prover' defs) names in
+    let l = CCList.map (Definitions.find_prover' defs) p.names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
     ()
 
   let cmd =
-    let open Cmdliner in
     let doc = "show definitions of given prover(s)" in
-    let names = Arg.(value & pos_all string [] & info []) in
-    Cmd.v
-      (Cmd.info ~doc "show-prover")
-      Term.(const run $ Bin_utils.definitions_term $ names)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "show-prover")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 (** {2 List provers} *)
@@ -435,30 +423,31 @@ module Prover_list = struct
     ()
 
   let cmd =
-    let open Cmdliner in
     let doc = "list prover(s) defined in config" in
-    Cmd.v
-      (Cmd.info ~doc "list-prover")
-      Term.(const run $ Bin_utils.definitions_term)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list-prover")
+      Cmdliner.Term.(const run $ Bin_utils.definitions_term)
 end
 
 (** {2 Show Task} *)
 
 module Task_show = struct
-  let run (log_lvl, defs) names =
+  type params = { names: string list [@pos_all] [@default []] }
+  [@@deriving subliner]
+
+  let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
-    let l = CCList.map (Definitions.find_task' defs) names in
+    let l = CCList.map (Definitions.find_task' defs) p.names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
     ()
 
   let cmd =
-    let open Cmdliner in
     let doc = "show definitions of given task(s)" in
-    let names = Arg.(value & pos_all string [] & info []) in
-    Cmd.v
-      (Cmd.info ~doc "show-task")
-      Term.(const run $ Bin_utils.definitions_term $ names)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "show-task")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 (** {2 List Tasks} *)
@@ -474,30 +463,29 @@ module Task_list = struct
     ()
 
   let cmd =
-    let open Cmdliner in
     let doc = "list task(s) defined in config" in
-    Cmd.v
-      (Cmd.info ~doc "list-task")
-      Term.(const run $ Bin_utils.definitions_term)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list-task")
+      Cmdliner.Term.(const run $ Bin_utils.definitions_term)
 end
 
 (** {2 Convert results to Sql} *)
 
 module Sql_convert = struct
-  let run defs files = catch_err @@ fun () -> Sql_res.run defs files
+  type params = {
+    files: string list; [@pos_all] [@non_empty] [@docv "FILES"]
+        (** files to read *)
+  }
+  [@@deriving subliner]
 
-  (* sub-command for showing results *)
+  let run (p : params) defs = catch_err @@ fun () -> Sql_res.run defs p.files
+
   let cmd =
-    let open Cmdliner in
-    let files =
-      Arg.(
-        non_empty & pos_all string []
-        & info [] ~docv:"FILES" ~doc:"files to read")
-    in
     let doc = "convert result(s) into sqlite files" in
-    Cmd.v
-      (Cmd.info ~doc "sql-convert")
-      Term.(const run $ Bin_utils.definitions_term $ files)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "sql-convert")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 (** {2 Main: Parse CLI} *)
