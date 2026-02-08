@@ -10,7 +10,7 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
   Error.guard
     (Error.wrapf "run prover action@ `@[%a@]`" Action.pp_run_provers r)
   @@ fun () ->
-  let interrupted = CCLock.create false in
+  let interrupted = Moonpool.Lock.create false in
   let r =
     Exec_action.Exec_run_provers.expand ?dyn ?j ?cpus ?proof_dir ?limits defs
       r.limits r.j r.pattern r.dirs r.provers
@@ -23,7 +23,7 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
   let result =
     Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
     Exec_action.Exec_run_provers.run ~uuid ?timestamp
-      ~interrupted:(fun () -> CCLock.get interrupted)
+      ~interrupted:(fun () -> Moonpool.Lock.get interrupted)
       ~on_solve:progress#on_res ~save ~wal_mode
       ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
       ~on_proof_check:progress#on_proof_check_res
@@ -40,7 +40,7 @@ let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
     (Error.wrapf "run provers with slurm action@ `@[%a@]`"
        Action.pp_run_provers_slurm r)
   @@ fun () ->
-  let interrupted = CCLock.create false in
+  let interrupted = Moonpool.Lock.create false in
   let exp_r =
     Exec_action.Exec_run_provers.expand ~slurm:true ?dyn ?j ?proof_dir ?limits
       defs r.limits r.j r.pattern r.dirs r.provers
@@ -53,7 +53,7 @@ let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
   let result =
     Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
     Exec_action.Exec_run_provers.run_sbatch_job ~uuid ?timestamp
-      ~interrupted:(fun () -> CCLock.get interrupted)
+      ~interrupted:(fun () -> Moonpool.Lock.get interrupted)
       ?partition:r.partition ~nodes:r.nodes ~addr:r.addr ~port:r.port
       ~ntasks:r.ntasks ~save ~wal_mode ~on_solve:progress#on_res
       ~on_start_proof_check:(fun () -> progress#on_start_proof_check)

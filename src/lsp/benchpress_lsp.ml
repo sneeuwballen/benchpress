@@ -3,7 +3,7 @@ module Stanza = Benchpress.Stanza
 module Error = Benchpress.Error
 module Definitions = Benchpress.Definitions
 module Sexp_loc = Benchpress.Sexp_loc
-module Lock = CCLock
+module Lock = Moonpool.Lock
 
 type 'a or_error = ('a, Error.t) result
 
@@ -120,7 +120,7 @@ class blsp =
     method! on_req_hover ~notify_back:_ ~id:_ ~uri ~pos (_ : L.doc_state)
         : LT.Hover.t option =
       let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
-      match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
+      match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
       | Some { defs = Ok defs; text; _ } ->
         Log.debug (fun k -> k "found buffer with defs");
         (match find_atom_under_ text pos with
@@ -145,7 +145,7 @@ class blsp =
     method! on_req_definition ~notify_back:_ ~id:_ ~uri ~pos (_ : L.doc_state)
         : LT.Locations.t option =
       let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
-      match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
+      match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
       | Some { defs = Ok defs; text; _ } ->
         Log.debug (fun k -> k "found buffer with defs");
         (match find_atom_under_ text pos with
@@ -174,7 +174,7 @@ class blsp =
           k "completion request in '%s' at pos: %d line, %d col" uri pos.line
             pos.character);
       let pos = Loc.Pos.of_line_col pos.line pos.character in
-      match Lock.with_lock buffers (fun b -> CCHashtbl.get b uri) with
+      match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
       | Some { defs = Ok defs; text; _ } ->
         Log.debug (fun k -> k "found local doc");
         (match find_atom_under_ text pos with
@@ -215,7 +215,7 @@ class blsp =
         catch_e @@ fun () -> Definitions.of_stanza_l ~reify_errors:true stanzas
       in
       let pdoc = { stanzas; defs; text = contents } in
-      Lock.with_lock buffers (fun b -> Hashtbl.replace b uri pdoc);
+      Lock.with_ buffers (fun b -> Hashtbl.replace b uri pdoc);
       let diags = diagnostics ~uri pdoc in
       Log.debug (fun k -> k "send diags for %s" uri);
       notify_back#send_diagnostic diags
@@ -238,7 +238,7 @@ class blsp =
     method on_notif_doc_did_close ~notify_back:_
         (d : LT.TextDocumentIdentifier.t) : unit IO.t =
       Log.debug (fun k -> k "close %s" d.uri);
-      Lock.with_lock buffers (fun b -> Hashtbl.remove b d.uri);
+      Lock.with_ buffers (fun b -> Hashtbl.remove b d.uri);
       IO.return ()
   end
 

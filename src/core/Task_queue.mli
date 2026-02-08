@@ -17,7 +17,7 @@ type t
 
 val create : ?defs:Definitions.t -> unit -> t
 
-val defs : t -> Definitions.t CCLock.t
+val defs : t -> Definitions.t Moonpool.Lock.t
 (** List of definitions available for tasks *)
 
 val size : t -> int

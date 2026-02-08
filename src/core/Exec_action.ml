@@ -290,7 +290,7 @@ end = struct
       in
       (* insert into DB here *)
       let ev_prover = Run_event.mk_prover result in
-      CCLock.with_lock db (fun db -> Run_event.to_db db ev_prover);
+      Moonpool.Lock.with_ db (fun db -> Run_event.to_db db ev_prover);
 
       let ev_proof =
         match result.res, proof_file with
@@ -320,7 +320,7 @@ end = struct
           on_proof_check res;
 
           (* insert into DB here *)
-          CCLock.with_lock db (fun db -> Run_event.to_db db ev_checker);
+          Moonpool.Lock.with_ db (fun db -> Run_event.to_db db ev_checker);
           [ ev_checker ]
         | _ -> []
       in
@@ -339,7 +339,7 @@ end = struct
     in
     (* run provers *)
     let res_l =
-      let db = CCLock.create db in
+      let db = Moonpool.Lock.create db in
       match self.j with
       | Bounded j ->
         Misc.Par_map.map_p ~j
@@ -446,7 +446,7 @@ end = struct
       let nb_resps = ref 0 in
       let resps_ref = ref [] in
       let resps_lock = Mutex.create () in
-      let db_wl = CCLock.create db in
+      let db_wl = Moonpool.Lock.create db in
       let add_resps evl =
         Mutex.lock resps_lock;
         nb_resps := !nb_resps + List.length evl;
@@ -456,7 +456,7 @@ end = struct
             (match ev with
             | Run_event.Prover_run r -> on_solve r
             | Checker_run r -> on_proof_check r);
-            CCLock.with_lock db_wl (fun db -> Run_event.to_db db ev))
+            Moonpool.Lock.with_ db_wl (fun db -> Run_event.to_db db ev))
           evl;
         Mutex.unlock resps_lock
       in
@@ -574,7 +574,7 @@ end = struct
     in
 
     let sock, used_port = Misc.mk_socket (Unix.ADDR_INET (addr, port)) in
-    ignore (CCThread.spawn (fun () -> Misc.start_server nodes server_loop sock));
+    ignore (Thread.create (fun () -> Misc.start_server nodes server_loop sock) ());
 
     Log.debug (fun k ->
         k "Spawned the thread that establishes a server listening at: %s:%s."
