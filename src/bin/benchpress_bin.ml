@@ -125,159 +125,78 @@ end
 
 module Slurm = struct
   (* sub-command for running tests with slurm *)
-  let cmd =
-    let open Cmdliner in
-    let aux j pp_results dyn paths dir_files proof_dir (log_lvl, defs) task
-        timeout memory meta provers csv summary no_color output save wal_mode
-        desktop_notification no_failure update partition nodes addr port ntasks
-        =
-      Misc.setup_logs log_lvl;
-      catch_err @@ fun () ->
-      if no_color then CCFormat.set_color_default false;
-      let dyn =
-        if dyn then
-          Some true
-        else
-          None
-      in
-      Run_main.main ~sbatch:true ~pp_results ?dyn ~j ?timeout ?memory ?csv
-        ~provers ~meta ?task ?summary ~dir_files ?proof_dir ?output ~wal_mode
-        ~desktop_notification ~no_failure ~update ~save ?partition ?nodes ?addr
-        ?port ?ntasks defs paths ()
+  type params = {
+    j : int; [@default 1]
+    (** number of parallel threads each worker will launch on the node on which it's running. *)
+    progress : bool; (** print progress bar *)
+    pp_results : bool; [@default true] (** print results as they are found *)
+    paths : string list; [@pos_all] [@docv "PATH"]
+    (** target paths (or directories containing tests) *)
+    dir_files : string list; [@opt_all] [@names [ "F" ]] [@default []]
+    (** file containing a list of files *)
+    proof_dir : string option; (** store proofs in given directory *)
+    task : string option; (** task to run *)
+    timeout : int option; [@names [ "t"; "timeout" ]] (** timeout (in s) *)
+    memory : int option; [@names [ "m"; "memory" ]] (** memory (in MB) *)
+    meta : string; [@default ""] (** additional metadata to save *)
+    provers : string list; [@opt_all] [@names [ "p"; "provers" ]] [@default []]
+    (** select provers *)
+    csv : string option; (** CSV output file *)
+    summary : string option; (** write summary in FILE *)
+    no_color : bool; [@names [ "no-color"; "nc" ]]
+    (** disable colored output *)
+    output : string option; [@names [ "o"; "output" ]]
+    (** output database file *)
+    save : bool; [@default true] (** save results on disk *)
+    wal_mode : bool; [@names [ "wal" ]]
+    (** turn on the journal WAL mode *)
+    desktop_notification : bool;
+      [@default true]
+      [@names [ "desktop-notification"; "dn" ]]
+    (** send a desktop notification when the benchmarking is done (true by default) *)
+    no_failure : bool; [@names [ "no-failure"; "nf" ]]
+    (** don't fail if some provers give incorrect answers (contradictory to what was expected) *)
+    update : bool; [@names [ "update"; "u" ]]
+    (** if the output file already exists, overwrite it with the new one. *)
+    partition : string option;
+    (** partition to which the allocated nodes should belong *)
+    nodes : int option; [@names [ "n"; "nodes" ]]
+    (** the maximum number of nodes to be used *)
+    addr : string option; [@names [ "a"; "addr" ]]
+    (** IP address of the server on the control node. Needs to be reachable by the workers which will run on the allocated calculation nodes. *)
+    port : int option;
+    (** port of the server on the control node. Default is 0 to let the OS choose a port. *)
+    ntasks : int option;
+    (** The number of tasks to give the workers at a time. *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) (log_lvl, defs) =
+    Misc.setup_logs log_lvl;
+    catch_err @@ fun () ->
+    if p.no_color then CCFormat.set_color_default false;
+    let dyn = if p.progress then Some true else None in
+    let addr =
+      match p.addr with
+      | None -> None
+      | Some s -> Some (Unix.inet_addr_of_string s)
     in
-    let defs = Bin_utils.definitions_term
-    and doc =
+    Run_main.main ~sbatch:true ~pp_results:p.pp_results ?dyn ~j:p.j
+      ?timeout:p.timeout ?memory:p.memory ?csv:p.csv ~provers:p.provers
+      ~meta:p.meta ?task:p.task ?summary:p.summary ~dir_files:p.dir_files
+      ?proof_dir:p.proof_dir ?output:p.output ~wal_mode:p.wal_mode
+      ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
+      ~update:p.update ~save:p.save ?partition:p.partition ?nodes:p.nodes ?addr
+      ?port:p.port ?ntasks:p.ntasks defs p.paths ()
+
+  let cmd =
+    let doc =
       "run benchpress using the computing power of a cluster that works with \
        slurm"
-    and dyn = Arg.(value & flag & info [ "progress" ] ~doc:"print progress bar")
-    and pp_results =
-      Arg.(
-        value & opt bool true
-        & info [ "pp-results" ] ~doc:"print results as they are found")
-    and output =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "o"; "output" ] ~doc:"output database file")
-    and save =
-      Arg.(value & opt bool true & info [ "save" ] ~doc:"save results on disk")
-    and wal_mode =
-      Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
-    and dir_files =
-      Arg.(
-        value & opt_all file []
-        & info [ "F" ] ~doc:"file containing a list of files")
-    and proof_dir =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "proof-dir" ] ~doc:"store proofs in given directory")
-    and task =
-      Arg.(value & opt (some string) None & info [ "task" ] ~doc:"task to run")
-    and timeout =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "t"; "timeout" ] ~doc:"timeout (in s)")
-    and j =
-      Arg.(
-        value & opt int 1
-        & info [ "j" ]
-            ~doc:
-              "number of parallel threads each worker will launch on the node \
-               on which it's running.")
-    and memory =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "m"; "memory" ] ~doc:"memory (in MB)")
-    and meta =
-      Arg.(
-        value & opt string ""
-        & info [ "meta" ] ~doc:"additional metadata to save")
-    and csv =
-      Arg.(
-        value & opt (some string) None & info [ "csv" ] ~doc:"CSV output file")
-    and paths =
-      Arg.(
-        value & pos_all string []
-        & info [] ~docv:"PATH"
-            ~doc:"target paths (or directories containing tests)")
-    and provers =
-      Arg.(
-        value & opt_all string []
-        & info [ "p"; "provers" ] ~doc:"select provers")
-    and no_color =
-      Arg.(
-        value & flag & info [ "no-color"; "nc" ] ~doc:"disable colored output")
-    and summary =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "summary" ] ~doc:"write summary in FILE")
-    and partition =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "partition" ]
-            ~doc:"partition to which the allocated nodes should belong")
-    and nodes =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "n"; "nodes" ] ~doc:"the maximum number of nodes to be used")
-    and addr =
-      Arg.(
-        value
-        & opt (some Misc.ip_addr_conv) None
-        & info [ "a"; "addr" ]
-            ~doc:
-              "IP address of the server on the control node. Needs to be \
-               reachable by the workers which will run on the allocated \
-               calculation nodes.")
-    and port =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "port" ]
-            ~doc:
-              "port of the server on the control node. Default is 0 to let the \
-               OS choose a port.")
-    and ntasks =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "ntasks" ]
-            ~doc:"The number of tasks to give the workers at a time.")
-    and desktop_notification =
-      Arg.(
-        value & opt bool true
-        & info
-            [ "desktop-notification"; "dn" ]
-            ~doc:
-              "send a desktop notification when the benchmarking is done (true \
-               by default)")
-    and no_failure =
-      Arg.(
-        value & flag
-        & info [ "no-failure"; "nf" ]
-            ~doc:
-              "don't fail if some provers give incorrect answers \
-               (contradictory to what was expected)")
-    and update =
-      Arg.(
-        value & flag
-        & info [ "update"; "u" ]
-            ~doc:
-              "if the output file already exists, overwrite it with the new \
-               one.")
     in
-    Cmd.v (Cmd.info ~doc "slurm")
-      Term.(
-        const aux $ j $ pp_results $ dyn $ paths $ dir_files $ proof_dir $ defs
-        $ task $ timeout $ memory $ meta $ provers $ csv $ summary $ no_color
-        $ output $ save $ wal_mode $ desktop_notification $ no_failure $ update
-        $ partition $ nodes $ addr $ port $ ntasks)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "slurm")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 module List_files = struct
