@@ -13,7 +13,7 @@ depends: [
   "containers" { >= "3.0" & < "4.0" }
   "moonpool" { >= "0.8" }
   "benchpress" { = version }
-  "linol" { >= "0.4" & < "0.5" }
+  "linol" { >= "0.10" & < "0.11" }
 ]
 homepage: "https://github.com/sneeuwballen/benchpress/"
 dev-repo: "git+https://github.com/sneeuwballen/benchpress.git"
