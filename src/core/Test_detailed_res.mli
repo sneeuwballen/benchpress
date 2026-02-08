@@ -33,9 +33,10 @@ val list_keys :
   Db.t ->
   key list * int * bool
 (** List available results.
-    @returns tuple [l, n, is_done], where [is_done] is true if there are
-    no more results, and [n] is the total number of results (not just
-    those in [l]). *)
+    @return
+      tuple [l, n, is_done], where [is_done] is true if there are no more
+      results, and [n] is the total number of results (not just those in [l]).
+*)
 
 type proof_check_res = { res: Proof_check_res.t; stdout: string; rtime: float }
 
@@ -44,7 +45,8 @@ val to_printbox :
   t ->
   proof_check_res option ->
   PrintBox.t * PrintBox.t * string * string * string option
-(** Display an individual result + prover descr + stdout + stderr + proof stdout *)
+(** Display an individual result + prover descr + stdout + stderr + proof stdout
+*)
 
 val get_res : Db.t -> Prover.name -> string -> t * proof_check_res option
 (** Get an individual result *)

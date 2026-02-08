@@ -2,8 +2,7 @@
 
 (** {1 Run Prover}
 
-    Utils to run a theorem prover (or a similar tool) and extract its result
-*)
+    Utils to run a theorem prover (or a similar tool) and extract its result *)
 
 open Common
 
@@ -64,15 +63,13 @@ val equal : t -> t -> bool
 (** Equality (by name) *)
 
 exception Subst_not_found of string
-(** Raised during substitution when a pattern to substitute
-    was unknown.
-    TODO: maybe simply leave these patterns as is ? *)
+(** Raised during substitution when a pattern to substitute was unknown. TODO:
+    maybe simply leave these patterns as is ? *)
 
 exception Missing_subst_value of string
-(** Raised during substitution when a known pattern was to
-    be substituted, but there was no available value for
-    that parameter (i.e. typically, the optional argument to the
-    subst function was not provided / was [None]). *)
+(** Raised during substitution when a known pattern was to be substituted, but
+    there was no available value for that parameter (i.e. typically, the
+    optional argument to the subst function was not provided / was [None]). *)
 
 val subst :
   ?binary:string ->
@@ -82,19 +79,20 @@ val subst :
   unit ->
   string ->
   string
-(** Return a substitution function adequate for {!interpolate_cmd},
-    that performs the substitutions of the given parameters (binary,
-    memory, timeout, file) or defers to the fallback [?f] argument.
+(** Return a substitution function adequate for {!interpolate_cmd}, that
+    performs the substitutions of the given parameters (binary, memory, timeout,
+    file) or defers to the fallback [?f] argument.
     @raise Subst_not_found when the fallback function returns [None]
-    @raise Missing_subst_value when a parameter that is know to be
-      substituted (e.g. "$file"), was not given a value (e.g.
-      [?file:None]). *)
+    @raise Missing_subst_value
+      when a parameter that is know to be substituted (e.g. "$file"), was not
+      given a value (e.g. [?file:None]). *)
 
 val interpolate_cmd :
   ?env:(string * string) array -> subst:(string -> string) -> string -> string
 (** Interpolate a command using the given substitution function.
-    @raise Subst_not_found if a variable is found, that is not substituted
-    into any of the parameters nor by [f] *)
+    @raise Subst_not_found
+      if a variable is found, that is not substituted into any of the parameters
+      nor by [f] *)
 
 val make_command :
   ?env:(string * string) array ->

@@ -18,19 +18,19 @@ let pp out t =
   else
     CCFormat.fprintf out "(%a%a%a)" CCFormat.string
       (if t.time then
-        "time "
-      else
-        "")
+         "time "
+       else
+         "")
       CCFormat.string
       (if t.memory then
-        "memory "
-      else
-        "")
+         "memory "
+       else
+         "")
       CCFormat.string
       (if t.stack then
-        "stack"
-      else
-        "")
+         "stack"
+       else
+         "")
 
 (* Prefix a command to enforce a set of limits *)
 let prefix_cmd ~conf ~limits ~cmd =

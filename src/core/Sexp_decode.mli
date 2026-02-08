@@ -38,26 +38,26 @@ val is_atom : bool t
 val is_list : bool t
 
 val succeeds : 'a t -> bool t
-(** [succeeds d] returns [true] if [d] parses the S-expr, and [false] otherwise. *)
+(** [succeeds d] returns [true] if [d] parses the S-expr, and [false] otherwise.
+*)
 
 val is_applied : string -> bool t
-(** [is_applied "foo"] is the recognizer that
-    accepts expressions of the form [("foo" …)] *)
+(** [is_applied "foo"] is the recognizer that accepts expressions of the form
+    [("foo" …)] *)
 
 val try_succeed : 'a t -> bool t * 'a t
 (** [try_succeed d] is [succeeds d, d] *)
 
 val try_l : msg:string -> (bool t * 'a t) list -> 'a t
-(** [try_l ~msg l] parses a sexp by trying each case in [l] successively,
-    until one succeeds.
-    A case is a pair of a recognizer and a parser. If the recognizer succeeds,
-    then this case wins, and [try_l l] behaves like the case's parser;
-    if the recognizer fails, the case is discarded and the next case is tried.
+(** [try_l ~msg l] parses a sexp by trying each case in [l] successively, until
+    one succeeds. A case is a pair of a recognizer and a parser. If the
+    recognizer succeeds, then this case wins, and [try_l l] behaves like the
+    case's parser; if the recognizer fails, the case is discarded and the next
+    case is tried.
     @param msg error message if no case recognizes the parser. *)
 
 val with_msg : msg:string -> 'a t -> 'a t
-(** [with_msg ~msg d] behaves like [d] but replaces
-    [d]'s errors with [msg] *)
+(** [with_msg ~msg d] behaves like [d] but replaces [d]'s errors with [msg] *)
 
 val map_l : ('a -> 'b t) -> 'a list -> 'b list t
 val fold_l : ('b -> 'a -> 'b t) -> 'b -> 'a list -> 'b t
@@ -70,21 +70,18 @@ val applied2 : string -> 'a t -> 'b t -> ('a * 'b) t
 val applied3 : string -> 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 
 val try_apply : string -> (sexp list -> 'a t) -> 'a t -> 'a t
-(** [try_apply f ok else_] tries to parse the sexp [(f x1…xn)],
-    in which case it calls [ok [x1;…;xn]]. Otherwise it
-    calls [else_] on the root sexp. *)
+(** [try_apply f ok else_] tries to parse the sexp [(f x1…xn)], in which case it
+    calls [ok [x1;…;xn]]. Otherwise it calls [else_] on the root sexp. *)
 
 module Fields : sig
   type t
-  (** A mutable collection of pairs (key-value), used to represent
-      records *)
+  (** A mutable collection of pairs (key-value), used to represent records *)
 
   val field : t -> string -> 'a m -> 'a m
-  (** [field m name d] gets and consume the pair [(<name>, v)] from [m],
-      using [d] to decode [v].
-      This fails if the field is not present. It removes it from [m]
-      on success, so must never be called twice with the same field name
-      on a given collection. *)
+  (** [field m name d] gets and consume the pair [(<name>, v)] from [m], using
+      [d] to decode [v]. This fails if the field is not present. It removes it
+      from [m] on success, so must never be called twice with the same field
+      name on a given collection. *)
 
   val field_opt : t -> string -> 'a m -> 'a option m
   (** Same as {!field} but doesn't fail if the field is absent. *)
@@ -94,8 +91,7 @@ module Fields : sig
 
   val check_no_field_left : t -> unit m
   (** Check that all fields have been consumed by {!field} and {!field_opt}
-      above.
-      This fails if there are some pairs that were not used at all, which
+      above. This fails if there are some pairs that were not used at all, which
       is useful to detect typos and unrecognized inputs. *)
 end
 
@@ -103,8 +99,8 @@ val fields : Fields.t t
 (** Parses a list of pairs [((a b) (c d) …)] as a record. *)
 
 val applied_fields : string -> Fields.t t
-(** [applied_fields "foo"] accepts [("foo" (a b) (c d) …)]
-    and returns the corresponding list of fields. *)
+(** [applied_fields "foo"] accepts [("foo" (a b) (c d) …)] and returns the
+    corresponding list of fields. *)
 
 type err
 

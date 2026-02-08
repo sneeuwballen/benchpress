@@ -1,9 +1,8 @@
 module Fmt = CCFormat
 
 type t = { path: string; inside: Dir.t; loc: Loc.t }
-(** A directory of problems, inside a known set of problems
-    which defines what patterns to search for, and how to read "expect" results.
-*)
+(** A directory of problems, inside a known set of problems which defines what
+    patterns to search for, and how to read "expect" results. *)
 
 let pp out (self : t) =
   let open Misc.Pp in

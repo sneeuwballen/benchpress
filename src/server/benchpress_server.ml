@@ -153,8 +153,8 @@ end = struct
     | _ ->
       (* catch-all to be more resilient to newer versions of printbox *)
       H.div [] [ H.pre [] [ H.txt @@ PrintBox_text.to_string b ] ]
-    (* remaining cases *)
-    [@@warning "-11"]
+  (* remaining cases *)
+  [@@warning "-11"]
 
   let to_html b = H.div [] [ to_html_rec b ]
 end
@@ -241,16 +241,16 @@ let mk_navigation ?(btns = []) path =
                     [ mk_a [ A.href uri ] [ txt descr ] ])
                 path);
          (if btns = [] then
-           `Nil
-         else
-           sub_e
-             (div
-                [
-                  A.class_
-                    "btn-group-vertical col-sm-1 align-items-center \
-                     navbar-right m-2";
-                ]
-                btns));
+            `Nil
+          else
+            sub_e
+              (div
+                 [
+                   A.class_
+                     "btn-group-vertical col-sm-1 align-items-center \
+                      navbar-right m-2";
+                 ]
+                 btns));
        ]
 
 (* default reply headers *)
@@ -283,21 +283,21 @@ let uri_show_detailed ?(offset = 0) ?(filter_prover = "") ?(filter_pb = "")
     ?(filter_res = "") ?(filter_expect = "") pb =
   spf "/show_detailed/%s/?%s%s%s%soffset=%d" (U.percent_encode pb)
     (if filter_prover = "" then
-      ""
-    else
-      spf "prover=%s&" @@ U.percent_encode filter_prover)
+       ""
+     else
+       spf "prover=%s&" @@ U.percent_encode filter_prover)
     (if filter_pb = "" then
-      ""
-    else
-      spf "pb=%s&" @@ U.percent_encode filter_pb)
+       ""
+     else
+       spf "pb=%s&" @@ U.percent_encode filter_pb)
     (if filter_res = "" then
-      ""
-    else
-      spf "res=%s&" @@ U.percent_encode filter_res)
+       ""
+     else
+       spf "res=%s&" @@ U.percent_encode filter_res)
     (if filter_expect = "" then
-      ""
-    else
-      spf "expect=%s&" @@ U.percent_encode filter_expect)
+       ""
+     else
+       spf "expect=%s&" @@ U.percent_encode filter_expect)
     offset
 
 let uri_list_benchs ~off ?limit () : string =
@@ -356,9 +356,9 @@ let query_wrap wrap (f : Misc.Chrono.t -> _) : H.Response.t =
     Log.debug (fun k ->
         k "%s (code %d) after %.3fs"
           (if succ then
-            "successful reply"
-          else
-            "failure")
+             "successful reply"
+           else
+             "failure")
           code duration);
     h
   | exception E (e, code) ->
@@ -459,10 +459,10 @@ let handle_show (self : t) : unit =
               ];
           ];
         (if box_compare_l = PB.empty then
-          `Nil
-        else
-          sub_l
-            [ h3 [] [ txt "comparisons" ]; div [] [ pb_html box_compare_l ] ]);
+           `Nil
+         else
+           sub_l
+             [ h3 [] [ txt "comparisons" ]; div [] [ pb_html box_compare_l ] ]);
       ]
   in
   Log.debug (fun k ->
@@ -713,9 +713,9 @@ let handle_show_as_table (self : t) : unit =
         mk_a
           ~cls:
             ((if offset > 0 then
-               ""
-             else
-               "disabled ")
+                ""
+              else
+                "disabled ")
             ^ "page-link link-sm my-1 p-1")
           [
             A.href
@@ -734,9 +734,9 @@ let handle_show_as_table (self : t) : unit =
             uri_show file, "file", false;
             ( uri_show_table file,
               (if offset = 0 then
-                "full"
-              else
-                spf "full[%d..]" offset),
+                 "full"
+               else
+                 spf "full[%d..]" offset),
               true );
           ];
         div
@@ -882,9 +882,9 @@ let handle_show_detailed (self : t) : unit =
       mk_a
         ~cls:
           ((if offset > 0 then
-             ""
-           else
-             "disabled ")
+              ""
+            else
+              "disabled ")
           ^ "page-link link-sm my-1 p-1")
         [
           A.href
@@ -911,9 +911,9 @@ let handle_show_detailed (self : t) : unit =
                uri_show db_file, "file", false;
                ( uri_show_detailed db_file,
                  (if offset = 0 then
-                   "detailed"
-                 else
-                   spf "detailed [%d..%d]" offset (offset + List.length l - 1)),
+                    "detailed"
+                  else
+                    spf "detailed [%d..%d]" offset (offset + List.length l - 1)),
                  true );
              ];
            div
@@ -1166,9 +1166,9 @@ let handle_compare2 self : unit =
              A.value (file_basename ^ "/" ^ prover)
              ::
              (if selected = Some (file_basename, prover) then
-               [ A.selected "selected" ]
-             else
-               [])
+                [ A.selected "selected" ]
+              else
+                [])
            in
            option attrs [ txt prover ])
          meta.provers)
@@ -1186,9 +1186,9 @@ let handle_compare2 self : unit =
       A.value (status_opt_to_string status)
       ::
       (if current = Some status then
-        [ A.selected "selected" ]
-      else
-        [])
+         [ A.selected "selected" ]
+       else
+         [])
     in
     option attrs [ txt (status_opt_to_string status) ]
   in
@@ -1577,23 +1577,23 @@ let html_of_files (self : t) ~off ~limit : Html.elt list =
                   [ txt (Printf.sprintf "(%s)" (Misc.human_size size)) ];
               ];
             (if self.allow_delete then
-              div
-                [ A.class_ "col-md-2 justify-self-right" ]
-                [
-                  mk_button ~cls:"btn-warning btn-sm"
-                    [
-                      ( "hx-delete",
-                        "/delete1/" ^ U.percent_encode file_path ^ "/" );
-                      "hx-confirm", "Confirm deletion?";
-                      "hx-target", spf "#%s" id;
-                      (* remove whole "li" element *)
-                      "hx-swap", "outerHTML";
-                      A.title "delete file";
-                    ]
-                    [ txt "delete" ];
-                ]
-            else
-              div [] []);
+               div
+                 [ A.class_ "col-md-2 justify-self-right" ]
+                 [
+                   mk_button ~cls:"btn-warning btn-sm"
+                     [
+                       ( "hx-delete",
+                         "/delete1/" ^ U.percent_encode file_path ^ "/" );
+                       "hx-confirm", "Confirm deletion?";
+                       "hx-target", spf "#%s" id;
+                       (* remove whole "li" element *)
+                       "hx-swap", "outerHTML";
+                       A.title "delete file";
+                     ]
+                     [ txt "delete" ];
+                 ]
+             else
+               div [] []);
             div
               [ A.class_ "col-md-1 justify-self-right" ]
               [ input [ A.type_ "checkbox"; A.name file_basename ] ];
@@ -1737,8 +1737,8 @@ let handle_file self : unit =
             H.Response.fail_raise ~code:404
               "cannot open file %S:\n\
                %s\n\n\
-               The benchmark might not be present on this machine." file
-              (Printexc.to_string e)
+               The benchmark might not be present on this machine."
+              file (Printexc.to_string e)
         )
       in
       H.Response.make_raw_stream

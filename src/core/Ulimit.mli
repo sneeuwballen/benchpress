@@ -1,8 +1,7 @@
 (** Ulimit handling of limits *)
 
 type conf = { time: bool; memory: bool; stack: bool }
-(** The configuration of ulimit, aka which limits to enforce
-    via ulimit. *)
+(** The configuration of ulimit, aka which limits to enforce via ulimit. *)
 
 val hash : conf -> int
 val equal : conf -> conf -> bool

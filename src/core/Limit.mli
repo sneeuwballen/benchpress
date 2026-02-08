@@ -18,8 +18,8 @@ module Time : sig
   (** Printer *)
 
   val mk : ?s:int -> ?m:int -> ?h:int -> unit -> t
-  (** Create a timeout of [~h] hours, [~m] minutes and
-      [~s] seconds. The arguments default to [0] is not provided. *)
+  (** Create a timeout of [~h] hours, [~m] minutes and [~s] seconds. The
+      arguments default to [0] is not provided. *)
 
   val default : t
 
@@ -27,12 +27,12 @@ module Time : sig
   (** Add timeouts. *)
 
   val as_int : view -> t -> int
-  (** View a time converted into the given view/units, truncating
-      the result. For instance: [as_int Minutes (mk ~s:90) = 1] *)
+  (** View a time converted into the given view/units, truncating the result.
+      For instance: [as_int Minutes (mk ~s:90) = 1] *)
 
   val as_float : view -> t -> float
-  (** View a time converted into the given view/units.
-      For instance: [as_float Minutes (mk ~s:90) = 1.5] *)
+  (** View a time converted into the given view/units. For instance:
+      [as_float Minutes (mk ~s:90) = 1.5] *)
 end
 
 (** {1 Memory limits} *)
@@ -53,19 +53,19 @@ module Memory : sig
   (** Printer *)
 
   val mk : ?b:int -> ?k:int -> ?m:int -> ?g:int -> ?t:int -> unit -> t
-  (** Create a memory limits of [~t] terabytes, [~g] gigabytes,
-      [~m] megabytes, [~k] kilobytes, and [~b] bytes. The arguments default
-      to [0] if not provided. *)
+  (** Create a memory limits of [~t] terabytes, [~g] gigabytes, [~m] megabytes,
+      [~k] kilobytes, and [~b] bytes. The arguments default to [0] if not
+      provided. *)
 
   val default : t
 
   val as_int : view -> t -> int
-  (** View a memory size converted into the given view/units, truncating
-      the result. For instance: [as_int Kilobytes (mk ~b:1_500) = 1] *)
+  (** View a memory size converted into the given view/units, truncating the
+      result. For instance: [as_int Kilobytes (mk ~b:1_500) = 1] *)
 
   val as_float : view -> t -> float
-  (** View a memory size converted into the given view/units.
-      For instance: [as_float Kilobytes (mk ~b:1_500) = 1.5] *)
+  (** View a memory size converted into the given view/units. For instance:
+      [as_float Kilobytes (mk ~b:1_500) = 1.5] *)
 end
 
 (** {1 Stack limits} *)
@@ -90,8 +90,8 @@ module All : sig
     memory: Memory.t option;
     stack: Stack.t option;
   }
-  (** Type used to represent a set of (optional) limits,
-      including a time limit, a memory limit and a stack limit. *)
+  (** Type used to represent a set of (optional) limits, including a time limit,
+      a memory limit and a stack limit. *)
 
   val hash : t -> int
   val equal : t -> t -> bool
@@ -113,13 +113,13 @@ module All : sig
   (** Update functions *)
 
   val with_defaults : defaults:t -> t -> t
-  (** [with_defaults ~defaults t] is the same as t, except for limits
-      of [t] which were [None], in which case the value from [defaults]
-      is used (which can itself also be [None]). *)
+  (** [with_defaults ~defaults t] is the same as t, except for limits of [t]
+      which were [None], in which case the value from [defaults] is used (which
+      can itself also be [None]). *)
 
   exception Limit_missing of string
-  (** Exception raised by {!substitute} when trying to substitute a
-      limit that was not provided. *)
+  (** Exception raised by {!substitute} when trying to substitute a limit that
+      was not provided. *)
 
   val substitute :
     time_as:Time.view ->
@@ -128,9 +128,9 @@ module All : sig
     t ->
     string ->
     string option
-  (** Given a set of limits, and a view for each of these limits,
-      return a substitution function adequate for use with
-      {!Buffer.add_substitute}.
-      @raise Limit_missing if a limit is needed for substitution
-        but not present in the argument. *)
+  (** Given a set of limits, and a view for each of these limits, return a
+      substitution function adequate for use with {!Buffer.add_substitute}.
+      @raise Limit_missing
+        if a limit is needed for substitution but not present in the argument.
+  *)
 end

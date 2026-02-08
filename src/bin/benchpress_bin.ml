@@ -21,10 +21,10 @@ module Run = struct
     let open Cmdliner in
     let doc =
       "Limit the specific CPUs or cores to use. When provided, the\n\
-      \      [-j] flag is ignored, and each prover gets allocated its own \
-       CPU core from\n\
-      \      this list. A comma-separated list or hyphen-separated ranges \
-       are allowed."
+      \      [-j] flag is ignored, and each prover gets allocated its own CPU \
+       core from\n\
+      \      this list. A comma-separated list or hyphen-separated ranges are \
+       allowed."
     in
     let parser s =
       match String.split_on_char '-' s with
@@ -57,51 +57,70 @@ module Run = struct
       | [] -> None
       | _ -> Some cpus
     in
-    Term.(const parse $ Arg.(value & opt (list cpuspec) [] & info [ "cpus" ] ~doc))
+    Term.(
+      const parse $ Arg.(value & opt (list cpuspec) [] & info [ "cpus" ] ~doc))
 
   (* Parameters using ppx_subliner *)
   type params = {
-    j : int; [@default 1] (** level of parallelism *)
-    progress : bool; (** print progress bar *)
-    pp_results : bool; [@default true] (** print results as they are found *)
-    paths : string list; [@pos_all] [@docv "PATH"] (** target paths (or directories containing tests) *)
-    dir_files : string list; [@opt_all] [@names ["F"]] [@default []] (** file containing a list of files *)
-    proof_dir : string option; (** store proofs in given directory *)
-    task : string option; (** task to run *)
-    timeout : int option; [@names ["t"; "timeout"]] (** timeout (in s) *)
-    memory : int option; [@names ["m"; "memory"]] (** memory (in MB) *)
-    meta : string; [@default ""] (** additional metadata to save *)
-    provers : string list; [@opt_all] [@names ["p"; "provers"]] [@default []] (** select provers *)
-    csv : string option; (** CSV output file *)
-    summary : string option; (** write summary in FILE *)
-    no_color : bool; [@names ["no-color"; "nc"]] (** disable colored output *)
-    output : string option; [@names ["o"; "output"]] (** output database file *)
-    save : bool; [@default true] (** save results on disk *)
-    wal_mode : bool; [@names ["wal"]] (** turn on the journal WAL mode *)
-    desktop_notification : bool; [@default true] [@names ["desktop-notification"; "dn"]]
-      (** send a desktop notification when the benchmarking is done (true by default) *)
-    no_failure : bool; [@names ["no-failure"; "nf"]]
-      (** don't fail if some provers give incorrect answers (contradictory to what was expected) *)
-    update : bool; [@names ["update"; "u"]]
-      (** if the output file already exists, overwrite it with the new one. *)
-  } [@@deriving subliner]
+    j: int; [@default 1]  (** level of parallelism *)
+    progress: bool;  (** print progress bar *)
+    pp_results: bool; [@default true]  (** print results as they are found *)
+    paths: string list; [@pos_all] [@docv "PATH"]
+        (** target paths (or directories containing tests) *)
+    dir_files: string list; [@opt_all] [@names [ "F" ]] [@default []]
+        (** file containing a list of files *)
+    proof_dir: string option;  (** store proofs in given directory *)
+    task: string option;  (** task to run *)
+    timeout: int option; [@names [ "t"; "timeout" ]]  (** timeout (in s) *)
+    memory: int option; [@names [ "m"; "memory" ]]  (** memory (in MB) *)
+    meta: string; [@default ""]  (** additional metadata to save *)
+    provers: string list; [@opt_all] [@names [ "p"; "provers" ]] [@default []]
+        (** select provers *)
+    csv: string option;  (** CSV output file *)
+    summary: string option;  (** write summary in FILE *)
+    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    output: string option; [@names [ "o"; "output" ]]
+        (** output database file *)
+    save: bool; [@default true]  (** save results on disk *)
+    wal_mode: bool; [@names [ "wal" ]]  (** turn on the journal WAL mode *)
+    desktop_notification: bool;
+        [@default true] [@names [ "desktop-notification"; "dn" ]]
+        (** send a desktop notification when the benchmarking is done (true by
+            default) *)
+    no_failure: bool; [@names [ "no-failure"; "nf" ]]
+        (** don't fail if some provers give incorrect answers (contradictory to
+            what was expected) *)
+    update: bool; [@names [ "update"; "u" ]]
+        (** if the output file already exists, overwrite it with the new one. *)
+  }
+  [@@deriving subliner]
 
   let run (p : params) cpus (log_lvl, defs) =
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
     if p.no_color then CCFormat.set_color_default false;
-    let dyn = if p.progress then Some true else None in
-    Run_main.main ~pp_results:p.pp_results ?dyn ~j:p.j ?cpus
-      ?timeout:p.timeout ?memory:p.memory ?csv:p.csv ~provers:p.provers
-      ~meta:p.meta ?task:p.task ?summary:p.summary ~dir_files:p.dir_files
-      ?proof_dir:p.proof_dir ?output:p.output ~save:p.save ~wal_mode:p.wal_mode
+    let dyn =
+      if p.progress then
+        Some true
+      else
+        None
+    in
+    Run_main.main ~pp_results:p.pp_results ?dyn ~j:p.j ?cpus ?timeout:p.timeout
+      ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
+      ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
+      ?output:p.output ~save:p.save ~wal_mode:p.wal_mode
       ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
       ~update:p.update defs p.paths ()
 
   let cmd =
-    let doc = "run a task, such as running solvers on directories of problem files" in
-    Cmdliner.Cmd.v (Cmdliner.Cmd.info ~doc "run")
-      Cmdliner.Term.(const run $ params_cmdliner_term () $ cpus_term $ Bin_utils.definitions_term)
+    let doc =
+      "run a task, such as running solvers on directories of problem files"
+    in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "run")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ cpus_term
+        $ Bin_utils.definitions_term)
 end
 
 module Slurm = struct

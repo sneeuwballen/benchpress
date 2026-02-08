@@ -1,7 +1,7 @@
 (** Top Result for a benchmark run.
 
-    Main result of testing: a snapshot of the work done, + the analysis
-    per prover *)
+    Main result of testing: a snapshot of the work done, + the analysis per
+    prover *)
 
 open Common
 open Test

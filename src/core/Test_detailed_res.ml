@@ -147,15 +147,9 @@ let get_res db prover file : _ * proof_check_res option =
     |> Error.unwrap_opt' (fun () ->
            spf "expected a non-empty result for prover='%s', file='%s'" prover
              file)
-    |> fun ( res,
-             file_expect,
-             timeout,
-             errcode,
-             stdout,
-             stderr,
-             rtime,
-             utime,
-             stime ) ->
+    |>
+    fun (res, file_expect, timeout, errcode, stdout, stderr, rtime, utime, stime)
+    ->
     let stdout = CCOpt.get_or ~default:"" stdout in
     let stderr = CCOpt.get_or ~default:"" stderr in
     Logs.debug (fun k -> k "res.of_string tags=[%s]" (String.concat "," tags));

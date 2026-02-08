@@ -48,7 +48,8 @@ let diag_of_error ~uri (e0 : Error.t) : LT.Diagnostic.t list =
 
   match errs with
   | [] ->
-    Log.err (fun k -> k "in %s: err with no loc:@ %a" (uri_to_string uri) Error.pp e0);
+    Log.err (fun k ->
+        k "in %s: err with no loc:@ %a" (uri_to_string uri) Error.pp e0);
     []
   | (msg0, loc0) :: ctx_errs ->
     let d =
@@ -102,11 +103,11 @@ class blsp =
     inherit L.server
 
     (* one env per document *)
-    val buffers : (Linol.Lsp.Types.DocumentUri.t, processed_buf) Hashtbl.t Lock.t =
+    val buffers
+        : (Linol.Lsp.Types.DocumentUri.t, processed_buf) Hashtbl.t Lock.t =
       Lock.create @@ Hashtbl.create 32
 
     method spawn_query_handler f = ignore (Thread.create (fun () -> f ()) ())
-
     method! config_hover = Some (`Bool true)
     method! config_definition = Some (`Bool true)
 
@@ -121,8 +122,8 @@ class blsp =
         ~save:(`SaveOptions (LT.SaveOptions.create ~includeText:false ()))
         ()
 
-    method! on_req_hover ~notify_back:_ ~id:_ ~uri ~pos ~workDoneToken:_ (_ : L.doc_state)
-        : LT.Hover.t option =
+    method! on_req_hover ~notify_back:_ ~id:_ ~uri ~pos ~workDoneToken:_
+        (_ : L.doc_state) : LT.Hover.t option =
       let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
       match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
       | Some { defs = Ok defs; text; _ } ->
@@ -146,8 +147,8 @@ class blsp =
             Some h))
       | _ -> None
 
-    method! on_req_definition ~notify_back:_ ~id:_ ~uri ~pos ~workDoneToken:_ ~partialResultToken:_ (_ : L.doc_state)
-        : LT.Locations.t option =
+    method! on_req_definition ~notify_back:_ ~id:_ ~uri ~pos ~workDoneToken:_
+        ~partialResultToken:_ (_ : L.doc_state) : LT.Locations.t option =
       let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
       match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
       | Some { defs = Ok defs; text; _ } ->
@@ -169,14 +170,14 @@ class blsp =
 
     (* FIXME: completion is never useful on a parsable buffer, and
        buffers that do not parse have no definitions *)
-    method! on_req_completion ~notify_back:_ ~id:_ ~uri ~pos ~ctx:_ ~workDoneToken:_ ~partialResultToken:_
-        (_ : L.doc_state)
-        : [ `CompletionList of LT.CompletionList.t
-          | `List of LT.CompletionItem.t list ]
-          option =
+    method! on_req_completion ~notify_back:_ ~id:_ ~uri ~pos ~ctx:_
+        ~workDoneToken:_ ~partialResultToken:_ (_ : L.doc_state) :
+        [ `CompletionList of LT.CompletionList.t
+        | `List of LT.CompletionItem.t list ]
+        option =
       Log.debug (fun k ->
-          k "completion request in '%s' at pos: %d line, %d col" (uri_to_string uri) pos.line
-            pos.character);
+          k "completion request in '%s' at pos: %d line, %d col"
+            (uri_to_string uri) pos.line pos.character);
       let pos = Loc.Pos.of_line_col pos.line pos.character in
       match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
       | Some { defs = Ok defs; text; _ } ->
@@ -212,7 +213,8 @@ class blsp =
       let open E.Infix in
       let stanzas =
         catch_e @@ fun () ->
-        Stanza.parse_string ~reify_errors:true ~filename:(uri_to_string uri) contents
+        Stanza.parse_string ~reify_errors:true ~filename:(uri_to_string uri)
+          contents
       in
       let defs =
         let* stanzas = stanzas in
