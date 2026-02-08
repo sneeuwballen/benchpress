@@ -16,158 +16,92 @@ let catch_err f =
 
 (** {2 Run} *)
 module Run = struct
-  (* sub-command for running tests *)
-  let cmd =
+  (* Custom CPU spec parser - kept separate due to complex logic *)
+  let cpus_term =
     let open Cmdliner in
-    let aux j cpus pp_results dyn paths dir_files proof_dir (log_lvl, defs) task
-        timeout memory meta provers csv summary no_color output save wal_mode
-        desktop_notification no_failure update =
-      Misc.setup_logs log_lvl;
-      catch_err @@ fun () ->
-      if no_color then CCFormat.set_color_default false;
-      let dyn =
-        if dyn then
-          Some true
-        else
-          None
-      in
-      Run_main.main ~pp_results ?dyn ~j ?cpus ?timeout ?memory ?csv ~provers
-        ~meta ?task ?summary ~dir_files ?proof_dir ?output ~save ~wal_mode
-        ~desktop_notification ~no_failure ~update defs paths ()
+    let doc =
+      "Limit the specific CPUs or cores to use. When provided, the\n\
+      \      [-j] flag is ignored, and each prover gets allocated its own \
+       CPU core from\n\
+      \      this list. A comma-separated list or hyphen-separated ranges \
+       are allowed."
     in
-    let defs = Bin_utils.definitions_term
-    and dyn = Arg.(value & flag & info [ "progress" ] ~doc:"print progress bar")
-    and pp_results =
-      Arg.(
-        value & opt bool true
-        & info [ "pp-results" ] ~doc:"print results as they are found")
-    and output =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "o"; "output" ] ~doc:"output database file")
-    and save =
-      Arg.(value & opt bool true & info [ "save" ] ~doc:"save results on disk")
-    and wal_mode =
-      Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
-    and dir_files =
-      Arg.(
-        value & opt_all file []
-        & info [ "F" ] ~doc:"file containing a list of files")
-    and proof_dir =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "proof-dir" ] ~doc:"store proofs in given directory")
-    and task =
-      Arg.(value & opt (some string) None & info [ "task" ] ~doc:"task to run")
-    and timeout =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "t"; "timeout" ] ~doc:"timeout (in s)")
-    and j = Arg.(value & opt int 1 & info [ "j" ] ~doc:"level of parallelism")
-    and cpus =
-      let doc =
-        "Limit the specific CPUs or cores to use. When provided, the\n\
-        \      [-j] flag is ignored, and each prover gets allocated its own \
-         CPU core from\n\
-        \      this list. A comma-separated list or hyphen-separated ranges \
-         are allowed."
-      in
-      let parser s =
-        match String.split_on_char '-' s with
-        | [] -> assert false (* [split_on_char] invariant *)
-        | [ n ] -> Result.map (fun x -> x, x) Arg.(conv_parser int n)
-        | [ n; m ] ->
-          Result.bind Arg.(conv_parser int n) @@ fun n ->
-          Result.bind Arg.(conv_parser int m) @@ fun m ->
-          if m < n then
-            Error (`Msg (Format.asprintf "invalid range: %d-%d" n m))
-          else
-            Ok (n, m)
-        | _ -> Error (`Msg (Format.asprintf "invalid cpuset: %s" s))
-      in
-      let printer ppf (n, m) =
-        if n = m then
-          Format.pp_print_int ppf n
+    let parser s =
+      match String.split_on_char '-' s with
+      | [] -> assert false (* [split_on_char] invariant *)
+      | [ n ] -> Result.map (fun x -> x, x) Arg.(conv_parser int n)
+      | [ n; m ] ->
+        Result.bind Arg.(conv_parser int n) @@ fun n ->
+        Result.bind Arg.(conv_parser int m) @@ fun m ->
+        if m < n then
+          Error (`Msg (Format.asprintf "invalid range: %d-%d" n m))
         else
-          Format.fprintf ppf "%d-%d" n m
-      in
-      let cpuspec = Arg.conv ~docv:"MASK" (parser, printer) in
-      let parse xs =
-        let cpus =
-          CCList.flat_map
-            (fun (n, m) -> List.init (m + 1 - n) (fun i -> i + n))
-            xs
-          |> List.sort_uniq Int.compare
-        in
-        match cpus with
-        | [] -> None
-        | _ -> Some cpus
-      in
-      Term.(
-        const parse $ Arg.(value & opt (list cpuspec) [] & info [ "cpus" ] ~doc))
-    and memory =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "m"; "memory" ] ~doc:"memory (in MB)")
-    and meta =
-      Arg.(
-        value & opt string ""
-        & info [ "meta" ] ~doc:"additional metadata to save")
-    and doc =
-      "run a task, such as running solvers on directories of problem files"
-    and csv =
-      Arg.(
-        value & opt (some string) None & info [ "csv" ] ~doc:"CSV output file")
-    and paths =
-      Arg.(
-        value & pos_all string []
-        & info [] ~docv:"PATH"
-            ~doc:"target paths (or directories containing tests)")
-    and provers =
-      Arg.(
-        value & opt_all string []
-        & info [ "p"; "provers" ] ~doc:"select provers")
-    and no_color =
-      Arg.(
-        value & flag & info [ "no-color"; "nc" ] ~doc:"disable colored output")
-    and summary =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "summary" ] ~doc:"write summary in FILE")
-    and desktop_notification =
-      Arg.(
-        value & opt bool true
-        & info
-            [ "desktop-notification"; "dn" ]
-            ~doc:
-              "send a desktop notification when the benchmarking is done (true \
-               by default)")
-    and no_failure =
-      Arg.(
-        value & flag
-        & info [ "no-failure"; "nf" ]
-            ~doc:
-              "don't fail if some provers give incorrect answers \
-               (contradictory to what was expected)")
-    and update =
-      Arg.(
-        value & flag
-        & info [ "update"; "u" ]
-            ~doc:
-              "if the output file already exists, overwrite it with the new \
-               one.")
+          Ok (n, m)
+      | _ -> Error (`Msg (Format.asprintf "invalid cpuset: %s" s))
     in
-    Cmd.v (Cmd.info ~doc "run")
-      Term.(
-        const aux $ j $ cpus $ pp_results $ dyn $ paths $ dir_files $ proof_dir
-        $ defs $ task $ timeout $ memory $ meta $ provers $ csv $ summary
-        $ no_color $ output $ save $ wal_mode $ desktop_notification
-        $ no_failure $ update)
+    let printer ppf (n, m) =
+      if n = m then
+        Format.pp_print_int ppf n
+      else
+        Format.fprintf ppf "%d-%d" n m
+    in
+    let cpuspec = Arg.conv ~docv:"MASK" (parser, printer) in
+    let parse xs =
+      let cpus =
+        CCList.flat_map
+          (fun (n, m) -> List.init (m + 1 - n) (fun i -> i + n))
+          xs
+        |> List.sort_uniq Int.compare
+      in
+      match cpus with
+      | [] -> None
+      | _ -> Some cpus
+    in
+    Term.(const parse $ Arg.(value & opt (list cpuspec) [] & info [ "cpus" ] ~doc))
+
+  (* Parameters using ppx_subliner *)
+  type params = {
+    j : int; [@default 1] (** level of parallelism *)
+    progress : bool; (** print progress bar *)
+    pp_results : bool; [@default true] (** print results as they are found *)
+    paths : string list; [@pos_all] [@docv "PATH"] (** target paths (or directories containing tests) *)
+    dir_files : string list; [@opt_all] [@names ["F"]] [@default []] (** file containing a list of files *)
+    proof_dir : string option; (** store proofs in given directory *)
+    task : string option; (** task to run *)
+    timeout : int option; [@names ["t"; "timeout"]] (** timeout (in s) *)
+    memory : int option; [@names ["m"; "memory"]] (** memory (in MB) *)
+    meta : string; [@default ""] (** additional metadata to save *)
+    provers : string list; [@opt_all] [@names ["p"; "provers"]] [@default []] (** select provers *)
+    csv : string option; (** CSV output file *)
+    summary : string option; (** write summary in FILE *)
+    no_color : bool; [@names ["no-color"; "nc"]] (** disable colored output *)
+    output : string option; [@names ["o"; "output"]] (** output database file *)
+    save : bool; [@default true] (** save results on disk *)
+    wal_mode : bool; [@names ["wal"]] (** turn on the journal WAL mode *)
+    desktop_notification : bool; [@default true] [@names ["desktop-notification"; "dn"]]
+      (** send a desktop notification when the benchmarking is done (true by default) *)
+    no_failure : bool; [@names ["no-failure"; "nf"]]
+      (** don't fail if some provers give incorrect answers (contradictory to what was expected) *)
+    update : bool; [@names ["update"; "u"]]
+      (** if the output file already exists, overwrite it with the new one. *)
+  } [@@deriving subliner]
+
+  let run (p : params) cpus (log_lvl, defs) =
+    Misc.setup_logs log_lvl;
+    catch_err @@ fun () ->
+    if p.no_color then CCFormat.set_color_default false;
+    let dyn = if p.progress then Some true else None in
+    Run_main.main ~pp_results:p.pp_results ?dyn ~j:p.j ?cpus
+      ?timeout:p.timeout ?memory:p.memory ?csv:p.csv ~provers:p.provers
+      ~meta:p.meta ?task:p.task ?summary:p.summary ~dir_files:p.dir_files
+      ?proof_dir:p.proof_dir ?output:p.output ~save:p.save ~wal_mode:p.wal_mode
+      ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
+      ~update:p.update defs p.paths ()
+
+  let cmd =
+    let doc = "run a task, such as running solvers on directories of problem files" in
+    Cmdliner.Cmd.v (Cmdliner.Cmd.info ~doc "run")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ cpus_term $ Bin_utils.definitions_term)
 end
 
 module Slurm = struct
