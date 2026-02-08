@@ -10,7 +10,7 @@ type 'a or_error = ('a, Error.t) result
 module E = CCResult
 module IO = Linol.Blocking_IO
 module L = Linol.Jsonrpc2.Make (IO)
-module LT = Lsp.Types
+module LT = Linol.Lsp.Types
 module Log = (val Logs.src_log Logs.Src.(create "lsp"))
 
 type loc = Loc.t
@@ -21,12 +21,14 @@ type processed_buf = {
   defs: Definitions.t or_error;
 }
 
-let range_of_loc_ (l : loc) : Lsp.Types.Range.t =
+let uri_to_string = LT.DocumentUri.to_string
+
+let range_of_loc_ (l : loc) : Linol.Lsp.Types.Range.t =
   let mk_pos_ p =
     let line, col = Loc.Pos.to_line_col l.input p in
-    Lsp.Types.Position.create ~line:(line - 1) ~character:col
+    Linol.Lsp.Types.Position.create ~line:(line - 1) ~character:col
   in
-  Lsp.Types.Range.create ~start:(mk_pos_ l.start) ~end_:(mk_pos_ l.stop)
+  Linol.Lsp.Types.Range.create ~start:(mk_pos_ l.start) ~end_:(mk_pos_ l.stop)
 
 let diag_of_error ~uri (e0 : Error.t) : LT.Diagnostic.t list =
   let e, ctx = Error.unwrap_ctx e0 in
@@ -46,12 +48,12 @@ let diag_of_error ~uri (e0 : Error.t) : LT.Diagnostic.t list =
 
   match errs with
   | [] ->
-    Log.err (fun k -> k "in %s: err with no loc:@ %a" uri Error.pp e0);
+    Log.err (fun k -> k "in %s: err with no loc:@ %a" (uri_to_string uri) Error.pp e0);
     []
   | (msg0, loc0) :: ctx_errs ->
     let d =
       LT.Diagnostic.create ~severity:LT.DiagnosticSeverity.Error
-        ~range:(range_of_loc_ loc0) ~message:msg0
+        ~range:(range_of_loc_ loc0) ~message:(`String msg0)
         ~relatedInformation:(List.map tr_ctx_err_ ctx_errs)
         ()
     in
@@ -68,7 +70,7 @@ let diagnostics ~uri (p : processed_buf) : _ list =
     in
     let errors = List.rev_append (Stanza.errors l) defs_errors in
     Log.debug (fun k ->
-        k "in %s: ok, %d stanzas, %d errors" uri (List.length l)
+        k "in %s: ok, %d stanzas, %d errors" (uri_to_string uri) (List.length l)
           (List.length errors));
     CCList.flat_map (diag_of_error ~uri) errors
   | Error e0 -> diag_of_error ~uri e0
@@ -100,8 +102,10 @@ class blsp =
     inherit L.server
 
     (* one env per document *)
-    val buffers : (Lsp.Types.DocumentUri.t, processed_buf) Hashtbl.t Lock.t =
+    val buffers : (Linol.Lsp.Types.DocumentUri.t, processed_buf) Hashtbl.t Lock.t =
       Lock.create @@ Hashtbl.create 32
+
+    method spawn_query_handler f = ignore (Thread.create (fun () -> f ()) ())
 
     method! config_hover = Some (`Bool true)
     method! config_definition = Some (`Bool true)
@@ -114,10 +118,10 @@ class blsp =
     method! config_sync_opts =
       let change = LT.TextDocumentSyncKind.Incremental in
       LT.TextDocumentSyncOptions.create ~openClose:true ~change
-        ~save:(LT.SaveOptions.create ~includeText:false ())
+        ~save:(`SaveOptions (LT.SaveOptions.create ~includeText:false ()))
         ()
 
-    method! on_req_hover ~notify_back:_ ~id:_ ~uri ~pos (_ : L.doc_state)
+    method! on_req_hover ~notify_back:_ ~id:_ ~uri ~pos ~workDoneToken:_ (_ : L.doc_state)
         : LT.Hover.t option =
       let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
       match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
@@ -142,7 +146,7 @@ class blsp =
             Some h))
       | _ -> None
 
-    method! on_req_definition ~notify_back:_ ~id:_ ~uri ~pos (_ : L.doc_state)
+    method! on_req_definition ~notify_back:_ ~id:_ ~uri ~pos ~workDoneToken:_ ~partialResultToken:_ (_ : L.doc_state)
         : LT.Locations.t option =
       let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
       match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
@@ -165,13 +169,13 @@ class blsp =
 
     (* FIXME: completion is never useful on a parsable buffer, and
        buffers that do not parse have no definitions *)
-    method! on_req_completion ~notify_back:_ ~id:_ ~uri ~pos ~ctx:_
+    method! on_req_completion ~notify_back:_ ~id:_ ~uri ~pos ~ctx:_ ~workDoneToken:_ ~partialResultToken:_
         (_ : L.doc_state)
         : [ `CompletionList of LT.CompletionList.t
           | `List of LT.CompletionItem.t list ]
           option =
       Log.debug (fun k ->
-          k "completion request in '%s' at pos: %d line, %d col" uri pos.line
+          k "completion request in '%s' at pos: %d line, %d col" (uri_to_string uri) pos.line
             pos.character);
       let pos = Loc.Pos.of_line_col pos.line pos.character in
       match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
@@ -203,12 +207,12 @@ class blsp =
        - return the diagnostics from the new state
     *)
     method private _on_doc ~(notify_back : L.notify_back)
-        (uri : Lsp.Types.DocumentUri.t) (contents : string) =
-      Log.debug (fun k -> k "on doc %s" uri);
+        (uri : Linol.Lsp.Types.DocumentUri.t) (contents : string) =
+      Log.debug (fun k -> k "on doc %s" (uri_to_string uri));
       let open E.Infix in
       let stanzas =
         catch_e @@ fun () ->
-        Stanza.parse_string ~reify_errors:true ~filename:uri contents
+        Stanza.parse_string ~reify_errors:true ~filename:(uri_to_string uri) contents
       in
       let defs =
         let* stanzas = stanzas in
@@ -217,7 +221,7 @@ class blsp =
       let pdoc = { stanzas; defs; text = contents } in
       Lock.with_ buffers (fun b -> Hashtbl.replace b uri pdoc);
       let diags = diagnostics ~uri pdoc in
-      Log.debug (fun k -> k "send diags for %s" uri);
+      Log.debug (fun k -> k "send diags for %s" (uri_to_string uri));
       notify_back#send_diagnostic diags
 
     (* We now override the [on_notify_doc_did_open] method that will be called
@@ -237,7 +241,7 @@ class blsp =
        hashtable state, to avoid leaking memory. *)
     method on_notif_doc_did_close ~notify_back:_
         (d : LT.TextDocumentIdentifier.t) : unit IO.t =
-      Log.debug (fun k -> k "close %s" d.uri);
+      Log.debug (fun k -> k "close %s" (uri_to_string d.uri));
       Lock.with_ buffers (fun b -> Hashtbl.remove b d.uri);
       IO.return ()
   end
