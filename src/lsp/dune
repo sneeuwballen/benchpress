@@ -4,4 +4,4 @@
  (modes native)
  (package benchpress-lsp)
  (flags :standard -warn-error -a+8 -safe-string)
- (libraries containers containers-thread benchpress linol))
+ (libraries containers moonpool benchpress linol))

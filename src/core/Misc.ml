@@ -7,10 +7,10 @@ module Db = Sqlite3_utils
 module PB = PrintBox
 
 let spf = Printf.sprintf
-let _lock = CCLock.create ()
+let _lock = Moonpool.Lock.create ()
 let now_s () = Ptime_clock.now () |> Ptime.to_float_s
 let reset_line = "\x1b[2K\r"
-let synchronized f = CCLock.with_lock _lock f
+let synchronized f = Moonpool.Lock.with_ _lock f
 
 module Log_report = struct
   let buf_fmt () =
@@ -41,7 +41,7 @@ module Log_report = struct
     | Logs.App -> Fmt.fprintf out "[@{<blue>app@}:%s]" src
 
   let reporter () =
-    let lock = CCLock.create () in
+    let lock = Moonpool.Lock.create () in
     Fmt.set_color_default true;
     let buf_out, buf_flush = buf_fmt () in
     let pp_header fmt header =
@@ -67,7 +67,7 @@ module Log_report = struct
     let report src level ~over k msgf =
       let k _ =
         let write_str out s =
-          CCLock.with_lock lock @@ fun () ->
+          Moonpool.Lock.with_ lock @@ fun () ->
           Printf.fprintf out "%s%s%!" reset_line s
         in
         let msg = buf_flush () in
@@ -301,22 +301,27 @@ module Par_map = struct
   let map_p ~j f l =
     if j < 1 then invalid_arg "map_p: ~j";
     die_on_sigterm ();
-    (* NOTE: for some reason the pool seems to spawn one too many thread
-       in some cases. So we add a guard to respect [-j] properly. *)
-    let sem = CCSemaphore.create j in
-    let f_with_sem x = CCSemaphore.with_acquire ~n:1 sem ~f:(fun () -> f x) in
-    Logs.debug (fun k -> k "par-map: create pool j=%d" j);
-    let module P = CCPool.Make (struct
-      let max_size = j
-    end) in
-    let res =
-      match l with
-      | [] -> []
-      | _ -> P.Fut.map_l (fun x -> P.Fut.make1 f_with_sem x) l |> P.Fut.get
-    in
-    Logs.debug (fun k -> k "par-map: stop pool");
-    P.stop ();
-    res
+    match l with
+    | [] -> []
+    | _ ->
+      Logs.debug (fun k -> k "par-map: create pool j=%d" j);
+      let pool = Moonpool.Fifo_pool.create ~num_threads:j () in
+      let res =
+        try
+          let futs = List.map (fun x -> Moonpool.Fut.spawn ~on:pool (fun () -> f x)) l in
+          let results = List.map Moonpool.Fut.wait_block futs in
+          List.map (function
+            | Ok x -> x
+            | Error (exn, bt) -> Printexc.raise_with_backtrace exn bt
+          ) results
+        with e ->
+          Logs.debug (fun k -> k "par-map: shutdown pool (exception)");
+          Moonpool.Fifo_pool.shutdown pool;
+          raise e
+      in
+      Logs.debug (fun k -> k "par-map: shutdown pool");
+      Moonpool.Fifo_pool.shutdown pool;
+      res
 
   (* Map on the list [l] with each call to [f] being associated one of the
      resources from [resources] that is guaranteed not to be used concurrently
@@ -329,21 +334,35 @@ module Par_map = struct
         invalid_arg "map_with_resource: ~resources";
       die_on_sigterm ();
       let jobs = List.length resources in
-      let queue = CCBlockingQueue.create jobs in
-      List.iter (CCBlockingQueue.push queue) resources;
-      let f x =
-        let resource = CCBlockingQueue.take queue in
+      let queue = Moonpool.Blocking_queue.create () in
+      List.iter (Moonpool.Blocking_queue.push queue) resources;
+      let f_with_resource x =
+        let resource = Moonpool.Blocking_queue.pop queue in
         Fun.protect
-          ~finally:(fun () -> CCBlockingQueue.push queue resource)
+          ~finally:(fun () -> Moonpool.Blocking_queue.push queue resource)
           (fun () -> f resource x)
       in
       Logs.debug (fun m -> m "par-map: create pool j=%d" jobs);
-      let module P = CCPool.Make (struct
-        let max_size = jobs
-      end) in
-      let res = P.Fut.map_l (P.Fut.make1 f) l |> P.Fut.get in
-      Logs.debug (fun m -> m "par-map: stop pool");
-      P.stop ();
+      let pool = Moonpool.Fifo_pool.create ~num_threads:jobs () in
+      let res =
+        try
+          let futs = List.map (fun x ->
+            Moonpool.Fut.spawn ~on:pool (fun () -> f_with_resource x)
+          ) l in
+          let results = List.map Moonpool.Fut.wait_block futs in
+          Moonpool.Blocking_queue.close queue;
+          List.map (function
+            | Ok x -> x
+            | Error (exn, bt) -> Printexc.raise_with_backtrace exn bt
+          ) results
+        with e ->
+          Logs.debug (fun m -> m "par-map: shutdown pool (exception)");
+          Moonpool.Blocking_queue.close queue;
+          Moonpool.Fifo_pool.shutdown pool;
+          raise e
+      in
+      Logs.debug (fun m -> m "par-map: shutdown pool");
+      Moonpool.Fifo_pool.shutdown pool;
       res
 end
 
@@ -464,12 +483,17 @@ let mk_socket sockaddr =
 let start_server n server_fun sock =
   let open Unix in
   listen sock 5;
-  CCThread.Arr.join
-  @@ CCThread.Arr.spawn n (fun _ ->
-         let s, _caller = accept_non_intr sock in
-         let inchan = in_channel_of_descr s in
-         let outchan = out_channel_of_descr s in
-         server_fun inchan outchan)
+  let threads =
+    List.init n (fun _ ->
+      Thread.create (fun () ->
+        let s, _caller = accept_non_intr sock in
+        let inchan = in_channel_of_descr s in
+        let outchan = out_channel_of_descr s in
+        server_fun inchan outchan
+      ) ()
+    )
+  in
+  List.iter Thread.join threads
 
 (** [establish_server n server_fun sockaddr] same as
     [Unix.establish_server], but it uses threads instead of forking the process

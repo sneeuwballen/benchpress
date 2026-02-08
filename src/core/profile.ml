@@ -2,7 +2,7 @@ let spf = Printf.sprintf
 
 type span = float
 
-let out_ : out_channel CCLock.t option ref = ref None
+let out_ : out_channel Moonpool.Lock.t option ref = ref None
 let[@inline] enabled () = !out_ != None
 let start_ = Unix.gettimeofday ()
 let[@inline] now_us () = (Unix.gettimeofday () -. start_) *. 1e6
@@ -15,11 +15,11 @@ let enable () =
     (*     let oc = Unix.open_process_out "gzip --synchronous -c - > trace.json.gz" in *)
     let oc = open_out "trace.json" in
     output_string oc "[";
-    let out = CCLock.create oc in
+    let out = Moonpool.Lock.create oc in
     out_ := Some out;
     at_exit (fun () ->
         out_ := None;
-        CCLock.with_lock out (fun oc ->
+        Moonpool.Lock.with_ out (fun oc ->
             flush oc;
             close_out_noerr oc))
   )
@@ -44,7 +44,7 @@ let exit_real_ ?(args = []) sp name =
         {json|{"ph":"X","name":%S,"pid":1,"tid":%d,"ts":%.1f,"dur":%.1f%s},|json}
         name tid sp dur args
     in
-    CCLock.with_lock out (fun oc ->
+    Moonpool.Lock.with_ out (fun oc ->
         output_string oc s;
         output_char oc '\n';
         flush oc)

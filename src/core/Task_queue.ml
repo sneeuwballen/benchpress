@@ -1,7 +1,7 @@
 (** {1 Task queue for the server} *)
 
 open Common
-module M = CCLock
+module M = Moonpool.Lock
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.task-queue"))
 
 type job = {
@@ -40,14 +40,14 @@ type api_job = { mutable aj_last_seen: float; mutable aj_interrupted: bool }
 
 type t = {
   defs: Definitions.t M.t;
-  jobs: job CCBlockingQueue.t;
+  jobs: job Moonpool.Blocking_queue.t;
   jobs_tbl: (string, Job.t) Hashtbl.t;
   api_jobs: (string, api_job) Hashtbl.t; (* last seen+descr *)
   cur: job option M.t;
 }
 
 let defs self = self.defs
-let size self = CCBlockingQueue.size self.jobs
+let size self = Moonpool.Blocking_queue.size self.jobs
 let cur_job self = M.get self.cur
 
 let interrupt self ~uuid : bool =
@@ -62,7 +62,7 @@ let interrupt self ~uuid : bool =
 
 let create ?(defs = Definitions.empty) () : t =
   {
-    jobs = CCBlockingQueue.create 64;
+    jobs = Moonpool.Blocking_queue.create ();
     defs = M.create defs;
     jobs_tbl = Hashtbl.create 8;
     api_jobs = Hashtbl.create 8;
@@ -85,11 +85,11 @@ let push self task : unit =
     }
   in
   Hashtbl.add self.jobs_tbl j_uuid j;
-  CCBlockingQueue.push self.jobs j
+  Moonpool.Blocking_queue.push self.jobs j
 
 let loop self =
   while true do
-    let job = CCBlockingQueue.take self.jobs in
+    let job = Moonpool.Blocking_queue.pop self.jobs in
     Profile.with_ "task-queue.job" @@ fun () ->
     job.j_started_time <- Unix.gettimeofday ();
     M.set self.cur (Some job);

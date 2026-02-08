@@ -11,7 +11,7 @@ build: [
 depends: [
   "dune" { >= "1.11" }
   "containers" { >= "3.0" & < "4.0" }
-  "containers-thread" { >= "3.0" & < "4.0" }
+  "moonpool" { >= "0.11" & < "0.12" }
   "benchpress" { = version }
   "linol" { >= "0.4" & < "0.5" }
 ]
