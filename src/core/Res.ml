@@ -41,7 +41,7 @@ let compare a b =
     `Same
   | Tag s1, Tag s2 when s1 = s2 ->
     `Same
-    (*
+      (*
   | Unknown, Timeout -> `LeftBetter
   | Timeout, Unknown -> `RightBetter
        *)

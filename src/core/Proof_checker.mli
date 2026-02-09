@@ -20,8 +20,9 @@ val make_cmd :
   t ->
   string
 (** Interpolate a command using the given substitution function.
-    @raise Subst_not_found if a variable is found, that is not substituted
-    into any of the parameters nor by [f] *)
+    @raise Subst_not_found
+      if a variable is found, that is not substituted into any of the parameters
+      nor by [f] *)
 
 module Res = Proof_check_res
 

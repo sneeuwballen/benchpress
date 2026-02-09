@@ -70,14 +70,14 @@ type t =
       loc: Loc.t;
       version: version_field option;
       binary: string option;
-          (** Path to the binary to use.  Useful in combination with [inherits] *)
+          (** Path to the binary to use. Useful in combination with [inherits]
+          *)
       cmd: string option;
-          (** the command line to run.
-          possibly contains $binary, $file, $memory and $timeout,
-          and $proof_file if {!produces_proof} is true *)
+          (** the command line to run. possibly contains $binary, $file, $memory
+              and $timeout, and $proof_file if {!produces_proof} is true *)
       produces_proof: bool option;
-          (** true if the solver should be passed $proof_file into which
-          it can emit a proof *)
+          (** true if the solver should be passed $proof_file into which it can
+              emit a proof *)
       proof_ext: string option;  (** file extension for proofs *)
       proof_checker: string option;  (** name of proof checker *)
       ulimits: Ulimit.conf option;  (** which limits to enforce using ulimit *)
@@ -130,8 +130,7 @@ val errors : t list -> Error.t list
 val parse_files : ?reify_errors:bool -> string list -> t list
 (** Parse a list of files and return their concatenated stanzas.
     @param builtin if true, add the builtin prelude before the files
-    @param reify_errors if true, parsing errors become {!St_error}
-*)
+    @param reify_errors if true, parsing errors become {!St_error} *)
 
 val parse_string : ?reify_errors:bool -> filename:string -> string -> t list
 (** Parse a string. See {!parse_files} for the arguments.

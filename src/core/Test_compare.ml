@@ -23,8 +23,7 @@ let cmp2sql = function
       or
       (r1.res not in ('sat', 'unsat') and r2.res not in ('sat', 'unsat'))
     |}
-  | `Solved ->
-    {| (r1.res in ('sat', 'unsat') and r1.res = r2.res) |}
+  | `Solved -> {| (r1.res in ('sat', 'unsat') and r1.res = r2.res) |}
   | `Mismatch ->
     {|
       r1.res in ('sat', 'unsat') and
@@ -139,8 +138,10 @@ module Short = struct
                 and file = r1.file); |}
     and same = get_n (unsafe_sql ?status ~filter:`Same [ "count(r1.file)" ])
     and solved = get_n (unsafe_sql ?status ~filter:`Solved [ "count(r1.file)" ])
-    and old_time = get_flt (unsafe_sql ?status ~filter:`Solved [ "sum(r1.rtime)" ])
-    and new_time = get_flt (unsafe_sql ?status ~filter:`Solved [ "sum(r2.rtime)" ])
+    and old_time =
+      get_flt (unsafe_sql ?status ~filter:`Solved [ "sum(r1.rtime)" ])
+    and new_time =
+      get_flt (unsafe_sql ?status ~filter:`Solved [ "sum(r2.rtime)" ])
     and mismatch =
       get_n (unsafe_sql ?status ~filter:`Mismatch [ "count(r1.file)" ])
     and improved =
@@ -148,8 +149,17 @@ module Short = struct
     and regressed =
       get_n (unsafe_sql ?status ~filter:`Regressed [ "count(r1.file)" ])
     in
-    { appeared; disappeared; same; solved; mismatch; improved; regressed
-    ; old_time ; new_time }
+    {
+      appeared;
+      disappeared;
+      same;
+      solved;
+      mismatch;
+      improved;
+      regressed;
+      old_time;
+      new_time;
+    }
 
   let make_provers ?status (f1, p1) (f2, p2) : t =
     Error.guard
@@ -182,7 +192,10 @@ module Full = struct
 
   let make_filtered ?(page = 0) ?(page_size = 500) ?filter ?status (f1, p1)
       (f2, p2) =
-    let tags = [] (* TODO? *) in
+    let tags =
+      []
+      (* TODO? *)
+    in
     let offset = page * page_size in
     let limit = page_size + 1 in
     Db.exec (make_db f1 f2)

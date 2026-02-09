@@ -54,10 +54,9 @@ val mk_run_provers :
   loc:Loc.t option ->
   t ->
   Action.run_provers
-(** Build a "run" action from the given prover names
-    and directory paths.
-    All the provers must be defined, and the paths must be contained
-    in declared [dir]. *)
+(** Build a "run" action from the given prover names and directory paths. All
+    the provers must be defined, and the paths must be contained in declared
+    [dir]. *)
 
 val mk_run_provers_slurm_submission :
   ?j:int ->

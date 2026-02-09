@@ -22,9 +22,9 @@ module Job = struct
   let pp out self =
     Fmt.fprintf out "(@[task%s@ :uuid %s@ %a@])"
       (if M.get self.j_interrupted then
-        "[int]"
-      else
-        "")
+         "[int]"
+       else
+         "")
       self.j_uuid Action.pp self.j_action
 
   let uuid self = self.j_uuid

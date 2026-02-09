@@ -16,315 +16,195 @@ let catch_err f =
 
 (** {2 Run} *)
 module Run = struct
-  (* sub-command for running tests *)
-  let cmd =
+  (* Custom CPU spec parser - kept separate due to complex logic *)
+  let cpus_term =
     let open Cmdliner in
-    let aux j cpus pp_results dyn paths dir_files proof_dir (log_lvl, defs) task
-        timeout memory meta provers csv summary no_color output save wal_mode
-        desktop_notification no_failure update =
-      Misc.setup_logs log_lvl;
-      catch_err @@ fun () ->
-      if no_color then CCFormat.set_color_default false;
-      let dyn =
-        if dyn then
-          Some true
-        else
-          None
-      in
-      Run_main.main ~pp_results ?dyn ~j ?cpus ?timeout ?memory ?csv ~provers
-        ~meta ?task ?summary ~dir_files ?proof_dir ?output ~save ~wal_mode
-        ~desktop_notification ~no_failure ~update defs paths ()
+    let doc =
+      "Limit the specific CPUs or cores to use. When provided, the\n\
+      \      [-j] flag is ignored, and each prover gets allocated its own CPU \
+       core from\n\
+      \      this list. A comma-separated list or hyphen-separated ranges are \
+       allowed."
     in
-    let defs = Bin_utils.definitions_term
-    and dyn = Arg.(value & flag & info [ "progress" ] ~doc:"print progress bar")
-    and pp_results =
-      Arg.(
-        value & opt bool true
-        & info [ "pp-results" ] ~doc:"print results as they are found")
-    and output =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "o"; "output" ] ~doc:"output database file")
-    and save =
-      Arg.(value & opt bool true & info [ "save" ] ~doc:"save results on disk")
-    and wal_mode =
-      Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
-    and dir_files =
-      Arg.(
-        value & opt_all file []
-        & info [ "F" ] ~doc:"file containing a list of files")
-    and proof_dir =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "proof-dir" ] ~doc:"store proofs in given directory")
-    and task =
-      Arg.(value & opt (some string) None & info [ "task" ] ~doc:"task to run")
-    and timeout =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "t"; "timeout" ] ~doc:"timeout (in s)")
-    and j = Arg.(value & opt int 1 & info [ "j" ] ~doc:"level of parallelism")
-    and cpus =
-      let doc =
-        "Limit the specific CPUs or cores to use. When provided, the\n\
-        \      [-j] flag is ignored, and each prover gets allocated its own \
-         CPU core from\n\
-        \      this list. A comma-separated list or hyphen-separated ranges \
-         are allowed."
-      in
-      let parser s =
-        match String.split_on_char '-' s with
-        | [] -> assert false (* [split_on_char] invariant *)
-        | [ n ] -> Result.map (fun x -> x, x) Arg.(conv_parser int n)
-        | [ n; m ] ->
-          Result.bind Arg.(conv_parser int n) @@ fun n ->
-          Result.bind Arg.(conv_parser int m) @@ fun m ->
-          if m < n then
-            Error (`Msg (Format.asprintf "invalid range: %d-%d" n m))
-          else
-            Ok (n, m)
-        | _ -> Error (`Msg (Format.asprintf "invalid cpuset: %s" s))
-      in
-      let printer ppf (n, m) =
-        if n = m then
-          Format.pp_print_int ppf n
+    let parser s =
+      match String.split_on_char '-' s with
+      | [] -> assert false (* [split_on_char] invariant *)
+      | [ n ] -> Result.map (fun x -> x, x) Arg.(conv_parser int n)
+      | [ n; m ] ->
+        Result.bind Arg.(conv_parser int n) @@ fun n ->
+        Result.bind Arg.(conv_parser int m) @@ fun m ->
+        if m < n then
+          Error (`Msg (Format.asprintf "invalid range: %d-%d" n m))
         else
-          Format.fprintf ppf "%d-%d" n m
+          Ok (n, m)
+      | _ -> Error (`Msg (Format.asprintf "invalid cpuset: %s" s))
+    in
+    let printer ppf (n, m) =
+      if n = m then
+        Format.pp_print_int ppf n
+      else
+        Format.fprintf ppf "%d-%d" n m
+    in
+    let cpuspec = Arg.conv ~docv:"MASK" (parser, printer) in
+    let parse xs =
+      let cpus =
+        CCList.flat_map
+          (fun (n, m) -> List.init (m + 1 - n) (fun i -> i + n))
+          xs
+        |> List.sort_uniq Int.compare
       in
-      let cpuspec = Arg.conv ~docv:"MASK" (parser, printer) in
-      let parse xs =
-        let cpus =
-          CCList.flat_map
-            (fun (n, m) -> List.init (m + 1 - n) (fun i -> i + n))
-            xs
-          |> List.sort_uniq Int.compare
-        in
-        match cpus with
-        | [] -> None
-        | _ -> Some cpus
-      in
-      Term.(
-        const parse $ Arg.(value & opt (list cpuspec) [] & info [ "cpus" ] ~doc))
-    and memory =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "m"; "memory" ] ~doc:"memory (in MB)")
-    and meta =
-      Arg.(
-        value & opt string ""
-        & info [ "meta" ] ~doc:"additional metadata to save")
-    and doc =
+      match cpus with
+      | [] -> None
+      | _ -> Some cpus
+    in
+    Term.(
+      const parse $ Arg.(value & opt (list cpuspec) [] & info [ "cpus" ] ~doc))
+
+  (* Parameters using ppx_subliner *)
+  type params = {
+    j: int; [@default 1]  (** level of parallelism *)
+    progress: bool;  (** print progress bar *)
+    pp_results: bool; [@default true]  (** print results as they are found *)
+    paths: string list; [@pos_all] [@docv "PATH"]
+        (** target paths (or directories containing tests) *)
+    dir_files: string list; [@opt_all] [@names [ "F" ]] [@default []]
+        (** file containing a list of files *)
+    proof_dir: string option;  (** store proofs in given directory *)
+    task: string option;  (** task to run *)
+    timeout: int option; [@names [ "t"; "timeout" ]]  (** timeout (in s) *)
+    memory: int option; [@names [ "m"; "memory" ]]  (** memory (in MB) *)
+    meta: string; [@default ""]  (** additional metadata to save *)
+    provers: string list; [@opt_all] [@names [ "p"; "provers" ]] [@default []]
+        (** select provers *)
+    csv: string option;  (** CSV output file *)
+    summary: string option;  (** write summary in FILE *)
+    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    output: string option; [@names [ "o"; "output" ]]
+        (** output database file *)
+    save: bool; [@default true]  (** save results on disk *)
+    wal_mode: bool; [@names [ "wal" ]]  (** turn on the journal WAL mode *)
+    desktop_notification: bool;
+        [@default true] [@names [ "desktop-notification"; "dn" ]]
+        (** send a desktop notification when the benchmarking is done (true by
+            default) *)
+    no_failure: bool; [@names [ "no-failure"; "nf" ]]
+        (** don't fail if some provers give incorrect answers (contradictory to
+            what was expected) *)
+    update: bool; [@names [ "update"; "u" ]]
+        (** if the output file already exists, overwrite it with the new one. *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) cpus (log_lvl, defs) =
+    Misc.setup_logs log_lvl;
+    catch_err @@ fun () ->
+    if p.no_color then CCFormat.set_color_default false;
+    let dyn =
+      if p.progress then
+        Some true
+      else
+        None
+    in
+    Run_main.main ~pp_results:p.pp_results ?dyn ~j:p.j ?cpus ?timeout:p.timeout
+      ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
+      ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
+      ?output:p.output ~save:p.save ~wal_mode:p.wal_mode
+      ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
+      ~update:p.update defs p.paths ()
+
+  let cmd =
+    let doc =
       "run a task, such as running solvers on directories of problem files"
-    and csv =
-      Arg.(
-        value & opt (some string) None & info [ "csv" ] ~doc:"CSV output file")
-    and paths =
-      Arg.(
-        value & pos_all string []
-        & info [] ~docv:"PATH"
-            ~doc:"target paths (or directories containing tests)")
-    and provers =
-      Arg.(
-        value & opt_all string []
-        & info [ "p"; "provers" ] ~doc:"select provers")
-    and no_color =
-      Arg.(
-        value & flag & info [ "no-color"; "nc" ] ~doc:"disable colored output")
-    and summary =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "summary" ] ~doc:"write summary in FILE")
-    and desktop_notification =
-      Arg.(
-        value & opt bool true
-        & info
-            [ "desktop-notification"; "dn" ]
-            ~doc:
-              "send a desktop notification when the benchmarking is done (true \
-               by default)")
-    and no_failure =
-      Arg.(
-        value & flag
-        & info [ "no-failure"; "nf" ]
-            ~doc:
-              "don't fail if some provers give incorrect answers \
-               (contradictory to what was expected)")
-    and update =
-      Arg.(
-        value & flag
-        & info [ "update"; "u" ]
-            ~doc:
-              "if the output file already exists, overwrite it with the new \
-               one.")
     in
-    Cmd.v (Cmd.info ~doc "run")
-      Term.(
-        const aux $ j $ cpus $ pp_results $ dyn $ paths $ dir_files $ proof_dir
-        $ defs $ task $ timeout $ memory $ meta $ provers $ csv $ summary
-        $ no_color $ output $ save $ wal_mode $ desktop_notification
-        $ no_failure $ update)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "run")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ cpus_term
+        $ Bin_utils.definitions_term)
 end
 
 module Slurm = struct
   (* sub-command for running tests with slurm *)
-  let cmd =
-    let open Cmdliner in
-    let aux j pp_results dyn paths dir_files proof_dir (log_lvl, defs) task
-        timeout memory meta provers csv summary no_color output save wal_mode
-        desktop_notification no_failure update partition nodes addr port ntasks
-        =
-      Misc.setup_logs log_lvl;
-      catch_err @@ fun () ->
-      if no_color then CCFormat.set_color_default false;
-      let dyn =
-        if dyn then
-          Some true
-        else
-          None
-      in
-      Run_main.main ~sbatch:true ~pp_results ?dyn ~j ?timeout ?memory ?csv
-        ~provers ~meta ?task ?summary ~dir_files ?proof_dir ?output ~wal_mode
-        ~desktop_notification ~no_failure ~update ~save ?partition ?nodes ?addr
-        ?port ?ntasks defs paths ()
+  type params = {
+    j: int; [@default 1]
+        (** number of parallel threads each worker will launch on the node on
+            which it's running. *)
+    progress: bool;  (** print progress bar *)
+    pp_results: bool; [@default true]  (** print results as they are found *)
+    paths: string list; [@pos_all] [@docv "PATH"]
+        (** target paths (or directories containing tests) *)
+    dir_files: string list; [@opt_all] [@names [ "F" ]] [@default []]
+        (** file containing a list of files *)
+    proof_dir: string option;  (** store proofs in given directory *)
+    task: string option;  (** task to run *)
+    timeout: int option; [@names [ "t"; "timeout" ]]  (** timeout (in s) *)
+    memory: int option; [@names [ "m"; "memory" ]]  (** memory (in MB) *)
+    meta: string; [@default ""]  (** additional metadata to save *)
+    provers: string list; [@opt_all] [@names [ "p"; "provers" ]] [@default []]
+        (** select provers *)
+    csv: string option;  (** CSV output file *)
+    summary: string option;  (** write summary in FILE *)
+    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    output: string option; [@names [ "o"; "output" ]]
+        (** output database file *)
+    save: bool; [@default true]  (** save results on disk *)
+    wal_mode: bool; [@names [ "wal" ]]  (** turn on the journal WAL mode *)
+    desktop_notification: bool;
+        [@default true] [@names [ "desktop-notification"; "dn" ]]
+        (** send a desktop notification when the benchmarking is done (true by
+            default) *)
+    no_failure: bool; [@names [ "no-failure"; "nf" ]]
+        (** don't fail if some provers give incorrect answers (contradictory to
+            what was expected) *)
+    update: bool; [@names [ "update"; "u" ]]
+        (** if the output file already exists, overwrite it with the new one. *)
+    partition: string option;
+        (** partition to which the allocated nodes should belong *)
+    nodes: int option; [@names [ "n"; "nodes" ]]
+        (** the maximum number of nodes to be used *)
+    addr: string option; [@names [ "a"; "addr" ]]
+        (** IP address of the server on the control node. Needs to be reachable
+            by the workers which will run on the allocated calculation nodes. *)
+    port: int option;
+        (** port of the server on the control node. Default is 0 to let the OS
+            choose a port. *)
+    ntasks: int option;
+        (** The number of tasks to give the workers at a time. *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) (log_lvl, defs) =
+    Misc.setup_logs log_lvl;
+    catch_err @@ fun () ->
+    if p.no_color then CCFormat.set_color_default false;
+    let dyn =
+      if p.progress then
+        Some true
+      else
+        None
     in
-    let defs = Bin_utils.definitions_term
-    and doc =
+    let addr =
+      match p.addr with
+      | None -> None
+      | Some s -> Some (Unix.inet_addr_of_string s)
+    in
+    Run_main.main ~sbatch:true ~pp_results:p.pp_results ?dyn ~j:p.j
+      ?timeout:p.timeout ?memory:p.memory ?csv:p.csv ~provers:p.provers
+      ~meta:p.meta ?task:p.task ?summary:p.summary ~dir_files:p.dir_files
+      ?proof_dir:p.proof_dir ?output:p.output ~wal_mode:p.wal_mode
+      ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
+      ~update:p.update ~save:p.save ?partition:p.partition ?nodes:p.nodes ?addr
+      ?port:p.port ?ntasks:p.ntasks defs p.paths ()
+
+  let cmd =
+    let doc =
       "run benchpress using the computing power of a cluster that works with \
        slurm"
-    and dyn = Arg.(value & flag & info [ "progress" ] ~doc:"print progress bar")
-    and pp_results =
-      Arg.(
-        value & opt bool true
-        & info [ "pp-results" ] ~doc:"print results as they are found")
-    and output =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "o"; "output" ] ~doc:"output database file")
-    and save =
-      Arg.(value & opt bool true & info [ "save" ] ~doc:"save results on disk")
-    and wal_mode =
-      Arg.(value & flag & info [ "wal" ] ~doc:"turn on the journal WAL mode")
-    and dir_files =
-      Arg.(
-        value & opt_all file []
-        & info [ "F" ] ~doc:"file containing a list of files")
-    and proof_dir =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "proof-dir" ] ~doc:"store proofs in given directory")
-    and task =
-      Arg.(value & opt (some string) None & info [ "task" ] ~doc:"task to run")
-    and timeout =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "t"; "timeout" ] ~doc:"timeout (in s)")
-    and j =
-      Arg.(
-        value & opt int 1
-        & info [ "j" ]
-            ~doc:
-              "number of parallel threads each worker will launch on the node \
-               on which it's running.")
-    and memory =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "m"; "memory" ] ~doc:"memory (in MB)")
-    and meta =
-      Arg.(
-        value & opt string ""
-        & info [ "meta" ] ~doc:"additional metadata to save")
-    and csv =
-      Arg.(
-        value & opt (some string) None & info [ "csv" ] ~doc:"CSV output file")
-    and paths =
-      Arg.(
-        value & pos_all string []
-        & info [] ~docv:"PATH"
-            ~doc:"target paths (or directories containing tests)")
-    and provers =
-      Arg.(
-        value & opt_all string []
-        & info [ "p"; "provers" ] ~doc:"select provers")
-    and no_color =
-      Arg.(
-        value & flag & info [ "no-color"; "nc" ] ~doc:"disable colored output")
-    and summary =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "summary" ] ~doc:"write summary in FILE")
-    and partition =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "partition" ]
-            ~doc:"partition to which the allocated nodes should belong")
-    and nodes =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "n"; "nodes" ] ~doc:"the maximum number of nodes to be used")
-    and addr =
-      Arg.(
-        value
-        & opt (some Misc.ip_addr_conv) None
-        & info [ "a"; "addr" ]
-            ~doc:
-              "IP address of the server on the control node. Needs to be \
-               reachable by the workers which will run on the allocated \
-               calculation nodes.")
-    and port =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "port" ]
-            ~doc:
-              "port of the server on the control node. Default is 0 to let the \
-               OS choose a port.")
-    and ntasks =
-      Arg.(
-        value
-        & opt (some int) None
-        & info [ "ntasks" ]
-            ~doc:"The number of tasks to give the workers at a time.")
-    and desktop_notification =
-      Arg.(
-        value & opt bool true
-        & info
-            [ "desktop-notification"; "dn" ]
-            ~doc:
-              "send a desktop notification when the benchmarking is done (true \
-               by default)")
-    and no_failure =
-      Arg.(
-        value & flag
-        & info [ "no-failure"; "nf" ]
-            ~doc:
-              "don't fail if some provers give incorrect answers \
-               (contradictory to what was expected)")
-    and update =
-      Arg.(
-        value & flag
-        & info [ "update"; "u" ]
-            ~doc:
-              "if the output file already exists, overwrite it with the new \
-               one.")
     in
-    Cmd.v (Cmd.info ~doc "slurm")
-      Term.(
-        const aux $ j $ pp_results $ dyn $ paths $ dir_files $ proof_dir $ defs
-        $ task $ timeout $ memory $ meta $ provers $ csv $ summary $ no_color
-        $ output $ save $ wal_mode $ desktop_notification $ no_failure $ update
-        $ partition $ nodes $ addr $ port $ ntasks)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "slurm")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 module List_files = struct
@@ -344,61 +224,41 @@ module List_files = struct
       entries;
     ()
 
-  (* sub-command to sample a directory *)
+  type params = { abs: bool [@default false]  (** show absolute paths *) }
+  [@@deriving subliner]
+
   let cmd =
-    let open Cmdliner in
-    let abs =
-      Arg.(
-        value & opt ~vopt:true bool false
-        & info [ "abs" ] ~doc:"show absolute paths")
-    in
     let doc = "list benchmark result files" in
-    let aux abs () = main ~abs () in
-    Cmd.v (Cmd.info ~doc "list-files") Term.(const aux $ abs $ const ())
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list-files")
+      Cmdliner.Term.(
+        const (fun p -> main ~abs:p.abs ()) $ params_cmdliner_term ())
 end
 
 module Show = struct
-  (* sub-command for showing results *)
+  type params = {
+    csv: string option;  (** CSV output file *)
+    file: string; [@pos 0] [@docv "FILE"]  (** file to read *)
+    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    check: bool; [@default true]  (** check results *)
+    bad: bool; [@default true]  (** list bad results *)
+    summary: string option;  (** write summary in FILE *)
+    details: bool;  (** show more details *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
+    catch_err @@ fun () ->
+    Misc.setup_logs debug;
+    if p.no_color then CCFormat.set_color_default false;
+    Show.main ~check:p.check ~bad:p.bad ~details:p.details ?csv:p.csv
+      ?summary:p.summary p.file
+
   let cmd =
-    let open Cmdliner in
-    let csv =
-      Arg.(
-        value & opt (some string) None & info [ "csv" ] ~doc:"CSV output file")
-    and file =
-      Arg.(
-        required
-        & pos 0 (some string) None
-        & info [] ~docv:"FILE" ~doc:"file to read")
-    and no_color =
-      Arg.(
-        value & flag & info [ "no-color"; "nc" ] ~doc:"disable colored output")
-    and check =
-      Arg.(
-        value & opt ~vopt:true bool true & info [ "check" ] ~doc:"check results")
-    and bad =
-      Arg.(
-        value & opt ~vopt:true bool true
-        & info [ "bad" ] ~doc:"list bad results")
-    and summary =
-      Arg.(
-        value
-        & opt (some string) None
-        & info [ "summary" ] ~doc:"write summary in FILE")
-    and debug = Logs_cli.level ()
-    and details =
-      Arg.(value & flag & info [ "details" ] ~doc:"show more details")
-    in
-    let aux check bad csv summary no_color debug details file : bool =
-      catch_err @@ fun () ->
-      Misc.setup_logs debug;
-      if no_color then CCFormat.set_color_default false;
-      Show.main ~check ~bad ~details ?csv ?summary file
-    in
     let doc = "show benchmark results (see `list-files`)" in
-    Cmd.v (Cmd.info ~doc "show")
-      Term.(
-        const aux $ check $ bad $ csv $ summary $ no_color $ debug $ details
-        $ file)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "show")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
 (** {2 plot results} *)
@@ -412,22 +272,19 @@ module Plot = struct
         Cactus_plot.show p;
         ())
 
-  (* sub-command for showing results *)
+  type params = { file: string [@pos 0] [@docv "FILE"]  (** file to read *) }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
+    catch_err @@ fun () ->
+    Misc.setup_logs debug;
+    main p.file
+
   let cmd =
-    let open Cmdliner in
-    let file =
-      Arg.(
-        required
-        & pos 0 (some string) None
-        & info [] ~docv:"FILE" ~doc:"file to read")
-    and debug = Logs_cli.level () in
-    let aux debug file =
-      catch_err @@ fun () ->
-      Misc.setup_logs debug;
-      main file
-    in
     let doc = "plot benchmark results" in
-    Cmd.v (Cmd.info ~doc "plot") Term.(const aux $ debug $ file)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "plot")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
 (** {2 Sample} *)
@@ -455,28 +312,25 @@ module Sample = struct
     Misc.synchronized (fun () -> List.iter (Printf.printf "%s\n%!") sample);
     ()
 
-  (* sub-command to sample a directory *)
+  type params = {
+    dirs: string list; [@pos_all] [@docv "DIR"]
+        (** target directories (containing tests) *)
+    n: int; [@default 1] [@docv "N"]  (** number of files to sample *)
+  }
+  [@@deriving subliner]
+
   let cmd =
-    let open Cmdliner in
-    let aux n dir = run ~n dir in
-    let dir =
-      Arg.(
-        value & pos_all string []
-        & info [] ~docv:"DIR" ~doc:"target directories (containing tests)")
-    and n =
-      Arg.(
-        value & opt int 1
-        & info [ "n" ] ~docv:"N" ~doc:"number of files to sample")
-    and doc = "sample N files in the given directories" in
-    Cmd.v (Cmd.info ~doc "sample") Term.(const aux $ n $ dir)
+    let doc = "sample N files in the given directories" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "sample")
+      Cmdliner.Term.(
+        const (fun p -> run ~n:p.n p.dirs) $ params_cmdliner_term ())
 end
 
 (** {2 Show directories} *)
 
 module Dir = struct
-  type which = Config | State
-
-  let which_conv = Cmdliner.Arg.(enum [ "config", Config; "state", State ])
+  type which = Config | State [@@deriving subliner_enum]
 
   let run c =
     catch_err @@ fun () ->
@@ -486,14 +340,10 @@ module Dir = struct
       | State -> Misc.data_dir ());
     ()
 
-  (* sub-command for showing results *)
   let cmd =
     let open Cmdliner in
     let which =
-      Arg.(
-        required
-        & pos 0 (some which_conv) None
-        & info ~doc:"directory to list (config|state)" [])
+      Arg.(required & pos 0 (some (which_cmdliner_conv ())) None & info [])
     in
     let doc =
       "show directories where benchpress stores its state (config|state)"
@@ -504,20 +354,27 @@ end
 (** {2 Check config} *)
 
 module Check_config = struct
-  let run debug with_default f =
+  type params = {
+    files: string list; [@pos_all] [@default []]  (** file(s) to check *)
+    with_default: bool; [@default false] [@names [ "d"; "default" ]]
+        (** combine with the default config file(s) *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
     catch_err @@ fun () ->
     Misc.setup_logs debug;
     let default_file = Misc.default_config () in
     let f =
-      if f = [] then
+      if p.files = [] then
         if Sys.file_exists default_file then
           [ default_file ]
         else
           []
-      else if with_default && Sys.file_exists default_file then
-        Misc.default_config () :: f
+      else if p.with_default && Sys.file_exists default_file then
+        Misc.default_config () :: p.files
       else
-        f
+        p.files
     in
     let l = Stanza.parse_files f in
     Format.printf "@[<v>%a@]@." Stanza.pp_l l;
@@ -526,39 +383,31 @@ module Check_config = struct
     ()
 
   let cmd =
-    let open Cmdliner in
-    let files =
-      Arg.(value & pos_all string [] & info [] ~doc:"file(s) to check")
-    and debug = Logs_cli.level ()
-    and with_default =
-      Arg.(
-        value & opt bool false
-        & info [ "d"; "default" ] ~doc:"combine with the default config file(s)")
-    in
     let doc = "parse and print configuration file(s)" in
-    let aux debug with_default files () = run debug with_default files in
-    Cmd.v
-      (Cmd.info ~doc "check-config")
-      Term.(const aux $ debug $ with_default $ files $ const ())
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "check-config")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
 (** {2 See prover(s)} *)
 
 module Prover_show = struct
-  let run (log_lvl, defs) names =
+  type params = { names: string list [@pos_all] [@default []] }
+  [@@deriving subliner]
+
+  let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
-    let l = CCList.map (Definitions.find_prover' defs) names in
+    let l = CCList.map (Definitions.find_prover' defs) p.names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
     ()
 
   let cmd =
-    let open Cmdliner in
     let doc = "show definitions of given prover(s)" in
-    let names = Arg.(value & pos_all string [] & info []) in
-    Cmd.v
-      (Cmd.info ~doc "show-prover")
-      Term.(const run $ Bin_utils.definitions_term $ names)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "show-prover")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 (** {2 List provers} *)
@@ -574,30 +423,31 @@ module Prover_list = struct
     ()
 
   let cmd =
-    let open Cmdliner in
     let doc = "list prover(s) defined in config" in
-    Cmd.v
-      (Cmd.info ~doc "list-prover")
-      Term.(const run $ Bin_utils.definitions_term)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list-prover")
+      Cmdliner.Term.(const run $ Bin_utils.definitions_term)
 end
 
 (** {2 Show Task} *)
 
 module Task_show = struct
-  let run (log_lvl, defs) names =
+  type params = { names: string list [@pos_all] [@default []] }
+  [@@deriving subliner]
+
+  let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
-    let l = CCList.map (Definitions.find_task' defs) names in
+    let l = CCList.map (Definitions.find_task' defs) p.names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
     ()
 
   let cmd =
-    let open Cmdliner in
     let doc = "show definitions of given task(s)" in
-    let names = Arg.(value & pos_all string [] & info []) in
-    Cmd.v
-      (Cmd.info ~doc "show-task")
-      Term.(const run $ Bin_utils.definitions_term $ names)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "show-task")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 (** {2 List Tasks} *)
@@ -613,30 +463,29 @@ module Task_list = struct
     ()
 
   let cmd =
-    let open Cmdliner in
     let doc = "list task(s) defined in config" in
-    Cmd.v
-      (Cmd.info ~doc "list-task")
-      Term.(const run $ Bin_utils.definitions_term)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list-task")
+      Cmdliner.Term.(const run $ Bin_utils.definitions_term)
 end
 
 (** {2 Convert results to Sql} *)
 
 module Sql_convert = struct
-  let run defs files = catch_err @@ fun () -> Sql_res.run defs files
+  type params = {
+    files: string list; [@pos_all] [@non_empty] [@docv "FILES"]
+        (** files to read *)
+  }
+  [@@deriving subliner]
 
-  (* sub-command for showing results *)
+  let run (p : params) defs = catch_err @@ fun () -> Sql_res.run defs p.files
+
   let cmd =
-    let open Cmdliner in
-    let files =
-      Arg.(
-        non_empty & pos_all string []
-        & info [] ~docv:"FILES" ~doc:"files to read")
-    in
     let doc = "convert result(s) into sqlite files" in
-    Cmd.v
-      (Cmd.info ~doc "sql-convert")
-      Term.(const run $ Bin_utils.definitions_term $ files)
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "sql-convert")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
 (** {2 Main: Parse CLI} *)

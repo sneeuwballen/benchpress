@@ -32,11 +32,9 @@ val fail : ?loc:Loc.t -> string -> 'a
 val failf : ?loc:Loc.t -> ('a, Format.formatter, unit, 'b) format4 -> 'a
 
 val guard : (t -> t) -> (unit -> 'a) -> 'a
-(** [guard wrap f] runs [f()], and wraps the error with [wrap] if
-    it fails.
+(** [guard wrap f] runs [f()], and wraps the error with [wrap] if it fails.
 
-    Typical usage: [Error.guard (Error.wrapf "oh no %d" 42) @@ fun () -> …]
-*)
+    Typical usage: [Error.guard (Error.wrapf "oh no %d" 42) @@ fun () -> …] *)
 
 val pp : t Fmt.printer
 val show : t -> string

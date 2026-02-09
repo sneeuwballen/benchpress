@@ -20,9 +20,9 @@ let pp out (self : t) : unit =
      %a@]"
     self.n_results
     (if self.n_bad > 0 then
-      Printf.sprintf " bad: %d" self.n_bad
-    else
-      "")
+       Printf.sprintf " bad: %d" self.n_bad
+     else
+       "")
     (String.concat ";" self.provers)
     (CCOpt.map_or ~default:"<no time>" Misc.human_datetime self.timestamp)
     (CCOpt.map_or ~default:"<no wall time>" Misc.human_duration
@@ -41,9 +41,9 @@ let to_printbox ?link:(mk_link = default_linker) self : PB.t =
            "n_results", int self.n_results;
          ];
          (if self.n_bad > 0 then
-           [ "bad", int self.n_bad ]
-         else
-           []);
+            [ "bad", int self.n_bad ]
+          else
+            []);
          [
            "uuid", text @@ Uuidm.to_string self.uuid;
            "dirs", hlist_map text self.dirs;

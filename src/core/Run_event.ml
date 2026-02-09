@@ -107,8 +107,18 @@ let of_db_provers_map db ~f : _ list =
       Db.Ty.(
         ( p4 text text text text @>> p2 int int @>> p2 blob blob
           @>> p3 float float float,
-          fun pname pb_name res expected timeout errcode stdout stderr rtime
-              utime stime ->
+          fun pname
+            pb_name
+            res
+            expected
+            timeout
+            errcode
+            stdout
+            stderr
+            rtime
+            utime
+            stime
+          ->
             let pb =
               {
                 Problem.name = pb_name;

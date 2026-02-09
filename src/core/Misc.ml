@@ -165,11 +165,11 @@ let human_duration (f : float) : string =
     print_aux "d" n_day ^ print_aux "h" n_hour ^ print_aux "m" n_min
     ^ string_of_int n
     ^ (if f -. floor f >= 0.1 then (
-        let s = Printf.sprintf "%.1f" (f -. floor f) in
-        "." ^ snd @@ CCString.Split.left_exn ~by:"." s
-        (* remove the leading "0." *)
-      ) else
-        "")
+         let s = Printf.sprintf "%.1f" (f -. floor f) in
+         "." ^ snd @@ CCString.Split.left_exn ~by:"." s
+         (* remove the leading "0." *)
+       ) else
+         "")
     ^ "s"
   ) else
     Printf.sprintf "%.3fs" f
@@ -308,12 +308,15 @@ module Par_map = struct
       let pool = Moonpool.Fifo_pool.create ~num_threads:j () in
       let res =
         try
-          let futs = List.map (fun x -> Moonpool.Fut.spawn ~on:pool (fun () -> f x)) l in
+          let futs =
+            List.map (fun x -> Moonpool.Fut.spawn ~on:pool (fun () -> f x)) l
+          in
           let results = List.map Moonpool.Fut.wait_block futs in
-          List.map (function
-            | Ok x -> x
-            | Error (exn, bt) -> Printexc.raise_with_backtrace exn bt
-          ) results
+          List.map
+            (function
+              | Ok x -> x
+              | Error (exn, bt) -> Printexc.raise_with_backtrace exn bt)
+            results
         with e ->
           Logs.debug (fun k -> k "par-map: shutdown pool (exception)");
           Moonpool.Fifo_pool.shutdown pool;
@@ -346,15 +349,19 @@ module Par_map = struct
       let pool = Moonpool.Fifo_pool.create ~num_threads:jobs () in
       let res =
         try
-          let futs = List.map (fun x ->
-            Moonpool.Fut.spawn ~on:pool (fun () -> f_with_resource x)
-          ) l in
+          let futs =
+            List.map
+              (fun x ->
+                Moonpool.Fut.spawn ~on:pool (fun () -> f_with_resource x))
+              l
+          in
           let results = List.map Moonpool.Fut.wait_block futs in
           Moonpool.Blocking_queue.close queue;
-          List.map (function
-            | Ok x -> x
-            | Error (exn, bt) -> Printexc.raise_with_backtrace exn bt
-          ) results
+          List.map
+            (function
+              | Ok x -> x
+              | Error (exn, bt) -> Printexc.raise_with_backtrace exn bt)
+            results
         with e ->
           Logs.debug (fun m -> m "par-map: shutdown pool (exception)");
           Moonpool.Blocking_queue.close queue;
@@ -477,27 +484,27 @@ let mk_socket sockaddr =
   sock, (Unix.getnameinfo (Unix.getsockname sock) []).ni_service
 
 (** [start_server n server_fun sock] starts a server on the socket [sock],
-    assumes that the socket is correcly bound to a valid address.
-    Allows up to [n] connections and runs the function [server_fun] for each
-    connection on a separate thread (uses threads, doesn't fork the process).*)
+    assumes that the socket is correcly bound to a valid address. Allows up to
+    [n] connections and runs the function [server_fun] for each connection on a
+    separate thread (uses threads, doesn't fork the process).*)
 let start_server n server_fun sock =
   let open Unix in
   listen sock 5;
   let threads =
     List.init n (fun _ ->
-      Thread.create (fun () ->
-        let s, _caller = accept_non_intr sock in
-        let inchan = in_channel_of_descr s in
-        let outchan = out_channel_of_descr s in
-        server_fun inchan outchan
-      ) ()
-    )
+        Thread.create
+          (fun () ->
+            let s, _caller = accept_non_intr sock in
+            let inchan = in_channel_of_descr s in
+            let outchan = out_channel_of_descr s in
+            server_fun inchan outchan)
+          ())
   in
   List.iter Thread.join threads
 
-(** [establish_server n server_fun sockaddr] same as
-    [Unix.establish_server], but it uses threads instead of forking the process
-    after each connection, and only accepts [n] connections  *)
+(** [establish_server n server_fun sockaddr] same as [Unix.establish_server],
+    but it uses threads instead of forking the process after each connection,
+    and only accepts [n] connections *)
 let establish_server n server_fun sockaddr =
   let sock, _ = mk_socket sockaddr in
   start_server n server_fun sock

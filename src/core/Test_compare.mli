@@ -21,7 +21,8 @@ module Short : sig
   val make : ?status:status -> filename -> filename -> (Prover.name * t) list
 
   val make_provers : ?status:status -> prover -> prover -> t
-  (** Make a single comparison between two provers in (possibly) different files *)
+  (** Make a single comparison between two provers in (possibly) different files
+  *)
 end
 
 module Full : sig

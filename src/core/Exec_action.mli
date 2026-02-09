@@ -50,11 +50,10 @@ module Exec_run_provers : sig
     wal_mode:bool ->
     expanded ->
     Test_top_result.t lazy_t * Test_compact_result.t
-  (** Run the given prover(s) on the given problem set, obtaining results
-        after all the problems have been dealt with.
-        @param on_solve called whenever a single problem is solved
-        @param on_done called when the whole process is done
-    *)
+  (** Run the given prover(s) on the given problem set, obtaining results after
+      all the problems have been dealt with.
+      @param on_solve called whenever a single problem is solved
+      @param on_done called when the whole process is done *)
 
   val run_sbatch_job :
     ?timestamp:float ->
@@ -96,8 +95,8 @@ module Progress_run_provers : sig
   (** Make a progress tracker.
       @param dyn if true, print a progress bar in the terminal
       @param pp_results if true, print each individual result as it's found
-      @param on_progress callback when progress is made, with a percentage and ETA
-  *)
+      @param on_progress
+        callback when progress is made, with a percentage and ETA *)
 end
 
 val dump_results_sqlite : Test_top_result.t -> unit
