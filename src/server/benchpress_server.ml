@@ -1966,6 +1966,11 @@ module Admin = struct
 end
 
 let () =
+  Opentelemetry.Globals.service_name := "benchpress";
+  Opentelemetry.Globals.service_namespace := Some "c-cube";
+  ()
+
+let () =
   CCFormat.set_color_default true;
   let@ () = Opentelemetry_client_ocurl.with_setup () in
   Ambient_context.set_current_storage Ambient_context_tls.storage;
