@@ -1543,6 +1543,10 @@ let html_of_files (self : t) ~off ~limit : Html.elt list =
   let entries, more = Bin_utils.list_entries self.data_dir ~off ~limit in
 
   let mk_entry idx (file_path, size) : Html.elt =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "html-of-files.mk-entry" in
+    Trace.add_data_to_span _sp
+      [ "file_path", `String file_path; "size", `Int size ];
+
     let open Html in
     let file_basename = Filename.basename file_path in
     let meta = Meta_cache.find_if_loaded self.meta_cache file_path in
