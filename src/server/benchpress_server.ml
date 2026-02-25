@@ -154,7 +154,9 @@ end = struct
   (* remaining cases *)
   [@@warning "-11"]
 
-  let to_html b = H.div [] [ to_html_rec b ]
+  let to_html b =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "printbox.to_html" in
+    H.div [] [ to_html_rec b ]
 end
 
 module Html = struct
@@ -163,6 +165,7 @@ module Html = struct
   let b_style = link [ A.rel "stylesheet"; A.href "/css/" ]
 
   let mk_page_ ?meta:(my_meta = []) ~title:my_title my_body =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "html.mk-page" in
     html []
       [
         head []

@@ -3,6 +3,7 @@ open Benchpress.Common
 type t = { database: Db.t; memory: (string, Test_metadata.t) Hashtbl.t }
 
 let createdb (db : Db.t) =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.createdb" in
   Db.exec0 db
     {|
     CREATE TABLE IF NOT EXISTS test_database (
@@ -31,6 +32,7 @@ let createdb (db : Db.t) =
     |}
 
 let get (db : Db.t) self field =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.get" in
   Option.join
     (Db.exec db ~f:Db.Cursor.next
        ~ty:Db.Ty.(p2 int text, p1 (nullable blob), id)
@@ -42,6 +44,7 @@ let get (db : Db.t) self field =
     |> Misc.unwrap_db (fun () -> spf "Could not read field: '%s'" field))
 
 let load_meta (db : Db.t) self =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.load-meta" in
   let uuid = get db self "uuid" in
   let uuid = Option.bind uuid Uuidm.of_string in
   let uuid = Option.get uuid in
@@ -73,6 +76,7 @@ let load_meta (db : Db.t) self =
     { uuid; timestamp; total_wall_time; n_results; n_bad; dirs; provers }
 
 let set (db : Db.t) self field value =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.set" in
   Db.exec_no_cursor db
     {|
     INSERT OR REPLACE INTO test_meta (
@@ -84,6 +88,7 @@ let set (db : Db.t) self field value =
   |> Misc.unwrap_db (fun () -> spf "Could not write field: '%s'" field)
 
 let cache_meta (db : Db.t) self (meta : Test_metadata.t) =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.cache-meta" in
   set db self "uuid" (Some (Uuidm.to_string meta.uuid));
   set db self "timestamp" (CCOption.map string_of_float meta.timestamp);
   set db self "total_wall_time"
@@ -115,6 +120,7 @@ let cache_meta (db : Db.t) self (meta : Test_metadata.t) =
     meta.provers
 
 let importdb t (p : string) =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.importdb" in
   Db.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY p (fun meta_db ->
       let meta = Test_metadata.of_db meta_db in
       (* Only cache if complete *)
@@ -133,6 +139,7 @@ let importdb t (p : string) =
       meta)
 
 let find t (p : string) =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.find" in
   try Hashtbl.find t.memory p
   with Not_found ->
     (match
