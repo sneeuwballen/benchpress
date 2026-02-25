@@ -4,6 +4,7 @@ _opam
 _build
 *.native
 *.byte
+*.tmp
 .session
 TAGS
 *.docdir
