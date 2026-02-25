@@ -1776,7 +1776,11 @@ module Cmd = struct
         else
           "0.0.0.0"
       in
-      let server = H.create ~max_connections:32 ~addr ?port () in
+      let server =
+        H.create
+          ~middlewares:[ `Stage 1, trace_middleware ]
+          ~max_connections:32 ~addr ?port ()
+      in
 
       let prometheus = Tiny_httpd_prometheus.(global) in
       Tiny_httpd_prometheus.instrument_server server prometheus;
