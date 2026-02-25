@@ -88,7 +88,7 @@ let to_db (db : Db.t) (self : t) : unit =
   |> Misc.unwrap_db (fun () -> Fmt.asprintf "inserting metadata '%a'" pp self)
 
 let of_db db : t =
-  Profile.with_ "metadata.of-db" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "metadata.of-db" in
   Error.guard (Error.wrap "while reading metadata") @@ fun () ->
   let timestamp = get_meta db "timestamp" in
   let total_wall_time = get_meta db "total-wall-time" in

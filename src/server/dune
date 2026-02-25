@@ -28,7 +28,10 @@
   pbrt_yojson
   yojson
   mirage-crypto-rng
-  mirage-crypto-rng.unix)
+  mirage-crypto-rng.unix
+  trace.core
+  opentelemetry
+  opentelemetry-client-ocurl)
  (modules
   benchpress_server
   Meta_cache

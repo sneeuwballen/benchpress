@@ -6,9 +6,6 @@ module U = Tiny_httpd.Util
 module PB = PrintBox
 module Log = (val Logs.src_log (Logs.Src.create "benchpress-serve"))
 
-let spf = Printf.sprintf
-let[@inline] ( let@ ) f x = f x
-
 module Logger = struct
   let show_lvl = function
     | Logs.Debug -> "<7>DEBUG"
@@ -341,7 +338,7 @@ let guardf code wrap f =
 (* wrap the query to turn results into failed queries
    @param f takes a chrono and a [scope] for failing *)
 let query_wrap wrap (f : Misc.Chrono.t -> _) : H.Response.t =
-  Profile.with_ "query" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "query" in
   let chrono = Misc.Chrono.start () in
   let f' () =
     try f chrono
@@ -372,6 +369,20 @@ let query_wrap wrap (f : Misc.Chrono.t -> _) : H.Response.t =
 
 let to_str_with_errcode i err = Error.show err, i
 let add_errcode i err = err, i
+
+let trace_middleware : H.Middleware.t =
+ fun h req ~resp ->
+  let@ _span = Trace.with_span ~__FILE__ ~__LINE__ "http.handle" in
+  Trace.add_data_to_span _span
+    [
+      "http.path", `String req.path;
+      "http.method", `String (H.Meth.to_string req.meth);
+    ];
+  let resp (response : H.Response.t) =
+    Trace.add_data_to_span _span [ "http.response.code", `Int response.code ];
+    resp response
+  in
+  h req ~resp
 
 (* show individual files *)
 let handle_show (self : t) : unit =
@@ -1956,7 +1967,10 @@ end
 
 let () =
   CCFormat.set_color_default true;
-  if Sys.getenv_opt "PROFILE" = Some "1" then Profile.enable ();
+  let@ () = Opentelemetry_client_ocurl.with_setup () in
+  Ambient_context.set_current_storage Ambient_context_tls.storage;
+  Opentelemetry_trace.setup ();
+  Opentelemetry.Gc_metrics.setup ~min_interval_s:60 ();
   let serve_t, serve_i = Cmd.cmd in
   (* wrap serve result: (unit, Error.t) result -> unit *)
   let serve_t' =
@@ -1974,6 +1988,7 @@ let () =
       (Cmdliner.Cmd.info ~version:"dev" "benchpress-server")
       [ serve_cmd; Admin.user_cmd; Admin.api_key_cmd ]
   in
-  match Profile.with1 "cmdliner" Cmdliner.Cmd.eval group with
+  let@ _sp = Common.with_span ~__FILE__ ~__LINE__ "cmdliner.eval" in
+  match Cmdliner.Cmd.eval group with
   | 0 -> ()
   | n -> exit n

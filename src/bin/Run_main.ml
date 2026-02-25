@@ -7,9 +7,11 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
     ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update
     (defs : Definitions.t) (r : Action.run_provers) : _ * Test_compact_result.t
     =
-  Error.guard
-    (Error.wrapf "run prover action@ `@[%a@]`" Action.pp_run_provers r)
-  @@ fun () ->
+  let@ () =
+    Error.guard
+      (Error.wrapf "run prover action@ `@[%a@]`" Action.pp_run_provers r)
+  in
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-prover" in
   let interrupted = Moonpool.Lock.create false in
   let r =
     Exec_action.Exec_run_provers.expand ?dyn ?j ?cpus ?proof_dir ?limits defs
@@ -36,10 +38,12 @@ let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
     ?output ~notify ~(uuid : Uuidm.t) ~(save : bool) ~wal_mode ~update
     (defs : Definitions.t) (r : Action.run_provers_slurm_submission) :
     _ * Test_compact_result.t =
-  Error.guard
-    (Error.wrapf "run provers with slurm action@ `@[%a@]`"
-       Action.pp_run_provers_slurm r)
-  @@ fun () ->
+  let@ _sp =
+    Error.guard
+      (Error.wrapf "run provers with slurm action@ `@[%a@]`"
+         Action.pp_run_provers_slurm r)
+  in
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-submit-job-action" in
   let interrupted = Moonpool.Lock.create false in
   let exp_r =
     Exec_action.Exec_run_provers.expand ~slurm:true ?dyn ?j ?proof_dir ?limits
@@ -74,6 +78,7 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     ?(wal_mode = false) ~desktop_notification ~no_failure ~update
     ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks
     (defs : Definitions.t) paths () : unit =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   Log.info (fun k ->
       k "run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
   let timestamp = Unix.gettimeofday () in

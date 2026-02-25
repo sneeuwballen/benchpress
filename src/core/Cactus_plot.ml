@@ -1,3 +1,4 @@
+open Common
 open Misc
 open Test
 module Gp = Gnuplot
@@ -6,7 +7,7 @@ type t = { lines: (string * Prover.name * float list) list }
 
 let of_db ?provers db =
   Error.guard (Error.wrap "producting cactus plot") @@ fun () ->
-  Profile.with_ "plot.of-db" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "cactus-plot.of-db" in
   let provers =
     match provers with
     | Some provers -> provers
@@ -57,7 +58,7 @@ let of_file ?provers file : t =
 
 let to_gp ~output self =
   Error.guard (Error.wrap "plot.gnuplot") @@ fun () ->
-  Profile.with_ "plot.gnuplot" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "cactus-plot.gnuplot" in
   Gp.with_ (fun gp ->
       let series =
         self.lines
@@ -90,7 +91,7 @@ let save_to_file (self : t) file =
   to_gp self ~output:(Gp.Output.create ~size:(1800, 1024) @@ `Png file)
 
 let to_png (self : t) : string =
-  Profile.with_ "plot.to-png" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "plot.to-png" in
   CCIO.File.with_temp ~prefix:"benchpress_plot" ~suffix:".png" (fun file ->
       Logs.debug (fun k -> k "plot into file %s" file);
       save_to_file self file;

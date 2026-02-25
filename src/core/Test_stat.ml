@@ -230,7 +230,7 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
   }
 
 let of_db (db : Db.t) : (Prover.name * t) list =
-  Profile.with_ "stat.of-db" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "stat.of-db" in
   Error.guard (Error.wrap "reading statistics from DB") @@ fun () ->
   let provers = list_provers db in
   CCList.map (fun p -> p, of_db_for db ~prover:p) provers

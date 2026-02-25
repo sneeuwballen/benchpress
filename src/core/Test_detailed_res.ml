@@ -116,7 +116,7 @@ let list_keys ?(offset = 0) ?(page_size = 500) ?(filter_prover = "")
     l, n, true
 
 let get_res db prover file : _ * proof_check_res option =
-  Profile.with_ "detailed-res" ~args:[ "prover", prover ] @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "detailed-res" in
   Error.guard (Error.wrapf "getting results for '%s' on '%s'" prover file)
   @@ fun () ->
   let tags = Prover.tags_of_db db in

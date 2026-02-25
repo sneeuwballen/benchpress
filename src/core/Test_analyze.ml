@@ -235,13 +235,13 @@ let of_db_for ?(full = false) (db : Db.t) ~prover : t =
 *)
 
 let of_db ?(full = false) db : _ list =
-  Profile.with_ "test.analyze" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "test.analyze" in
   Error.guard (Error.wrap "reading top-res from DB") @@ fun () ->
   let provers = Test.list_provers db in
   CCList.map (fun p -> p, of_db_for ~full db ~prover:p) provers
 
 let of_db_n_bad (db : Db.t) : int =
-  Profile.with_ "test.analyze.n-bad" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "test.analyze.n-bad" in
   Error.guard (Error.wrap "computing n-bad from DB") @@ fun () ->
   Db.exec db
     ~f:(int1_cursor ~ctx:"extracting n-bad")
@@ -253,7 +253,7 @@ let of_db_n_bad (db : Db.t) : int =
   |> Misc.unwrap_db (fun () -> "counting bad results")
 
 let of_db_dirs (db : Db.t) : string list =
-  Profile.with_ "test.analyze.dirs" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "test.analyze.dirs" in
   Error.guard (Error.wrap "computing dirs from DB") @@ fun () ->
   let r = ref Summarize_dirs.init in
   let () =
