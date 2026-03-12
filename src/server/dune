@@ -18,7 +18,19 @@
   sqlite3_utils
   base64
   printbox
-  jemalloc)
+  jemalloc
+  ptime
+  ptime.clock.os
+  benchpress_api_proto
+  twirp_tiny_httpd
+  pbrt
+  pbrt_services
+  pbrt_yojson
+  yojson
+  mirage-crypto-rng
+  mirage-crypto-rng.unix)
+ (modules benchpress_server Meta_cache Web_data Auth Auth_middleware Api_handler)
+ (preprocess (pps ppx_subliner))
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress -linkall))
 
 (rule

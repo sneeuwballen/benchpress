@@ -53,6 +53,7 @@ type t = {
   data_dir: string;
   meta_cache: Meta_cache.t;
   allow_delete: bool;
+  auth: Auth.t;
 }
 
 (** {2 printbox -> html} *)
@@ -1400,6 +1401,7 @@ let handle_delete self : unit =
     H.Response.make_string ~headers:default_html_headers (Ok "")
   in
   H.add_route_handler self.server ~meth:`DELETE
+    ~middlewares:[ Auth_middleware.middleware self.auth ]
     H.Route.(exact "delete1" @/ string_urlencoded @/ return)
     (fun file _req ->
       Log.debug (fun k -> k "/delete1: path is %s" file);
@@ -1495,6 +1497,7 @@ let handle_tasks (self : t) : unit =
 
 let handle_run (self : t) : unit =
   H.add_route_handler self.server ~meth:`POST
+    ~middlewares:[ Auth_middleware.middleware self.auth ]
     H.Route.(exact "run" @/ string_urlencoded @/ return)
   @@ fun name _r ->
   let@ _chrono = query_wrap (Error.wrapf "serving /run/%s" name) in
@@ -1504,7 +1507,7 @@ let handle_run (self : t) : unit =
     Definitions.find_task' self.defs name
   in
   Log.debug (fun k -> k "found task %s, run it" name);
-  Task_queue.push self.task_q task;
+  let _job_id : string = Task_queue.push self.task_q task in
   let msg =
     Format.asprintf "task queued (%d in queue)!" (Task_queue.size self.task_q)
   in
@@ -1513,6 +1516,7 @@ let handle_run (self : t) : unit =
 
 let handle_job_interrupt (self : t) : unit =
   H.add_route_handler self.server ~meth:`POST
+    ~middlewares:[ Auth_middleware.middleware self.auth ]
     H.Route.(exact "interrupt" @/ string @/ return)
   @@ fun uuid _r ->
   Log.debug (fun k -> k "interrupt current task");
@@ -1676,7 +1680,7 @@ let handle_root (self : t) : unit =
   in
   Log.debug (fun k ->
       k "listed results in %.3fs" (Misc.Chrono.since_last chrono));
-  Jemalloc.epoch ();
+  (try Jemalloc.epoch () with _ -> ());
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
 (* summary for a file. Called in lazy-load typically. *)
@@ -1768,6 +1772,8 @@ module Cmd = struct
       let meta_cache =
         Meta_cache.create ~path:(Filename.concat data_dir "meta.sqlite3")
       in
+      Mirage_crypto_rng_unix.use_default ();
+      let auth = Auth.create (Auth.default_path ()) in
       let self =
         {
           defs;
@@ -1776,6 +1782,7 @@ module Cmd = struct
           task_q = Task_queue.create ~defs ();
           meta_cache;
           allow_delete;
+          auth;
         }
       in
       (* thread to execute tasks *)
@@ -1803,6 +1810,12 @@ module Cmd = struct
       handle_compare2 self;
       if allow_delete then handle_delete self;
       handle_file self;
+      Api_handler.register
+        ~auth:self.auth
+        ~task_q:self.task_q
+        ~defs:self.defs
+        ~data_dir:self.data_dir
+        ~http_server:self.server;
       H.run server |> CCResult.map_err Error.of_exn
     with e -> Error (Error.of_exn e)
 
@@ -1829,13 +1842,150 @@ module Cmd = struct
       Cmd.info ~doc "serve" )
 end
 
+(** {2 Admin subcommands} *)
+module Admin = struct
+  open Cmdliner
+
+  let resolve_auth_db path =
+    if path = "" then
+      Auth.default_path ()
+    else
+      path
+
+  (** user create *)
+  type user_create_params = {
+    email: string; [@names [ "email" ]] [@docv "EMAIL"]  (** user email *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]
+        (** path to auth DB *)
+  }
+  [@@deriving subliner]
+
+  let user_create_run (p : user_create_params) =
+    let db = Auth.create (resolve_auth_db p.auth_db) in
+    (match Auth.create_user db ~email:p.email with
+    | Ok uuid -> Printf.printf "Created user: %s\n%!" uuid
+    | Error msg ->
+      Printf.eprintf "Error: %s\n%!" msg;
+      exit 1)
+
+  let user_create_cmd =
+    let doc = "create a new user" in
+    Cmd.v
+      (Cmd.info ~doc "create")
+      Term.(const user_create_run $ user_create_params_cmdliner_term ())
+
+  (** user list *)
+  type user_list_params = {
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]
+        (** path to auth DB *)
+  }
+  [@@deriving subliner]
+
+  let user_list_run (p : user_list_params) =
+    let db = Auth.create (resolve_auth_db p.auth_db) in
+    let users = Auth.list_users db in
+    List.iter
+      (fun (id, email, created_at) ->
+        Printf.printf "%s\t%s\t%s\n" id email created_at)
+      users
+
+  let user_list_cmd =
+    let doc = "list all users" in
+    Cmd.v
+      (Cmd.info ~doc "list")
+      Term.(const user_list_run $ user_list_params_cmdliner_term ())
+
+  let user_cmd =
+    let doc = "manage users" in
+    Cmd.group (Cmd.info ~doc "user") [ user_create_cmd; user_list_cmd ]
+
+  (** api-key create *)
+  type api_key_create_params = {
+    user: string; [@names [ "user" ]] [@docv "UUID"]  (** user UUID *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]
+        (** path to auth DB *)
+  }
+  [@@deriving subliner]
+
+  let api_key_create_run (p : api_key_create_params) =
+    let db = Auth.create (resolve_auth_db p.auth_db) in
+    (match Auth.create_api_key db ~user_id:p.user with
+    | Ok key -> Printf.printf "Created API key: %s\n%!" key
+    | Error msg ->
+      Printf.eprintf "Error: %s\n%!" msg;
+      exit 1)
+
+  let api_key_create_cmd =
+    let doc = "create a new API key for a user" in
+    Cmd.v
+      (Cmd.info ~doc "create")
+      Term.(const api_key_create_run $ api_key_create_params_cmdliner_term ())
+
+  (** api-key revoke *)
+  type api_key_revoke_params = {
+    key: string; [@names [ "key" ]] [@docv "HEX"]  (** API key hex *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]
+        (** path to auth DB *)
+  }
+  [@@deriving subliner]
+
+  let api_key_revoke_run (p : api_key_revoke_params) =
+    let db = Auth.create (resolve_auth_db p.auth_db) in
+    Auth.revoke_api_key db ~key:p.key;
+    Printf.printf "Revoked key: %s\n%!" p.key
+
+  let api_key_revoke_cmd =
+    let doc = "revoke an API key" in
+    Cmd.v
+      (Cmd.info ~doc "revoke")
+      Term.(const api_key_revoke_run $ api_key_revoke_params_cmdliner_term ())
+
+  (** api-key list *)
+  type api_key_list_params = {
+    user: string; [@names [ "user" ]] [@docv "UUID"]  (** user UUID *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]
+        (** path to auth DB *)
+  }
+  [@@deriving subliner]
+
+  let api_key_list_run (p : api_key_list_params) =
+    let db = Auth.create (resolve_auth_db p.auth_db) in
+    let keys = Auth.list_api_keys db ~user_id:p.user in
+    List.iter (fun (key, created_at) -> Printf.printf "%s\t%s\n" key created_at) keys
+
+  let api_key_list_cmd =
+    let doc = "list API keys for a user" in
+    Cmd.v
+      (Cmd.info ~doc "list")
+      Term.(const api_key_list_run $ api_key_list_params_cmdliner_term ())
+
+  let api_key_cmd =
+    let doc = "manage API keys" in
+    Cmd.group
+      (Cmd.info ~doc "api-key")
+      [ api_key_create_cmd; api_key_revoke_cmd; api_key_list_cmd ]
+end
+
 let () =
   CCFormat.set_color_default true;
   if Sys.getenv_opt "PROFILE" = Some "1" then Profile.enable ();
-  let eval (t, i) = Cmdliner.Cmd.eval_value (Cmdliner.Cmd.v i t) in
-  match Profile.with1 "cmdliner" eval Cmd.cmd with
-  | Error (`Parse | `Term | `Exn) -> exit 2
-  | Ok (`Ok (Ok ()) | `Version | `Help) -> ()
-  | Ok (`Ok (Error e)) ->
-    print_endline ("error: " ^ Error.show e);
-    exit 1
+  let (serve_t, serve_i) = Cmd.cmd in
+  (* wrap serve result: (unit, Error.t) result -> unit *)
+  let serve_t' =
+    Cmdliner.Term.(
+      const (function
+        | Ok () -> ()
+        | Error e ->
+          print_endline ("error: " ^ Error.show e);
+          Stdlib.exit 1)
+      $ serve_t)
+  in
+  let serve_cmd = Cmdliner.Cmd.v serve_i serve_t' in
+  let group =
+    Cmdliner.Cmd.group
+      (Cmdliner.Cmd.info ~version:"dev" "benchpress-server")
+      [ serve_cmd; Admin.user_cmd; Admin.api_key_cmd ]
+  in
+  match Profile.with1 "cmdliner" Cmdliner.Cmd.eval group with
+  | 0 -> ()
+  | n -> exit n
