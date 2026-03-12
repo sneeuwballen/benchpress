@@ -32,6 +32,7 @@ module Job = struct
   let interrupt self = M.set self.j_interrupted true
   let interrupted self = M.get self.j_interrupted
   let time_elapsed self = Unix.gettimeofday () -. self.j_started_time
+  let percent_completion self = self.j_percent_completion
 end
 
 (* TODO: replace the blocking queue with a custom thing with priorities *)
@@ -69,7 +70,12 @@ let create ?(defs = Definitions.empty) () : t =
     cur = M.create None;
   }
 
-let push self task : unit =
+type job_live_status =
+  | Queued
+  | Running of int
+  | Unknown
+
+let push self task : string =
   let j_uuid =
     Uuidm.v4_gen (Random.State.make_self_init ()) () |> Uuidm.to_string
   in
@@ -85,7 +91,17 @@ let push self task : unit =
     }
   in
   Hashtbl.add self.jobs_tbl j_uuid j;
-  Moonpool.Blocking_queue.push self.jobs j
+  Moonpool.Blocking_queue.push self.jobs j;
+  j_uuid
+
+let job_live_status self ~uuid =
+  match M.get self.cur with
+  | Some j when j.j_uuid = uuid -> Running j.j_percent_completion
+  | _ ->
+    if Hashtbl.mem self.jobs_tbl uuid then
+      Queued
+    else
+      Unknown
 
 let loop self =
   while true do
