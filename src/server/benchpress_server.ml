@@ -1908,6 +1908,7 @@ module Admin = struct
   [@@deriving subliner]
 
   let api_key_create_run (p : api_key_create_params) =
+    Mirage_crypto_rng_unix.use_default ();
     let db = Auth.create (resolve_auth_db p.auth_db) in
     (match Auth.create_api_key db ~user_id:p.user with
     | Ok key -> Printf.printf "Created API key: %s\n%!" key

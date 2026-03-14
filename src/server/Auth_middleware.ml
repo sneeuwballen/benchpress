@@ -37,6 +37,10 @@ let middleware auth : Tiny_httpd.Middleware.t =
   fun handler req ~resp ->
     match authenticate auth req with
     | Error msg ->
+      (* Drain the request body so the connection can be reused. *)
+      let (_ : string Tiny_httpd.Request.t) =
+        Tiny_httpd.Request.read_body_full req
+      in
       let body = Printf.sprintf {|{"msg":%S,"code":"unauthenticated"}|} msg in
       resp
         (Tiny_httpd.Response.make_string ~code:401
