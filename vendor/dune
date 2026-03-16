@@ -1,2 +1,2 @@
 
-(vendored_dirs ambient-context opentelemetry)
+(vendored_dirs ambient-context opentelemetry gnuplot)
