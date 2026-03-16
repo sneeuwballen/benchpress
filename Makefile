@@ -5,6 +5,9 @@ build:
 
 all: build
 
+build-docker:
+	@docker build . -f Dockerfile.server
+
 clean:
 	@dune clean
 
