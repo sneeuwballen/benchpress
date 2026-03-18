@@ -1701,6 +1701,11 @@ let handle_root (self : t) : unit =
   (try Jemalloc.epoch () with _ -> ());
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
+let handle_health (self : t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "health" @/ return)
+    (fun _req -> H.Response.make_string @@ Ok "ok")
+
 (* summary for a file. Called in lazy-load typically. *)
 let handle_file_summary (self : t) : unit =
   H.add_route_handler self.server ~meth:`GET
@@ -1812,6 +1817,7 @@ module Cmd = struct
       (* maybe serve the API *)
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       handle_root self;
+      handle_health self;
       handle_list_benchs self;
       handle_file_summary self;
       handle_css server;
