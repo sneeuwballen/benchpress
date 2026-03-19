@@ -1,12 +1,15 @@
 (* run tests, or compare results *)
 
 (* TODO: only load full results if needed *)
-let main ?(check = true) ?(bad = true) ~details ?csv ?summary (file : string) :
-    unit =
+let main ?(check = true) ?(bad = true) ~details ?csv ?csv_file ~jsonl ?jsonl_file
+    ?summary (file : string) : unit =
   Logs.debug (fun k -> k "loading file %S..." file);
   let res = Bin_utils.load_file file in
   Logs.debug (fun k -> k "loaded file %S" file);
   Bin_utils.dump_csv ~csv res;
+  Bin_utils.dump_csv_file ~csv_file res;
+  Bin_utils.dump_jsonl ~jsonl res;
+  Bin_utils.dump_jsonl_file ~jsonl_file res;
   Bin_utils.dump_summary ~summary res;
   Bin_utils.printbox_results ~details res;
   if bad && not (Test_top_result.is_ok res) then

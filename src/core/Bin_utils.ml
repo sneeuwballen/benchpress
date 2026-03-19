@@ -1,6 +1,7 @@
 module T = Test
 module Db = Misc.Db
 module MStr = Misc.Str_map
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.bin_utils"))
 
 let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
   let open Cmdliner in
@@ -16,7 +17,7 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
         conf_files
     in
     let conf_files = List.map Xdg.interpolate_home conf_files in
-    Logs.info (fun k ->
+    Log.info (fun k ->
         k "parse config files %a" CCFormat.Dump.(list string) conf_files);
     try
       let stanzas = Stanza.parse_files conf_files in
@@ -46,7 +47,7 @@ let get_definitions () : Definitions.t =
       []
   in
   let conf_files = List.map Xdg.interpolate_home conf_files in
-  Logs.info (fun k ->
+  Log.info (fun k ->
       k "parse config files %a" CCFormat.Dump.(list string) conf_files);
   let l = Stanza.parse_files conf_files in
   (* combine configs *)
@@ -57,10 +58,31 @@ let dump_csv ~csv results : unit =
   match csv with
   | None -> ()
   | Some file ->
-    Logs.app (fun k -> k "write results in CSV to file `%s`" file);
+    Log.app (fun k -> k "write results in CSV to file `%s`" file);
     Test_top_result.to_csv_file file results;
     (try ignore (Sys.command (Printf.sprintf "gzip -f '%s'" file) : int)
      with _ -> ())
+
+let dump_csv_file ~csv_file results : unit =
+  match csv_file with
+  | None -> ()
+  | Some file ->
+    Log.app (fun k -> k "write results in CSV to file `%s`" file);
+    Test_top_result.to_csv_file file results
+
+(* JSONL output *)
+let dump_jsonl ~jsonl results : unit =
+  if jsonl then (
+    Log.app (fun k -> k "write results in JSONL to stdout");
+    Test_top_result.to_jsonl_chan stdout results
+  )
+
+let dump_jsonl_file ~jsonl_file results : unit =
+  match jsonl_file with
+  | None -> ()
+  | Some file ->
+    Log.app (fun k -> k "write results in JSONL to file `%s`" file);
+    Test_top_result.to_jsonl_file file results
 
 let dump_summary ~summary results : unit =
   (* write summary in some file *)
@@ -153,7 +175,7 @@ let guess_uuid (f : string) =
   let f = Filename.chop_extension @@ Filename.basename f in
   try Scanf.sscanf f "res-%[^-%]-%s%!" (fun _ s -> Some s)
   with e ->
-    Logs.err (fun k -> k "cannot find UUID for %s: %s" f (Printexc.to_string e));
+    Log.err (fun k -> k "cannot find UUID for %s: %s" f (Printexc.to_string e));
     None
 
 (** Load file by name *)

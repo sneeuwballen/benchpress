@@ -237,7 +237,10 @@ end
 
 module Show = struct
   type params = {
-    csv: string option;  (** CSV output file *)
+    csv: string option;  (** CSV output to stdout *)
+    csv_file: string option;  (** CSV output file *)
+    jsonl: bool; [@default false]  (** JSONL output to stdout *)
+    jsonl_file: string option;  (** JSONL output file *)
     file: string; [@pos 0] [@docv "FILE"]  (** file to read *)
     no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
     check: bool; [@default true]  (** check results *)
@@ -252,6 +255,7 @@ module Show = struct
     Misc.setup_logs debug;
     if p.no_color then CCFormat.set_color_default false;
     Show.main ~check:p.check ~bad:p.bad ~details:p.details ?csv:p.csv
+      ?csv_file:p.csv_file ~jsonl:p.jsonl ?jsonl_file:p.jsonl_file
       ?summary:p.summary p.file
 
   let cmd =
