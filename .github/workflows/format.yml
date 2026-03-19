@@ -1,0 +1,27 @@
+name: Format Check
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  format:
+    name: format-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use OCaml 5.3
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: '5.3'
+          dune-cache: true
+          allow-prerelease-opam: true
+
+      - name: Install ocamlformat
+        run: opam install ocamlformat.0.27.0
+
+      - name: Check formatting
+        run: opam exec -- dune build @fmt
