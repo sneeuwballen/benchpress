@@ -121,7 +121,21 @@
   (jemalloc
    (and
     (>= 0.2)
-    (< 0.3)))))
+    (< 0.3)))
+  (mirage-crypto-rng
+   (>= 2.0))
+  (twirp_tiny_httpd
+   (>= 0.2))
+  (ocaml-protoc
+   (>= 4.0))
+  (pbrt
+   (>= 4.0))
+  (pbrt_services
+   (>= 4.0))
+  (pbrt_yojson
+   (>= 4.0))
+  (benchpress-proto
+   (= :version))))
 
 (package
  (name benchpress-worker)
@@ -138,3 +152,39 @@
    (= :version))
   (cmdliner
    (>= 1.1.0))))
+
+(package
+ (name benchpress-proto)
+ (synopsis "Protobuf/Twirp API types for benchpress")
+ (depends
+  dune
+  (ocaml
+   (>= 4.14))
+  (ocaml-protoc
+   (>= 4.0))
+  (pbrt
+   (>= 4.0))
+  (pbrt_services
+   (>= 4.0))
+  (pbrt_yojson
+   (>= 4.0))
+  yojson))
+
+(package
+ (name benchpressctl)
+ (synopsis "Client tool for benchpress-server")
+ (depends
+  dune
+  (ocaml
+   (>= 4.14))
+  (cmdliner
+   (>= 1.1.0))
+  (pbrt
+   (>= 4.0))
+  (pbrt_services
+   (>= 4.0))
+  (pbrt_yojson
+   (>= 4.0))
+  yojson
+  (benchpress-proto
+   (= :version))))
