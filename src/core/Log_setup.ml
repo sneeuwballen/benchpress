@@ -39,33 +39,29 @@ module Log_report = struct
         Thread.(id @@ self ())
         pp_h header
     in
-    let out, err =
+    let log_out =
       match Sys.getenv "LOGS_FILE" with
-      | "" -> stdout, stderr
+      | "" -> stderr
       | file ->
         (try
            let oc = open_out file in
            at_exit (fun () -> close_out_noerr oc);
-           oc, oc
+           oc
          with e ->
            Printf.eprintf "error: cannot open log file '%s': %s\n%!" file
              (Printexc.to_string e);
-           stdout, stderr)
-      | exception Not_found -> stdout, stderr
+           stderr)
+      | exception Not_found -> stderr
     in
     let report src level ~over k msgf =
       let k _ =
         let reset_line = "\x1b[2K\r" in
-        let write_str out s =
+        let write_str s =
           Moonpool.Lock.with_ (Moonpool.Lock.create ()) @@ fun () ->
-          Printf.fprintf out "%s%s%!" reset_line s
+          Printf.fprintf log_out "%s%s%!" reset_line s
         in
         let msg = buf_flush () in
-        write_str
-          (match level with
-          | Logs.App -> out
-          | _ -> err)
-          msg;
+        write_str msg;
         over ();
         k ()
       in

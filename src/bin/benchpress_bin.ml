@@ -237,14 +237,14 @@ end
 
 module Show = struct
   type params = {
-    csv: string option;  (** CSV output to stdout *)
+    csv: bool;  (** CSV output to stdout *)
     csv_file: string option;  (** CSV output file *)
-    jsonl: bool; [@default false]  (** JSONL output to stdout *)
+    jsonl: bool;  (** JSONL output to stdout *)
     jsonl_file: string option;  (** JSONL output file *)
-    file: string; [@pos 0] [@docv "FILE"]  (** file to read *)
+    file: string option; [@pos 0] [@docv "FILE"]  (** file to read (default: latest) *)
     no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
-    check: bool; [@default true]  (** check results *)
-    bad: bool; [@default true]  (** list bad results *)
+    check: bool;  (** check results *)
+    bad: bool;  (** list bad results *)
     summary: string option;  (** write summary in FILE *)
     details: bool;  (** show more details *)
   }
@@ -254,9 +254,20 @@ module Show = struct
     catch_err @@ fun () ->
     Misc.setup_logs debug;
     if p.no_color then CCFormat.set_color_default false;
-    Show.main ~check:p.check ~bad:p.bad ~details:p.details ?csv:p.csv
+    let file =
+      match p.file with
+      | Some f -> f
+      | None ->
+        (* Get the latest file from the data directory *)
+        let data_dir = Filename.concat (Xdg.data_dir ()) !Xdg.name_of_project in
+        let files, _ = Bin_utils.list_entries data_dir ~limit:1 in
+        match files with
+        | (path, _) :: _ -> Filename.basename path
+        | [] -> Error.failf "no result files found in %s" data_dir
+    in
+    Show.main ~check:p.check ~bad:p.bad ~details:p.details ~csv:p.csv
       ?csv_file:p.csv_file ~jsonl:p.jsonl ?jsonl_file:p.jsonl_file
-      ?summary:p.summary p.file
+      ?summary:p.summary file
 
   let cmd =
     let doc = "show benchmark results (see `list-files`)" in

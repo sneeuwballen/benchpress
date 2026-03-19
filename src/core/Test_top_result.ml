@@ -332,7 +332,7 @@ let of_db ~analyze_full (db : Db.t) : t =
   of_db_ ~analyze_full ~meta ~provers ~events db
 
 (** Convert a result to JSON *)
-let res_to_json (r : Res.t) : Json.t =
+let res_to_json (r : Res.t) : Yojson.Basic.t =
   `String
     (match r with
     | Res.Error -> "error"
@@ -343,7 +343,7 @@ let res_to_json (r : Res.t) : Json.t =
     | Res.Tag s -> s)
 
 (** Convert a table row to JSON object *)
-let table_row_to_json (r : table_row) : Json.t =
+let table_row_to_json (r : table_row) : Yojson.Basic.t =
   let result_fields =
     CCList.mapi
       (fun _ (prover, res, time) ->
@@ -355,20 +355,24 @@ let table_row_to_json (r : table_row) : Json.t =
   in
   `Assoc (("problem", `String r.tr_problem) :: result_fields)
 
-(** Convert table to JSONL string *)
+(** Convert table to JSONL string (one JSON object per line) *)
 let table_to_jsonl (t : table) : string =
   CCList.map
     (fun r ->
       let json = table_row_to_json r in
-      Json.to_string json)
+      Yojson.Basic.to_string json)
     t.t_rows
   |> String.concat "\n"
 
 (** Dump JSONL to channel *)
 let to_jsonl_chan oc t =
-  let jsonl = table_to_jsonl (to_table t) in
-  output_string oc jsonl;
-  if jsonl <> "" then output_char oc '\n'
+  let table = to_table t in
+  List.iter
+    (fun r ->
+      let json = table_row_to_json r in
+      output_string oc (Yojson.Basic.to_string json);
+      output_char oc '\n')
+    table.t_rows
 
 (** Dump JSONL to file *)
 let to_jsonl_file file t =

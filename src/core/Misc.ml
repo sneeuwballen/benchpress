@@ -14,7 +14,6 @@ module Log_report = Log_setup.Log_report
 module Par_map = Par_map
 module Pp = Pp
 module Chrono = Human.Chrono
-module Json = Json
 module Git = struct
   let get_commit (dir : string) : string =
     let cmd = Printf.sprintf "git -C %s rev-parse HEAD" dir in

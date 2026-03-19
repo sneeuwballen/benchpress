@@ -54,6 +54,7 @@ let get_definitions () : Definitions.t =
   Definitions.of_stanza_l l
 
 (* CSV output *)
+(* Legacy: dump CSV to file if provided *)
 let dump_csv ~csv results : unit =
   match csv with
   | None -> ()
@@ -62,6 +63,13 @@ let dump_csv ~csv results : unit =
     Test_top_result.to_csv_file file results;
     (try ignore (Sys.command (Printf.sprintf "gzip -f '%s'" file) : int)
      with _ -> ())
+
+(* New: dump CSV to stdout if flag is true *)
+let dump_csv_stdout ~csv results : unit =
+  if csv then (
+    Log.app (fun k -> k "write results in CSV to stdout");
+    Test_top_result.to_csv_chan stdout results
+  )
 
 let dump_csv_file ~csv_file results : unit =
   match csv_file with
@@ -199,6 +207,14 @@ let with_file_as_db ~map_err filename file : _ =
   | e -> Error.raise (Error.of_exn e)
 
 let load_file f = snd @@ load_file_full f
+
+(** Load a file and process it while keeping the DB open *)
+let with_loaded_file ~map_err filename (process : Test_top_result.t -> 'a) : 'a =
+  Error.guard map_err @@ fun () ->
+  let filename = mk_file_full filename in
+  Db.with_db ~timeout:1500 ~mode:`READONLY filename (fun db ->
+      let r = Test_top_result.of_db ~analyze_full:true db in
+      process r)
 
 let load_file_summary ?(full = false) (file : string) :
     string * Test_compact_result.t =
