@@ -35,7 +35,8 @@ module Log_report = struct
     let buf_out, buf_flush = buf_fmt () in
     let pp_header fmt header =
       let now = Ptime_clock.now () |> Ptime.to_float_s in
-      CCFormat.fprintf fmt "@[<2>[%a|t%d] %a@ " ISO8601.Permissive.pp_datetime now
+      CCFormat.fprintf fmt "@[<2>[%a|t%d] %a@ " ISO8601.Permissive.pp_datetime
+        now
         Thread.(id @@ self ())
         pp_h header
     in
@@ -78,5 +79,5 @@ let setup_logs (lvl : Logs.level option) : unit =
   Logs.set_reporter (Log_report.reporter ());
   Logs.set_level ~all:true lvl;
   (let module Log = (val Logs.src_log (Logs.Src.create "benchpress.setup")) in
-   Log.debug (fun k -> k "logs are setup"));
+  Log.debug (fun k -> k "logs are setup"));
   ()

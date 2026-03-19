@@ -241,7 +241,8 @@ module Show = struct
     csv_file: string option;  (** CSV output file *)
     jsonl: bool;  (** JSONL output to stdout *)
     jsonl_file: string option;  (** JSONL output file *)
-    file: string option; [@pos 0] [@docv "FILE"]  (** file to read (default: latest) *)
+    file: string option; [@pos 0] [@docv "FILE"]
+        (** file to read (default: latest) *)
     no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
     check: bool;  (** check results *)
     bad: bool;  (** list bad results *)
@@ -261,9 +262,9 @@ module Show = struct
         (* Get the latest file from the data directory *)
         let data_dir = Filename.concat (Xdg.data_dir ()) !Xdg.name_of_project in
         let files, _ = Bin_utils.list_entries data_dir ~limit:1 in
-        match files with
+        (match files with
         | (path, _) :: _ -> Filename.basename path
-        | [] -> Error.failf "no result files found in %s" data_dir
+        | [] -> Error.failf "no result files found in %s" data_dir)
     in
     Show.main ~check:p.check ~bad:p.bad ~details:p.details ~csv:p.csv
       ?csv_file:p.csv_file ~jsonl:p.jsonl ?jsonl_file:p.jsonl_file

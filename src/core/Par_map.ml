@@ -47,8 +47,8 @@ let map_p ~j f l =
     res
 
 (** Map on the list [l] with each call to [f] being associated one of the
-    resources from [resources] that is guaranteed not to be used concurrently
-    by another call to [f]. *)
+    resources from [resources] that is guaranteed not to be used concurrently by
+    another call to [f]. *)
 let map_with_resource ~resources f l =
   match l with
   | [] -> []
@@ -71,8 +71,7 @@ let map_with_resource ~resources f l =
       try
         let futs =
           List.map
-            (fun x ->
-              Moonpool.Fut.spawn ~on:pool (fun () -> f_with_resource x))
+            (fun x -> Moonpool.Fut.spawn ~on:pool (fun () -> f_with_resource x))
             l
         in
         let results = List.map Moonpool.Fut.wait_block futs in

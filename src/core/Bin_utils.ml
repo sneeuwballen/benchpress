@@ -209,7 +209,8 @@ let with_file_as_db ~map_err filename file : _ =
 let load_file f = snd @@ load_file_full f
 
 (** Load a file and process it while keeping the DB open *)
-let with_loaded_file ~map_err filename (process : Test_top_result.t -> 'a) : 'a =
+let with_loaded_file ~map_err filename (process : Test_top_result.t -> 'a) : 'a
+    =
   Error.guard map_err @@ fun () ->
   let filename = mk_file_full filename in
   Db.with_db ~timeout:1500 ~mode:`READONLY filename (fun db ->

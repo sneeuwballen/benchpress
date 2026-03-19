@@ -347,8 +347,8 @@ let table_row_to_json (r : table_row) : Yojson.Basic.t =
   let result_fields =
     CCList.mapi
       (fun _ (prover, res, time) ->
-        let result_field = (prover, res_to_json res) in
-        let time_field = (prover ^ ".time", `Float time) in
+        let result_field = prover, res_to_json res in
+        let time_field = prover ^ ".time", `Float time in
         [ result_field; time_field ])
       r.tr_res
     |> CCList.flatten
@@ -375,5 +375,4 @@ let to_jsonl_chan oc t =
     table.t_rows
 
 (** Dump JSONL to file *)
-let to_jsonl_file file t =
-  CCIO.with_out file (fun oc -> to_jsonl_chan oc t)
+let to_jsonl_file file t = CCIO.with_out file (fun oc -> to_jsonl_chan oc t)

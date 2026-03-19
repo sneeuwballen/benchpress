@@ -14,6 +14,7 @@ module Log_report = Log_setup.Log_report
 module Par_map = Par_map
 module Pp = Pp
 module Chrono = Human.Chrono
+
 module Git = struct
   let get_commit (dir : string) : string =
     let cmd = Printf.sprintf "git -C %s rev-parse HEAD" dir in
@@ -147,4 +148,5 @@ let default_config () = config_dir () // "conf.sexp"
 
 (** Get current time in seconds since epoch *)
 let now_s = Common.now_s
+
 let reset_line = Common.reset_line

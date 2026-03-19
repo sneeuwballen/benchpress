@@ -1,15 +1,15 @@
 (* run tests, or compare results *)
 
-let main ?(check = true) ?(bad = true) ~details ~csv ?csv_file ~jsonl ?jsonl_file
-    ?summary (file : string) : unit =
+let main ?(check = true) ?(bad = true) ~details ~csv ?csv_file ~jsonl
+    ?jsonl_file ?summary (file : string) : unit =
   Logs.debug (fun k -> k "loading file %S..." file);
 
   (* Only show default output if not exporting to a specific format *)
-  let is_exporting = csv || jsonl || CCOption.is_some csv_file || CCOption.is_some jsonl_file in
+  let is_exporting =
+    csv || jsonl || CCOption.is_some csv_file || CCOption.is_some jsonl_file
+  in
 
-  Bin_utils.with_loaded_file
-    ~map_err:(Error.wrapf "loading file %S" file)
-    file
+  Bin_utils.with_loaded_file ~map_err:(Error.wrapf "loading file %S" file) file
     (fun res ->
       Logs.debug (fun k -> k "loaded file %S" file);
       Bin_utils.dump_csv_stdout ~csv res;

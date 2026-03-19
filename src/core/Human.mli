@@ -1,28 +1,28 @@
 (** Human-readable formatting utilities *)
 
-(** Format a float duration in seconds to a readable string *)
 val human_duration : float -> string
+(** Format a float duration in seconds to a readable string *)
 
-(** Pretty-print a duration *)
 val pp_human_duration : Format.formatter -> float -> unit
+(** Pretty-print a duration *)
 
-(** Format a Unix timestamp to a human-readable datetime string *)
 val human_datetime : float -> string
+(** Format a Unix timestamp to a human-readable datetime string *)
 
-(** Pretty-print a datetime *)
 val pp_human_datetime : Format.formatter -> float -> unit
+(** Pretty-print a datetime *)
 
-(** Compact representation of a datetime (YYYYMMDDThhmmss) *)
 val datetime_compact : Ptime.t -> string
+(** Compact representation of a datetime (YYYYMMDDThhmmss) *)
 
-(** Format a byte count to a human-readable size string *)
 val human_size : int -> string
+(** Format a byte count to a human-readable size string *)
 
-(** Truncate a string on the left to a maximum length *)
 val truncate_left : int -> string -> string
+(** Truncate a string on the left to a maximum length *)
 
-(** Truncate a string on the right to a maximum length *)
 val truncate_right : int -> string -> string
+(** Truncate a string on the right to a maximum length *)
 
 (** Timer for measuring elapsed time *)
 module Chrono : sig
