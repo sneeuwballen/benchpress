@@ -1,6 +1,7 @@
 open Common
 open Test
 module PB = PrintBox
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.test_top_result"))
 
 type t = {
   meta: Test_metadata.t;
@@ -116,11 +117,11 @@ let db_to_table ?(offset = 0) ?(page_size = max_int) ?provers ?(filter_pb = "")
         ~f:Db.Cursor.to_list_rev
       |> Misc.unwrap_db (fun () -> spf "listing files matching '%s'" filter_pb)
     in
-    Logs.info (fun k ->
+    Log.info (fun k ->
         k "to_table: found %d files in %.3fs" (List.length files)
           (Misc.Chrono.since_last c));
     let tags = Prover.tags_of_db db in
-    Logs.info (fun k -> k "to_table: found tags [%s]" (String.concat "," tags));
+    Log.info (fun k -> k "to_table: found tags [%s]" (String.concat "," tags));
     let t_rows =
       List.rev_map
         (fun file ->
@@ -141,11 +142,11 @@ let db_to_table ?(offset = 0) ?(page_size = max_int) ?provers ?(filter_pb = "")
           { tr_problem = file; tr_res })
         files
     in
-    Logs.info (fun k ->
+    Log.info (fun k ->
         k "to_table: gathered lines in %.3fs" (Misc.Chrono.since_last c));
     { t_meta = line0; t_provers = provers; t_rows }
   with Error.E err as exn ->
-    Logs.err (fun k -> k "conversion to CSV failed:@ %a" Error.pp err);
+    Log.err (fun k -> k "conversion to CSV failed:@ %a" Error.pp err);
     raise exn
 
 let to_table ?offset ?page_size ?provers (self : t) : table =
@@ -284,7 +285,7 @@ let db_prepare (db : Db.t) : _ =
   ()
 
 let to_db (db : Db.t) (self : t) : unit =
-  Logs.info (fun k -> k "dump top-result into DB");
+  Log.info (fun k -> k "dump top-result into DB");
   Error.guard (Error.wrap "dumping top_result to DB") @@ fun () ->
   db_prepare db;
   Test_metadata.to_db db self.meta;
@@ -296,11 +297,11 @@ let to_db (db : Db.t) (self : t) : unit =
   ()
 
 let of_db_ ~analyze_full ~meta ~provers ~events db : t =
-  Logs.debug (fun k -> k "computing stats");
+  Log.debug (fun k -> k "computing stats");
   let stats = Test_stat.of_db db in
-  Logs.debug (fun k -> k "computing analyze");
+  Log.debug (fun k -> k "computing analyze");
   let analyze = Test_analyze.of_db ~full:analyze_full db in
-  Logs.debug (fun k -> k "done");
+  Log.debug (fun k -> k "done");
   { db; events; meta; provers; stats; analyze }
 
 let make ~analyze_full ~meta ~provers (events : Run_event.t list) : t =
@@ -322,10 +323,56 @@ let make ~analyze_full ~meta ~provers (events : Run_event.t list) : t =
 
 let of_db ~analyze_full (db : Db.t) : t =
   Error.guard (Error.wrapf "reading top_res from DB") @@ fun () ->
-  Logs.debug (fun k -> k "loading metadata from DB");
+  Log.debug (fun k -> k "loading metadata from DB");
   let meta = Test_metadata.of_db db in
   let prover_names = Prover.db_names db in
   let provers = CCList.map (fun p -> Prover.of_db db p) prover_names in
-  Logs.debug (fun k -> k "loading events from DB");
+  Log.debug (fun k -> k "loading events from DB");
   let events = Run_event.of_db_l db in
   of_db_ ~analyze_full ~meta ~provers ~events db
+
+(** Convert a result to JSON *)
+let res_to_json (r : Res.t) : Yojson.Basic.t =
+  `String
+    (match r with
+    | Res.Error -> "error"
+    | Res.Timeout -> "timeout"
+    | Res.Unknown -> "unknown"
+    | Res.Sat -> "sat"
+    | Res.Unsat -> "unsat"
+    | Res.Tag s -> s)
+
+(** Convert a table row to JSON object *)
+let table_row_to_json (r : table_row) : Yojson.Basic.t =
+  let result_fields =
+    CCList.mapi
+      (fun _ (prover, res, time) ->
+        let result_field = prover, res_to_json res in
+        let time_field = prover ^ ".time", `Float time in
+        [ result_field; time_field ])
+      r.tr_res
+    |> CCList.flatten
+  in
+  `Assoc (("problem", `String r.tr_problem) :: result_fields)
+
+(** Convert table to JSONL string (one JSON object per line) *)
+let table_to_jsonl (t : table) : string =
+  CCList.map
+    (fun r ->
+      let json = table_row_to_json r in
+      Yojson.Basic.to_string json)
+    t.t_rows
+  |> String.concat "\n"
+
+(** Dump JSONL to channel *)
+let to_jsonl_chan oc t =
+  let table = to_table t in
+  List.iter
+    (fun r ->
+      let json = table_row_to_json r in
+      output_string oc (Yojson.Basic.to_string json);
+      output_char oc '\n')
+    table.t_rows
+
+(** Dump JSONL to file *)
+let to_jsonl_file file t = CCIO.with_out file (fun oc -> to_jsonl_chan oc t)

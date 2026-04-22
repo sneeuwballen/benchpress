@@ -128,3 +128,12 @@ val to_csv_string : ?provers:string list -> t -> string
 
 val to_csv_file : ?provers:string list -> string -> t -> unit
 (** Write as CSV into given file *)
+
+val table_to_jsonl : table -> string
+(** Convert table to JSONL string *)
+
+val to_jsonl_chan : out_channel -> t -> unit
+(** Write as JSONL to channel *)
+
+val to_jsonl_file : string -> t -> unit
+(** Write as JSONL into given file *)

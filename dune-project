@@ -1,1 +1,140 @@
-(lang dune 2.2)
+(lang dune 3.2)
+
+(name benchpress)
+
+(version 0.1)
+
+(generate_opam_files true)
+
+(source
+ (github sneeuwballen/benchpress))
+
+(authors "Simon Cruanes" "Guillaume Bury")
+
+(maintainers "Simon Cruanes")
+
+(license BSD-2-Clause)
+
+(package
+ (name benchpress)
+ (synopsis "Tool to run one or more logic programs, on a set of files, and collect the results")
+ (depends
+  (ocaml
+   (>= 4.14))
+  dune
+  base-unix
+  (containers
+   (and
+    (>= 3.3)
+    (< 4.0)))
+  (moonpool
+   (>= 0.8))
+  (re
+   (and
+    (>= 1.8)
+    (< 2.0)))
+  csv
+  (cmdliner
+   (>= 1.1.0))
+  ppx_subliner
+  (iter
+   (>= 1.0))
+  logs
+  uuidm
+  base64
+  ptime
+  processor
+  (pp_loc
+   (and
+    (>= 2.0)
+    (< 3.0)))
+  (gnuplot
+   (and
+    (>= 0.6)
+    (< 0.8)))
+  (sqlite3
+   (>= 5.0.3))
+  (sqlite3_utils
+   (and
+    (>= 0.4)
+    (< 0.6)))
+  (printbox
+   (>= 0.6))
+  (printbox-text
+   (>= 0.6))))
+
+(package
+ (name benchpress-lsp)
+ (synopsis "LSP server for benchpress' config files")
+ (depends
+  dune
+  (containers
+   (and
+    (>= 3.0)
+    (< 4.0)))
+  (moonpool
+   (>= 0.8))
+  (benchpress
+   (= :version))
+  (linol
+   (and
+    (>= 0.10)
+    (< 0.11)))))
+
+(package
+ (name benchpress-server)
+ (synopsis "Server and web UI for benchpress")
+ (depends
+  (ocaml
+   (>= 4.12))
+  dune
+  base-unix
+  (containers
+   (and
+    (>= 3.0)
+    (< 4.0)))
+  csv
+  (benchpress
+   (= :version))
+  (cmdliner
+   (>= 1.1.0))
+  logs
+  uuidm
+  base64
+  (gnuplot
+   (and
+    (>= 0.6)
+    (< 0.8)))
+  sqlite3
+  (sqlite3_utils
+   (and
+    (>= 0.4)
+    (< 0.5)))
+  (tiny_httpd
+   (and
+    (>= 0.17)
+    (< 1.0)))
+  (printbox
+   (>= 0.12))
+  (printbox-text
+   (>= 0.12))
+  (jemalloc
+   (and
+    (>= 0.2)
+    (< 0.3)))))
+
+(package
+ (name benchpress-worker)
+ (synopsis "A benchpress helper worker")
+ (depends
+  (ocaml
+   (>= 4.12))
+  dune
+  (containers
+   (and
+    (>= 3.0)
+    (< 4.0)))
+  (benchpress
+   (= :version))
+  (cmdliner
+   (>= 1.1.0))))
