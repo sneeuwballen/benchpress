@@ -1,27 +1,17 @@
-name: Format Check
+name: format
 
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
 
 jobs:
-  format:
+  run:
     name: format-check
+    timeout-minutes: 10
     runs-on: ubuntu-latest
+    container: ghcr.io/c-cube/c-cube-common/ci-5.4:latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Use OCaml 5.3
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: '5.3'
-          dune-cache: true
-          allow-prerelease-opam: true
-
-      - name: Install ocamlformat
-        run: opam install ocamlformat.0.27.0
-
-      - name: Check formatting
-        run: opam exec -- dune build @fmt
+      - uses: actions/checkout@v6
+      - run: opam exec -- dune build @fmt
