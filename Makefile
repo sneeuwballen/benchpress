@@ -6,7 +6,7 @@ build:
 all: build
 
 build-docker:
-	@docker build . -f Dockerfile.server
+	@docker build . -f Dockerfile.server -t benchpress-server:latest
 
 clean:
 	@dune clean
