@@ -11,8 +11,11 @@ clean:
 test:
 	@dune runtest --no-buffer -f
 
-fmt:
+format:
 	@dune build @fmt --auto-promote
+
+format-check:
+	@dune build @fmt --display=quiet
 
 WATCH?= @all
 watch:
