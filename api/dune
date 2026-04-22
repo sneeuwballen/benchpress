@@ -2,7 +2,16 @@
  (targets benchpress_api.ml benchpress_api.mli)
  (deps benchpress_api.proto)
  (action
-  (run ocaml-protoc --binary --yojson --services --pp --make --ml_out . %{deps})))
+  (run
+   ocaml-protoc
+   --binary
+   --yojson
+   --services
+   --pp
+   --make
+   --ml_out
+   .
+   %{deps})))
 
 (library
  (name benchpress_api_proto)

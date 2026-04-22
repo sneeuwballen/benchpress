@@ -9,9 +9,9 @@ val require_auth :
   _ Tiny_httpd.Request.t ->
   send_resp:(Tiny_httpd.Response.t -> unit) ->
   string option
-(** [require_auth auth req ~send_resp] checks Bearer token.
-    Returns [Some user_id] if valid.
-    If invalid/missing, calls [send_resp] with a 401 response and returns [None]. *)
+(** [require_auth auth req ~send_resp] checks Bearer token. Returns
+    [Some user_id] if valid. If invalid/missing, calls [send_resp] with a 401
+    response and returns [None]. *)
 
 val middleware : Auth.t -> Tiny_httpd.Middleware.t
 (** Middleware that authenticates requests via Bearer token and stores the

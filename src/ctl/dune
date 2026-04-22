@@ -3,12 +3,7 @@
  (public_name benchpressctl)
  (package benchpressctl)
  (modes native)
- (libraries
-   benchpress_api_proto
-   cmdliner
-   curly
-   twirp_core
-   unix)
+ (libraries benchpress_api_proto cmdliner curly twirp_core unix)
  (preprocess
   (pps ppx_subliner))
  (flags :standard -warn-error -a+8 -safe-string))

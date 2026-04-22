@@ -179,6 +179,10 @@
    (>= 4.14))
   (cmdliner
    (>= 1.1.0))
+  curly
+  (twirp_core
+   (>= 0.2))
+  ppx_subliner
   (pbrt
    (>= 4.0))
   (pbrt_services

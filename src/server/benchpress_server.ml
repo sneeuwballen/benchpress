@@ -1810,12 +1810,8 @@ module Cmd = struct
       handle_compare2 self;
       if allow_delete then handle_delete self;
       handle_file self;
-      Api_handler.register
-        ~auth:self.auth
-        ~task_q:self.task_q
-        ~defs:self.defs
-        ~data_dir:self.data_dir
-        ~http_server:self.server;
+      Api_handler.register ~auth:self.auth ~task_q:self.task_q ~defs:self.defs
+        ~data_dir:self.data_dir ~http_server:self.server;
       H.run server |> CCResult.map_err Error.of_exn
     with e -> Error (Error.of_exn e)
 
@@ -1852,34 +1848,31 @@ module Admin = struct
     else
       path
 
-  (** user create *)
   type user_create_params = {
     email: string; [@names [ "email" ]] [@docv "EMAIL"]  (** user email *)
-    auth_db: string; [@names [ "auth-db" ]] [@default ""]
-        (** path to auth DB *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]  (** path to auth DB *)
   }
   [@@deriving subliner]
+  (** user create *)
 
   let user_create_run (p : user_create_params) =
     let db = Auth.create (resolve_auth_db p.auth_db) in
-    (match Auth.create_user db ~email:p.email with
+    match Auth.create_user db ~email:p.email with
     | Ok uuid -> Printf.printf "Created user: %s\n%!" uuid
     | Error msg ->
       Printf.eprintf "Error: %s\n%!" msg;
-      exit 1)
+      exit 1
 
   let user_create_cmd =
     let doc = "create a new user" in
-    Cmd.v
-      (Cmd.info ~doc "create")
+    Cmd.v (Cmd.info ~doc "create")
       Term.(const user_create_run $ user_create_params_cmdliner_term ())
 
-  (** user list *)
   type user_list_params = {
-    auth_db: string; [@names [ "auth-db" ]] [@default ""]
-        (** path to auth DB *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]  (** path to auth DB *)
   }
   [@@deriving subliner]
+  (** user list *)
 
   let user_list_run (p : user_list_params) =
     let db = Auth.create (resolve_auth_db p.auth_db) in
@@ -1891,44 +1884,40 @@ module Admin = struct
 
   let user_list_cmd =
     let doc = "list all users" in
-    Cmd.v
-      (Cmd.info ~doc "list")
+    Cmd.v (Cmd.info ~doc "list")
       Term.(const user_list_run $ user_list_params_cmdliner_term ())
 
   let user_cmd =
     let doc = "manage users" in
     Cmd.group (Cmd.info ~doc "user") [ user_create_cmd; user_list_cmd ]
 
-  (** api-key create *)
   type api_key_create_params = {
     user: string; [@names [ "user" ]] [@docv "UUID"]  (** user UUID *)
-    auth_db: string; [@names [ "auth-db" ]] [@default ""]
-        (** path to auth DB *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]  (** path to auth DB *)
   }
   [@@deriving subliner]
+  (** api-key create *)
 
   let api_key_create_run (p : api_key_create_params) =
     Mirage_crypto_rng_unix.use_default ();
     let db = Auth.create (resolve_auth_db p.auth_db) in
-    (match Auth.create_api_key db ~user_id:p.user with
+    match Auth.create_api_key db ~user_id:p.user with
     | Ok key -> Printf.printf "Created API key: %s\n%!" key
     | Error msg ->
       Printf.eprintf "Error: %s\n%!" msg;
-      exit 1)
+      exit 1
 
   let api_key_create_cmd =
     let doc = "create a new API key for a user" in
-    Cmd.v
-      (Cmd.info ~doc "create")
+    Cmd.v (Cmd.info ~doc "create")
       Term.(const api_key_create_run $ api_key_create_params_cmdliner_term ())
 
-  (** api-key revoke *)
   type api_key_revoke_params = {
     key: string; [@names [ "key" ]] [@docv "HEX"]  (** API key hex *)
-    auth_db: string; [@names [ "auth-db" ]] [@default ""]
-        (** path to auth DB *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]  (** path to auth DB *)
   }
   [@@deriving subliner]
+  (** api-key revoke *)
 
   let api_key_revoke_run (p : api_key_revoke_params) =
     let db = Auth.create (resolve_auth_db p.auth_db) in
@@ -1937,40 +1926,38 @@ module Admin = struct
 
   let api_key_revoke_cmd =
     let doc = "revoke an API key" in
-    Cmd.v
-      (Cmd.info ~doc "revoke")
+    Cmd.v (Cmd.info ~doc "revoke")
       Term.(const api_key_revoke_run $ api_key_revoke_params_cmdliner_term ())
 
-  (** api-key list *)
   type api_key_list_params = {
     user: string; [@names [ "user" ]] [@docv "UUID"]  (** user UUID *)
-    auth_db: string; [@names [ "auth-db" ]] [@default ""]
-        (** path to auth DB *)
+    auth_db: string; [@names [ "auth-db" ]] [@default ""]  (** path to auth DB *)
   }
   [@@deriving subliner]
+  (** api-key list *)
 
   let api_key_list_run (p : api_key_list_params) =
     let db = Auth.create (resolve_auth_db p.auth_db) in
     let keys = Auth.list_api_keys db ~user_id:p.user in
-    List.iter (fun (key, created_at) -> Printf.printf "%s\t%s\n" key created_at) keys
+    List.iter
+      (fun (key, created_at) -> Printf.printf "%s\t%s\n" key created_at)
+      keys
 
   let api_key_list_cmd =
     let doc = "list API keys for a user" in
-    Cmd.v
-      (Cmd.info ~doc "list")
+    Cmd.v (Cmd.info ~doc "list")
       Term.(const api_key_list_run $ api_key_list_params_cmdliner_term ())
 
   let api_key_cmd =
     let doc = "manage API keys" in
-    Cmd.group
-      (Cmd.info ~doc "api-key")
+    Cmd.group (Cmd.info ~doc "api-key")
       [ api_key_create_cmd; api_key_revoke_cmd; api_key_list_cmd ]
 end
 
 let () =
   CCFormat.set_color_default true;
   if Sys.getenv_opt "PROFILE" = Some "1" then Profile.enable ();
-  let (serve_t, serve_i) = Cmd.cmd in
+  let serve_t, serve_i = Cmd.cmd in
   (* wrap serve result: (unit, Error.t) result -> unit *)
   let serve_t' =
     Cmdliner.Term.(

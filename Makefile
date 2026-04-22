@@ -36,8 +36,13 @@ test-api: ## Run API auth tests (requires running server; set API_KEY=<key>)
 	$(HURL) --variable host=$(HURL_HOST) --variable api_key=$(API_KEY) \
 		tests/api_auth.hurl --test
 
-test-api-docker: ## Build and run the self-contained API test container
+test-api-docker: ## Build and run the self-contained API test container (all-in-one)
 	docker build -f Dockerfile.test -t benchpress-test .
 	docker run --rm benchpress-test
 
-.PHONY: all clean watch test-api test-api-docker
+test-api-compose: ## Run API tests via docker compose (server + runner containers)
+	docker compose -f docker/compose.test.yml up \
+	    --build --abort-on-container-exit --exit-code-from runner
+	docker compose -f docker/compose.test.yml down -v
+
+.PHONY: all clean watch test-api test-api-docker test-api-compose

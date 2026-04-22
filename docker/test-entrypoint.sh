@@ -89,6 +89,17 @@ hurl \
     /tests/api_lifecycle.hurl \
     --test
 
+# Result-file population and idempotency
+hurl \
+    --variable "host=localhost:$PORT" \
+    --variable "api_key=$API_KEY1" \
+    /tests/api_result_file.hurl \
+    --test
+
+# benchpressctl smoke tests
+BENCHPRESS_SERVER="localhost:$PORT" BENCHPRESS_API_KEY="$API_KEY1" \
+    sh /tests/ctl_smoke.sh
+
 # Revoke key3, then verify it is rejected while key1 still works
 benchpress-server api-key revoke --key "$API_KEY3"
 hurl \

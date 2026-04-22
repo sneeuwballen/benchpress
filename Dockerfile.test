@@ -12,12 +12,15 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
 # Limit parallel opam jobs to reduce peak disk usage during compilation
 ENV OPAMJOBS=4
 
-# Install opam dependencies and build the server
+# Install opam dependencies and build the server + ctl
 # Clean download cache after install to reclaim space before dune build
 RUN opam install --deps-only -y . && \
     rm -rf ~/.opam/download-cache && \
-    opam exec -- dune build src/server/benchpress_server.exe && \
-    cp _build/default/src/server/benchpress_server.exe /home/opam/benchpress_server.exe
+    opam exec -- dune build \
+        src/server/benchpress_server.exe \
+        src/ctl/benchpressctl.exe && \
+    cp _build/default/src/server/benchpress_server.exe /home/opam/benchpress_server.exe && \
+    cp _build/default/src/ctl/benchpressctl.exe /home/opam/benchpressctl.exe
 
 
 # Stage 2: minimal runtime image with hurl
@@ -38,12 +41,15 @@ COPY --from=build \
     /home/opam/benchpress_server.exe \
     /usr/local/bin/benchpress-server
 
-COPY tests/api_auth.hurl /tests/api_auth.hurl
-COPY tests/api_lifecycle.hurl /tests/api_lifecycle.hurl
-COPY tests/api_revoke.hurl /tests/api_revoke.hurl
+COPY --from=build \
+    /home/opam/benchpressctl.exe \
+    /usr/local/bin/benchpressctl
+
+COPY tests/ /tests/
 
 COPY docker/test-entrypoint.sh /usr/local/bin/test-entrypoint.sh
-RUN chmod +x /usr/local/bin/test-entrypoint.sh
+COPY docker/compose-test-runner.sh /usr/local/bin/compose-test-runner.sh
+RUN chmod +x /usr/local/bin/test-entrypoint.sh /usr/local/bin/compose-test-runner.sh
 
 ENV PORT=8083
 EXPOSE 8083

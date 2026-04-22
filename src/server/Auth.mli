@@ -2,7 +2,8 @@ type t
 (** Auth DB handle *)
 
 val create : string -> t
-(** [create path] opens (or creates) the auth sqlite DB at [path] and runs migrations. *)
+(** [create path] opens (or creates) the auth sqlite DB at [path] and runs
+    migrations. *)
 
 val default_path : unit -> string
 (** Default path: XDG data dir / "benchpress" / "auth.db" *)
@@ -11,7 +12,8 @@ val create_user : t -> email:string -> (string, string) result
 (** Returns the new user's UUID, or Error if email already exists. *)
 
 val create_api_key : t -> user_id:string -> (string, string) result
-(** Returns a fresh hex API key for the given user, or Error if user not found. *)
+(** Returns a fresh hex API key for the given user, or Error if user not found.
+*)
 
 val revoke_api_key : t -> key:string -> unit
 (** Delete the given API key. No-op if it doesn't exist. *)
@@ -36,6 +38,12 @@ val get_job_user : t -> job_id:string -> string option
 val set_job_cancelled : t -> job_id:string -> unit
 
 val set_job_completed : t -> job_id:string -> result_file:string -> unit
+(** Mark the job completed with the given result file path. No-op (safe to call
+    again) if already completed. *)
 
 val get_job_cancelled : t -> job_id:string -> bool
 (** Returns true if the job was marked cancelled. *)
+
+val get_job_completed : t -> job_id:string -> string option
+(** Returns [Some result_file] if the job was marked completed, [None]
+    otherwise. *)
