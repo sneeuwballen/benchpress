@@ -14,3 +14,4 @@ qtest*
 .merlin
 *.exe
 *.install
+*.tmp
