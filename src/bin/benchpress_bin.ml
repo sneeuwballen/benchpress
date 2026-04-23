@@ -277,32 +277,6 @@ module Show = struct
       Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
-(** {2 plot results} *)
-
-module Plot = struct
-  let main file =
-    Logs.debug (fun k -> k "plot file %s" file);
-    let file = Bin_utils.mk_file_full file in
-    Db.with_db ~timeout:500 ~mode:`READONLY file (fun db ->
-        let p = Cactus_plot.of_db db in
-        Cactus_plot.show p;
-        ())
-
-  type params = { file: string [@pos 0] [@docv "FILE"]  (** file to read *) }
-  [@@deriving subliner]
-
-  let run (p : params) debug =
-    catch_err @@ fun () ->
-    Misc.setup_logs debug;
-    main p.file
-
-  let cmd =
-    let doc = "plot benchmark results" in
-    Cmdliner.Cmd.v
-      (Cmdliner.Cmd.info ~doc "plot")
-      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
-end
-
 (** {2 Sample} *)
 module Sample = struct
   let files_of_dir (p : string) : string list =
@@ -537,7 +511,6 @@ let parse_opt () =
       Sql_convert.cmd;
       Task_list.cmd;
       Task_show.cmd;
-      Plot.cmd;
       Slurm.cmd;
     ]
   in

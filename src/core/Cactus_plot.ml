@@ -1,7 +1,6 @@
 open Common
 open Misc
 open Test
-module Gp = Gnuplot
 
 type t = { lines: (string * Prover.name * float list) list }
 
@@ -55,40 +54,6 @@ let combine (l : (_ * t) list) : t =
 let of_file ?provers file : t =
   try Db.with_db ~timeout:500 ~mode:`READONLY file (of_db ?provers)
   with e -> Error.(raise @@ of_exn e)
-
-let to_gp ~output self =
-  Error.guard (Error.wrap "plot.gnuplot") @@ fun () ->
-  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "cactus-plot.gnuplot" in
-  Gp.with_ (fun gp ->
-      let series =
-        self.lines
-        |> CCList.map (fun (pre, prover, l) ->
-               let l =
-                 let sum = ref 0. in
-                 CCList.mapi
-                   (fun i rtime ->
-                     sum := !sum +. rtime;
-                     !sum, float i)
-                   l
-               in
-               let title =
-                 if pre = "" then
-                   prover
-                 else
-                   pre ^ "." ^ prover
-               in
-               Gp.Series.linespoints_xy ~title l)
-      in
-      Gp.plot_many
-        ~labels:
-          (Gp.Labels.create ~x:"time (s)" ~y:"problems solved (accumulated)" ())
-        ~title:"cumulative time for n° of problems solved" gp series ~output);
-  ()
-
-let show (self : t) = to_gp self ~output:(Gp.Output.create `X11)
-
-let save_to_file (self : t) file =
-  to_gp self ~output:(Gp.Output.create ~size:(1800, 1024) @@ `Png file)
 
 let to_echarts_json (self : t) : string =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "plot.to-echarts-json" in
@@ -166,12 +131,3 @@ let to_echarts_json (self : t) : string =
       ]
   in
   Yojson.Basic.to_string option
-
-let to_png (self : t) : string =
-  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "plot.to-png" in
-  CCIO.File.with_temp ~prefix:"benchpress_plot" ~suffix:".png" (fun file ->
-      Logs.debug (fun k -> k "plot into file %s" file);
-      save_to_file self file;
-      let s = CCIO.with_in file CCIO.read_all in
-      Logs.debug (fun k -> k "read %d bytes from file" (String.length s));
-      s)

@@ -281,17 +281,9 @@ let link_show_single db_file prover path =
   PB.link (PB.text path) ~uri:(uri_show_single db_file prover path)
 
 let uri_get_file pb = spf "/get-file/%s/" (U.percent_encode pb)
-let uri_gnuplot pb = spf "/show-gp/%s/" (U.percent_encode pb)
 let uri_echarts pb = spf "/show-echarts/%s/" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s/" (U.percent_encode pb)
 let uri_invalid pb = spf "/show-invalid/%s/" (U.percent_encode pb)
-
-let gnuplot_img ?(alt = "cactus plot of provers") pb =
-  let open Html in
-  img
-    [
-      A.src (uri_gnuplot pb); A.class_ "img-fluid"; "loading", "lazy"; A.alt alt;
-    ]
 
 let echarts_cactus_div ?(height = "400px") pb =
   let open Html in
@@ -538,46 +530,7 @@ let handle_prover_in (self : t) : unit =
   in
   H.Response.make_string (Ok (Html.to_string h))
 
-(* gnuplot for a file *)
-let handle_show_gp (self : t) : unit =
-  H.add_route_handler self.server ~meth:`GET
-    H.Route.(exact "show-gp" @/ string_urlencoded @/ return)
-  @@ fun q_arg _req ->
-  let@ chrono = query_wrap (Error.wrapf "serving /show-gp/%s" q_arg) in
-  Log.debug (fun k -> k "----- start show-gp %s -----" q_arg);
-  let files = CCString.split_on_char ',' q_arg |> List.map String.trim in
-  let files_full =
-    CCList.map
-      (fun file ->
-        match CCString.split_on_char '/' file with
-        | [ file; prover ] -> Bin_utils.mk_file_full file, Some [ prover ]
-        | _ -> Bin_utils.mk_file_full file, None)
-      files
-  in
-  let plot =
-    let plot =
-      match files_full with
-      | [ (f, _provers) ] -> Cactus_plot.of_file f
-      | fs ->
-        fs
-        |> List.mapi (fun i (file, provers) ->
-               guardf 500 (Error.wrapf "building cactus plot for %s" file)
-               @@ fun () ->
-               let p = Cactus_plot.of_file ?provers file in
-               spf "file %d (%s)" i (Filename.basename file), p)
-        |> Cactus_plot.combine
-    in
-    Cactus_plot.to_png plot
-  in
-  Log.info (fun k ->
-      k "rendered to gplot in %.3fs" (Misc.Chrono.since_last chrono));
-  Log.debug (fun k -> k "encode png file of %d bytes" (String.length plot));
-  Log.debug (fun k -> k "successful reply for show-gp/%S" q_arg);
-  H.Response.make_string
-    ~headers:H.Headers.([] |> set "content-type" "image/png")
-    (Ok plot)
-
-(* ECharts JSON for cactus plot — replaces gnuplot endpoint *)
+(* ECharts JSON for cactus plot *)
 let handle_show_echarts (self : t) : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "show-echarts" @/ string_urlencoded @/ return)
@@ -1873,7 +1826,6 @@ module Cmd = struct
       handle_file_summary self;
       handle_css server;
       handle_show self;
-      handle_show_gp self;
       handle_show_echarts self;
       handle_prover_in self;
       handle_show_errors self;

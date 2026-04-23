@@ -17,7 +17,7 @@
   printbox-text
   logs
   logs.cli
-  gnuplot
+  ISO8601
   ptime
   ptime.clock.os
   uuidm
