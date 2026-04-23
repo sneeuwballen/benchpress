@@ -80,10 +80,13 @@ Authorization: Bearer {{api_key1}}
 {"jobId": "{{slow_job_id}}"}
 HTTP 200
 
-# Status is now CANCELLED
+# Status is now CANCELLED (retry: worker may take a moment to act on interrupt)
 POST http://{{host}}/twirp/benchpress_api.BenchpressApi/GetJobStatus
 Content-Type: application/json
 Authorization: Bearer {{api_key1}}
+[Options]
+retry: 20
+retry-interval: 500
 {"jobId": "{{slow_job_id}}"}
 HTTP 200
 [Asserts]

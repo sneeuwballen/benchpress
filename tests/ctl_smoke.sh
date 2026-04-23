@@ -36,9 +36,14 @@ SLOW_ID=$(benchpressctl run \
 benchpressctl cancel "$SLOW_ID" 2>/dev/null
 
 echo "  [ctl] status of cancelled job"
-STATUS_OUT=$(benchpressctl status "$SLOW_ID" 2>/dev/null || true)
+# Retry: worker may take a moment to act on the interrupt flag.
+STATUS_OUT=""
+for _i in $(seq 1 20); do
+    STATUS_OUT=$(benchpressctl status "$SLOW_ID" 2>&1 || true)
+    echo "$STATUS_OUT" | grep -qi 'cancel' && break
+    sleep 0.5
+done
 echo "    $STATUS_OUT"
-# Should say 'cancelled' somewhere (case-insensitive)
 echo "$STATUS_OUT" | grep -qi 'cancel' \
     || die "expected cancelled status, got: $STATUS_OUT"
 

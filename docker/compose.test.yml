@@ -64,4 +64,5 @@ configs:
         (cmd "sleep 30 && /bin/true $file"))
 
       (dir
-        (path "/tmp/bench"))
+        (path "/tmp/bench")
+        (expect (const unknown)))

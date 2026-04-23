@@ -27,18 +27,20 @@ cat > "$CONFIG" << 'EOF'
 
 (prover
   (name slow)
-  (cmd "/bin/sleep 30 && /bin/true $file"))
+  (cmd "sleep 30; true $file"))
 
 (dir
-  (path "/tmp/bench"))
+  (path "/tmp/bench")
+  (expect (const unknown)))
 EOF
 
 # Create test benchmark files
 mkdir -p /tmp/bench
 touch /tmp/bench/a.fake /tmp/bench/b.fake
 
-# Start server in background
-benchpress-server serve \
+# Start server in its own process group so its shutdown signals don't
+# propagate back to this script.
+setsid benchpress-server serve \
     --port "$PORT" \
     --config "$CONFIG" \
     &
@@ -48,7 +50,7 @@ cleanup() {
     kill "$SERVER_PID" 2>/dev/null || true
     rm -rf "$HOME" /tmp/bench
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
 
 # Wait for the server to accept connections (up to 4 seconds)
 for i in $(seq 1 20); do
@@ -113,3 +115,5 @@ hurl \
     --variable "valid_key=$API_KEY1" \
     "$TESTS_DIR"/api_revoke.hurl \
     --test
+
+echo "==> All tests passed!"
