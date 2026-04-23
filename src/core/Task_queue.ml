@@ -12,6 +12,8 @@ type job = {
   mutable j_started_time: float; (* -1. if not started *)
   mutable j_percent_completion: int;
   mutable j_eta: float;
+  j_on_complete: (string -> unit) option;
+      (* called with uuid when done normally *)
 }
 
 module Job = struct
@@ -32,6 +34,7 @@ module Job = struct
   let interrupt self = M.set self.j_interrupted true
   let interrupted self = M.get self.j_interrupted
   let time_elapsed self = Unix.gettimeofday () -. self.j_started_time
+  let percent_completion self = self.j_percent_completion
 end
 
 (* TODO: replace the blocking queue with a custom thing with priorities *)
@@ -69,7 +72,9 @@ let create ?(defs = Definitions.empty) () : t =
     cur = M.create None;
   }
 
-let push self task : unit =
+type job_live_status = Queued | Running of int | Completed | Unknown
+
+let push self ?(on_complete : (string -> unit) option) task : string =
   let j_uuid =
     Uuidm.v4_gen (Random.State.make_self_init ()) () |> Uuidm.to_string
   in
@@ -82,10 +87,21 @@ let push self task : unit =
       j_interrupted = M.create false;
       j_started_time = -1.;
       j_percent_completion = 0;
+      j_on_complete = on_complete;
     }
   in
   Hashtbl.add self.jobs_tbl j_uuid j;
-  Moonpool.Blocking_queue.push self.jobs j
+  Moonpool.Blocking_queue.push self.jobs j;
+  j_uuid
+
+let job_live_status self ~uuid =
+  match M.get self.cur with
+  | Some j when j.j_uuid = uuid -> Running j.j_percent_completion
+  | _ ->
+    (match Hashtbl.find_opt self.jobs_tbl uuid with
+    | Some j when j.j_started_time < 0. -> Queued
+    | Some _j -> Completed (* started but no longer current: done *)
+    | None -> Unknown)
 
 let loop self =
   while true do
@@ -96,26 +112,41 @@ let loop self =
     Log.info (fun k -> k "run job for task %s" job.j_task.Task.name);
     let defs = M.get self.defs in
     (* run the job *)
-    (let cb_progress =
-       object
-         method on_progress ~percent ~elapsed_time:_ ~eta =
-           job.j_percent_completion <- percent;
-           job.j_eta <- eta
+    let cb_progress =
+      object
+        method on_progress ~percent ~elapsed_time:_ ~eta =
+          job.j_percent_completion <- percent;
+          job.j_eta <- eta
 
-         method on_done = ()
-       end
-     in
-     try
-       Exec_action.run defs job.j_action ~cb_progress ~interrupted:(fun () ->
-           Job.interrupted job)
+        method on_done = ()
+      end
+    in
+    (* Derive output path from the job's own UUID so we can report it. *)
+    let output_file =
+      Misc.file_for_uuid "res" ~timestamp:job.j_started_time
+        (Uuidm.of_string job.j_uuid |> Option.get)
+        "sqlite"
+    in
+    let completed = ref false in
+    (try
+       Exec_action.run defs job.j_action ~output:output_file ~cb_progress
+         ~interrupted:(fun () -> Job.interrupted job);
+       completed := not (M.get job.j_interrupted)
      with
-     | Error.E e ->
-       Log.err (fun k ->
-           k "error while running job %s:@ %a" job.j_task.Task.name Error.pp e)
-     | e ->
-       Log.err (fun k ->
-           k "error while running job %s:@ %s" job.j_task.Task.name
-             (Printexc.to_string e)));
+    | Error.E e ->
+      Log.err (fun k ->
+          k "error while running job %s:@ %a" job.j_task.Task.name Error.pp e)
+    | e ->
+      Log.err (fun k ->
+          k "error while running job %s:@ %s" job.j_task.Task.name
+            (Printexc.to_string e)));
+    (* Fire completion callback before removing from table, so
+       status queries during the callback still see Completed. *)
+    if !completed then (
+      match job.j_on_complete with
+      | Some f -> (try f output_file with _ -> ())
+      | None -> ()
+    );
     Hashtbl.remove self.jobs_tbl job.j_uuid;
     (* cleanup *)
     M.set self.cur None

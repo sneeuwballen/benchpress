@@ -1,0 +1,58 @@
+# Stage 1: build the server binary
+FROM ocaml/opam:ubuntu-24.04-ocaml-5.3 AS build
+
+WORKDIR /home/opam/benchpress
+COPY --chown=opam:opam . .
+
+# Install system deps required by opam packages (gnuplot for conf-gnuplot)
+RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+        gnuplot-nox libsqlite3-dev libjemalloc-dev pkg-config \
+    && sudo rm -rf /var/lib/apt/lists/*
+
+# Limit parallel opam jobs to reduce peak disk usage during compilation
+ENV OPAMJOBS=4
+
+# Install opam dependencies and build the server + ctl
+# Clean download cache after install to reclaim space before dune build
+RUN opam install --deps-only -y . && \
+    rm -rf ~/.opam/download-cache && \
+    opam exec -- dune build \
+        src/server/benchpress_server.exe \
+        src/ctl/benchpressctl.exe && \
+    cp _build/default/src/server/benchpress_server.exe /home/opam/benchpress_server.exe && \
+    cp _build/default/src/ctl/benchpressctl.exe /home/opam/benchpressctl.exe
+
+
+# Stage 2: minimal runtime image with hurl
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libsqlite3-0 libjemalloc2 libxml2 curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install hurl
+ARG HURL_VERSION=7.1.0
+RUN curl -sSL \
+    "https://github.com/Orange-OpenSource/hurl/releases/download/${HURL_VERSION}/hurl-${HURL_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+    | tar xz --strip-components=2 -C /usr/local/bin \
+    "hurl-${HURL_VERSION}-x86_64-unknown-linux-gnu/bin/hurl"
+
+COPY --from=build \
+    /home/opam/benchpress_server.exe \
+    /usr/local/bin/benchpress-server
+
+COPY --from=build \
+    /home/opam/benchpressctl.exe \
+    /usr/local/bin/benchpressctl
+
+COPY tests/ /tests/
+
+COPY docker/test-entrypoint.sh /usr/local/bin/test-entrypoint.sh
+COPY docker/compose-test-runner.sh /usr/local/bin/compose-test-runner.sh
+RUN chmod +x /usr/local/bin/test-entrypoint.sh /usr/local/bin/compose-test-runner.sh
+
+ENV PORT=8083
+ENV TESTS_DIR=/tests
+EXPOSE 8083
+
+ENTRYPOINT ["test-entrypoint.sh"]

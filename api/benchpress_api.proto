@@ -1,0 +1,46 @@
+syntax = "proto3";
+package benchpress_api;
+
+// Request to start a new benchmarking job.
+message NewJobRequest {
+  repeated string provers = 1;   // prover names (must be in server config)
+  repeated string paths = 2;     // file/dir paths to benchmark
+  int32 timeout_s = 3;           // per-problem timeout in seconds
+  int32 memory_mb = 4;           // per-problem memory limit in MB (0 = no limit)
+  string output_name = 5;        // optional label for result file
+}
+
+message NewJobResponse {
+  string job_id = 1;
+}
+
+message GetJobStatusRequest {
+  string job_id = 1;
+}
+
+enum JobStatus {
+  QUEUED    = 0;
+  RUNNING   = 1;
+  COMPLETED = 2;
+  CANCELLED = 3;
+  FAILED    = 4;
+}
+
+message GetJobStatusResponse {
+  string job_id = 1;
+  JobStatus status = 2;
+  int32 progress_percent = 3;
+  string result_file = 4;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+}
+
+message CancelJobResponse {}
+
+service BenchpressApi {
+  rpc NewJob(NewJobRequest) returns (NewJobResponse);
+  rpc GetJobStatus(GetJobStatusRequest) returns (GetJobStatusResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+}

@@ -11,6 +11,7 @@ module Job : sig
   val pp : t Fmt.printer
   val to_string : t -> string
   val time_elapsed : t -> float
+  val percent_completion : t -> int
 end
 
 type t
@@ -25,9 +26,20 @@ val size : t -> int
 val cur_job : t -> Job.t option
 (** Current job, if any *)
 
-val push : t -> Task.t -> unit
-(** Push a task to execute *)
+val push : t -> ?on_complete:(string -> unit) -> Task.t -> string
+(** Push a task. Returns its UUID. [on_complete result_file] is called (in the
+    queue worker thread) when the job finishes normally (not cancelled), with
+    the path to the result sqlite file. *)
 (* TODO: priorities, so that some tasks are more urgent *)
+
+type job_live_status =
+  | Queued
+  | Running of int  (** percent completion 0-100 *)
+  | Completed  (** finished normally *)
+  | Unknown  (** not in queue, not currently running *)
+
+val job_live_status : t -> uuid:string -> job_live_status
+(** Query live status of a job by UUID. *)
 
 val loop : t -> unit
 (** Run forever *)
