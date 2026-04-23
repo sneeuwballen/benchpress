@@ -90,6 +90,83 @@ let show (self : t) = to_gp self ~output:(Gp.Output.create `X11)
 let save_to_file (self : t) file =
   to_gp self ~output:(Gp.Output.create ~size:(1800, 1024) @@ `Png file)
 
+let to_echarts_json (self : t) : string =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "plot.to-echarts-json" in
+  (* Build series: for each prover, compute cumulative time vs. problem count.
+     x = cumulative time (sum of rtimes up to problem i)
+     y = i+1 (number of problems solved so far) *)
+  let series =
+    List.map
+      (fun (pre, prover, rtimes) ->
+        let title =
+          if pre = "" then
+            prover
+          else
+            pre ^ "." ^ prover
+        in
+        (* Build list of [cumtime, count] pairs *)
+        let _sum, rev_data =
+          List.fold_left
+            (fun (cum, acc) rtime ->
+              let cum' = cum +. rtime in
+              cum', [ `Float cum'; `Int (List.length acc + 1) ] :: acc)
+            (0., [])
+            rtimes
+        in
+        let data = List.rev rev_data in
+        `Assoc
+          [
+            "name", `String title;
+            "type", `String "line";
+            "showSymbol", `Bool false;
+            "data", `List (List.map (fun pt -> `List pt) data);
+          ])
+      self.lines
+  in
+  let legend_data =
+    List.map
+      (fun (pre, prover, _) ->
+        let title =
+          if pre = "" then
+            prover
+          else
+            pre ^ "." ^ prover
+        in
+        `String title)
+      self.lines
+  in
+  let option =
+    `Assoc
+      [
+        "title",
+        `Assoc
+          [
+            "text", `String "Cactus plot";
+            "subtext", `String "cumulative time for n\xc2\xb0 of problems solved";
+          ];
+        "tooltip", `Assoc [ "trigger", `String "axis" ];
+        "legend", `Assoc [ "data", `List legend_data ];
+        "xAxis",
+        `Assoc
+          [
+            "name", `String "time (s)";
+            "type", `String "value";
+            "nameLocation", `String "middle";
+            "nameGap", `Int 25;
+          ];
+        "yAxis",
+        `Assoc
+          [
+            "name", `String "problems solved (accumulated)";
+            "type", `String "value";
+            "nameLocation", `String "middle";
+            "nameGap", `Int 50;
+          ];
+        "series", `List series;
+      ]
+  in
+  Yojson.Basic.to_string option
+
 let to_png (self : t) : string =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "plot.to-png" in
   CCIO.File.with_temp ~prefix:"benchpress_plot" ~suffix:".png" (fun file ->

@@ -182,8 +182,20 @@ module Html = struct
               ];
             script [ A.src "/js"; "type", "module" ] [ txt "" ];
             script [ A.src "https://unpkg.com/htmx.org@1.7.0" ] [ txt "" ];
+            script
+              [
+                A.src
+                  "https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js";
+              ]
+              [ txt "" ];
+            script
+              [
+                A.src
+                  "https://cdn.jsdelivr.net/npm/htmx-echarts@0.1.0/dist/htmx-echarts.min.js";
+              ]
+              [ txt "" ];
           ];
-        body [] [ my_body ];
+        body [ "hx-ext", "echarts" ] [ my_body ];
       ]
 
   let mk_page ?meta ~title my_body =
@@ -270,6 +282,7 @@ let link_show_single db_file prover path =
 
 let uri_get_file pb = spf "/get-file/%s/" (U.percent_encode pb)
 let uri_gnuplot pb = spf "/show-gp/%s/" (U.percent_encode pb)
+let uri_echarts pb = spf "/show-echarts/%s/" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s/" (U.percent_encode pb)
 let uri_invalid pb = spf "/show-invalid/%s/" (U.percent_encode pb)
 
@@ -279,6 +292,17 @@ let gnuplot_img ?(alt = "cactus plot of provers") pb =
     [
       A.src (uri_gnuplot pb); A.class_ "img-fluid"; "loading", "lazy"; A.alt alt;
     ]
+
+let echarts_cactus_div ?(height = "400px") pb =
+  let open Html in
+  div
+    [
+      A.style (spf "width:100%%;height:%s" height);
+      "data-chart-type", "line";
+      "data-url", uri_echarts pb;
+      "data-chart-loading", "true";
+    ]
+    []
 
 let uri_show_detailed ?(offset = 0) ?(filter_prover = "") ?(filter_pb = "")
     ?(filter_res = "") ?(filter_expect = "") pb =
@@ -419,7 +443,6 @@ let handle_show (self : t) : unit =
   (* TODO: make one table instead? with links to detailed comparison
      (i.e. as-table with proper filters) *)
   let box_compare_l = Test_comparison_short.to_printbox_l cr.cr_comparison in
-  let uri_plot = uri_gnuplot file in
   let uri_err = uri_error_bad file in
   let uri_invalid = uri_invalid file in
   Log.debug (fun k ->
@@ -465,13 +488,7 @@ let handle_show (self : t) : unit =
           [
             div [ A.class_ "lazy-load"; "x_src", uri_err ] [];
             div [ A.class_ "lazy-load"; "x_src", uri_invalid ] [];
-            img
-              [
-                A.src uri_plot;
-                A.class_ "img-fluid";
-                "loading", "lazy";
-                A.alt "cactus plot of provers";
-              ];
+            echarts_cactus_div file;
           ];
         (if box_compare_l = PB.empty then
            `Nil
@@ -559,6 +576,40 @@ let handle_show_gp (self : t) : unit =
   H.Response.make_string
     ~headers:H.Headers.([] |> set "content-type" "image/png")
     (Ok plot)
+
+(* ECharts JSON for cactus plot — replaces gnuplot endpoint *)
+let handle_show_echarts (self : t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "show-echarts" @/ string_urlencoded @/ return)
+  @@ fun q_arg _req ->
+  let@ _chrono = query_wrap (Error.wrapf "serving /show-echarts/%s" q_arg) in
+  Log.debug (fun k -> k "----- start show-echarts %s -----" q_arg);
+  let files = CCString.split_on_char ',' q_arg |> List.map String.trim in
+  let files_full =
+    CCList.map
+      (fun file ->
+        match CCString.split_on_char '/' file with
+        | [ file; prover ] -> Bin_utils.mk_file_full file, Some [ prover ]
+        | _ -> Bin_utils.mk_file_full file, None)
+      files
+  in
+  let plot =
+    match files_full with
+    | [ (f, _provers) ] -> Cactus_plot.of_file f
+    | fs ->
+      fs
+      |> List.mapi (fun i (file, provers) ->
+             guardf 500 (Error.wrapf "building cactus plot for %s" file)
+             @@ fun () ->
+             let p = Cactus_plot.of_file ?provers file in
+             spf "file %d (%s)" i (Filename.basename file), p)
+      |> Cactus_plot.combine
+  in
+  let json = Cactus_plot.to_echarts_json plot in
+  Log.debug (fun k -> k "successful reply for show-echarts/%S" q_arg);
+  H.Response.make_string
+    ~headers:H.Headers.([] |> set "content-type" "application/json")
+    (Ok json)
 
 let handle_show_errors (self : t) : unit =
   H.add_route_handler self.server ~meth:`GET
@@ -1272,7 +1323,7 @@ let handle_compare2 self : unit =
     | _ ->
       [
         List.map (fun (f, p) -> f ^ "/" ^ p) provers
-        |> String.concat "," |> gnuplot_img;
+        |> String.concat "," |> echarts_cactus_div;
       ]
   in
   let plot_html =
@@ -1384,7 +1435,7 @@ let handle_compare self : unit =
           mk_navigation [];
           h3 [] [ txt "comparison" ];
           div [] [ pb_html box_compare_l ];
-          div [] [ gnuplot_img (String.concat "," names) ];
+          echarts_cactus_div (String.concat "," names);
         ]
     in
     H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
@@ -1823,6 +1874,7 @@ module Cmd = struct
       handle_css server;
       handle_show self;
       handle_show_gp self;
+      handle_show_echarts self;
       handle_prover_in self;
       handle_show_errors self;
       handle_show_invalid self;

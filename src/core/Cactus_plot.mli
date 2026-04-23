@@ -12,3 +12,6 @@ val combine : (string * t) list -> t
 val show : t -> unit
 val save_to_file : t -> string -> unit
 val to_png : t -> string
+val to_echarts_json : t -> string
+(** Serialize the cactus plot data as an ECharts option JSON string,
+    suitable for use with the htmx-echarts extension. *)
