@@ -52,6 +52,7 @@ COPY docker/compose-test-runner.sh /usr/local/bin/compose-test-runner.sh
 RUN chmod +x /usr/local/bin/test-entrypoint.sh /usr/local/bin/compose-test-runner.sh
 
 ENV PORT=8083
+ENV TESTS_DIR=/tests
 EXPOSE 8083
 
 ENTRYPOINT ["test-entrypoint.sh"]

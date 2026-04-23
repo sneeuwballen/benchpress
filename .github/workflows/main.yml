@@ -22,18 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: apt update
-      - run: apt-get install -y --no-install-recommends libsqlite3-dev gnuplot-nox curl
+      - run: |
+          curl -sSLo /tmp/hurl.deb \
+            https://github.com/Orange-OpenSource/hurl/releases/download/7.1.0/hurl_7.1.0_amd64.deb
+          apt-get install -y --no-install-recommends \
+            libsqlite3-dev gnuplot-nox /tmp/hurl.deb
       - run: opam pin .#HEAD -y -n
       - run: opam install -t . --deps-only
       - run: opam exec -- dune build @all --ignore-promoted-rules
       - run: opam exec -- dune runtest -p benchpress
       # API integration tests: only on 5.4 (behaviour, not OCaml-version-sensitive)
-      - if: matrix.container == 'ghcr.io/c-cube/c-cube-commmon/ci-5.4:latest'
-        name: Install hurl
-        run: |
-          curl -sSLo /tmp/hurl.deb \
-            https://github.com/Orange-OpenSource/hurl/releases/download/7.1.0/hurl_7.1.0_amd64.deb
-          apt-get install -y /tmp/hurl.deb
       - if: matrix.container == 'ghcr.io/c-cube/c-cube-commmon/ci-5.4:latest'
         name: Run API integration tests
         run: |
