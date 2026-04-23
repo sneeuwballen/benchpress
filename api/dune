@@ -1,4 +1,7 @@
 (rule
+ (alias lint)
+ (mode promote)
+ (enabled_if %{env:FORCE_GENPROTO=false})
  (targets benchpress_api.ml benchpress_api.mli)
  (deps benchpress_api.proto)
  (action
