@@ -182,18 +182,8 @@ module Html = struct
               ];
             script [ A.src "/js"; "type", "module" ] [ txt "" ];
             script [ A.src "https://unpkg.com/htmx.org@1.7.0" ] [ txt "" ];
-            script
-              [
-                A.src
-                  "https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js";
-              ]
-              [ txt "" ];
-            script
-              [
-                A.src
-                  "https://cdn.jsdelivr.net/npm/htmx-echarts@0.1.0/dist/htmx-echarts.min.js";
-              ]
-              [ txt "" ];
+            script [ A.src "/echarts.js" ] [ txt "" ];
+            script [ A.src "/htmx-echarts.js" ] [ txt "" ];
           ];
         body [ "hx-ext", "echarts" ] [ my_body ];
       ]
@@ -1751,6 +1741,8 @@ let handle_css self : unit =
   in
   mk_path "css" "text/css" Web_data.css;
   mk_path "js" "text/javascript" Web_data.js;
+  mk_path "echarts.js" "text/javascript" Web_data.echarts_js;
+  mk_path "htmx-echarts.js" "text/javascript" Web_data.htmx_echarts_js;
   mk_path "favicon.png" "media/png" Web_data.favicon;
   ()
 

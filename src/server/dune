@@ -49,7 +49,9 @@
  (deps
   (:css bootstrap.min.css)
   (:js embed.js)
-  (:icon ../../data/favicon.png.b64))
+  (:icon ../../data/favicon.png.b64)
+  (:echarts echarts.min.js)
+  (:htmx_echarts htmx-echarts.min.js))
  (action
   (with-stdout-to
    %{targets}
@@ -62,7 +64,14 @@
     (echo "|j}")
     (echo "let favicon = Base64.decode_exn @@ String.trim @@ {fav|")
     (cat %{icon})
-    (echo "|fav}")))))
+    (echo "|fav}")
+    (echo "let echarts_js = {ejs|")
+    (cat %{echarts})
+    (echo "|ejs}")
+    (echo "let htmx_echarts_js = {hejs|")
+    (cat %{htmx_echarts})
+    (echo "|hejs}")))))
+
 
 (rule
  (with-stdout-to
