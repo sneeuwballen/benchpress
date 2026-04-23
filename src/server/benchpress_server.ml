@@ -6,9 +6,6 @@ module U = Tiny_httpd.Util
 module PB = PrintBox
 module Log = (val Logs.src_log (Logs.Src.create "benchpress-serve"))
 
-let spf = Printf.sprintf
-let[@inline] ( let@ ) f x = f x
-
 module Logger = struct
   let show_lvl = function
     | Logs.Debug -> "<7>DEBUG"
@@ -157,7 +154,9 @@ end = struct
   (* remaining cases *)
   [@@warning "-11"]
 
-  let to_html b = H.div [] [ to_html_rec b ]
+  let to_html b =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "printbox.to_html" in
+    H.div [] [ to_html_rec b ]
 end
 
 module Html = struct
@@ -166,6 +165,7 @@ module Html = struct
   let b_style = link [ A.rel "stylesheet"; A.href "/css/" ]
 
   let mk_page_ ?meta:(my_meta = []) ~title:my_title my_body =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "html.mk-page" in
     html []
       [
         head []
@@ -341,7 +341,7 @@ let guardf code wrap f =
 (* wrap the query to turn results into failed queries
    @param f takes a chrono and a [scope] for failing *)
 let query_wrap wrap (f : Misc.Chrono.t -> _) : H.Response.t =
-  Profile.with_ "query" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "query" in
   let chrono = Misc.Chrono.start () in
   let f' () =
     try f chrono
@@ -372,6 +372,20 @@ let query_wrap wrap (f : Misc.Chrono.t -> _) : H.Response.t =
 
 let to_str_with_errcode i err = Error.show err, i
 let add_errcode i err = err, i
+
+let trace_middleware : H.Middleware.t =
+ fun h req ~resp ->
+  let@ _span = Trace.with_span ~__FILE__ ~__LINE__ "http.handle" in
+  Trace.add_data_to_span _span
+    [
+      "http.path", `String req.path;
+      "http.method", `String (H.Meth.to_string req.meth);
+    ];
+  let resp (response : H.Response.t) =
+    Trace.add_data_to_span _span [ "http.response.code", `Int response.code ];
+    resp response
+  in
+  h req ~resp
 
 (* show individual files *)
 let handle_show (self : t) : unit =
@@ -1529,6 +1543,10 @@ let html_of_files (self : t) ~off ~limit : Html.elt list =
   let entries, more = Bin_utils.list_entries self.data_dir ~off ~limit in
 
   let mk_entry idx (file_path, size) : Html.elt =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "html-of-files.mk-entry" in
+    Trace.add_data_to_span _sp
+      [ "file_path", `String file_path; "size", `Int size ];
+
     let open Html in
     let file_basename = Filename.basename file_path in
     let meta = Meta_cache.find_if_loaded self.meta_cache file_path in
@@ -1683,6 +1701,11 @@ let handle_root (self : t) : unit =
   (try Jemalloc.epoch () with _ -> ());
   H.Response.make_string ~headers:default_html_headers (Ok (Html.to_string h))
 
+let handle_health (self : t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "health" @/ return)
+    (fun _req -> H.Response.make_string @@ Ok "ok")
+
 (* summary for a file. Called in lazy-load typically. *)
 let handle_file_summary (self : t) : unit =
   H.add_route_handler self.server ~meth:`GET
@@ -1762,7 +1785,11 @@ module Cmd = struct
         else
           "0.0.0.0"
       in
-      let server = H.create ~max_connections:32 ~addr ?port () in
+      let server =
+        H.create
+          ~middlewares:[ `Stage 1, trace_middleware ]
+          ~max_connections:32 ~addr ?port ()
+      in
 
       let prometheus = Tiny_httpd_prometheus.(global) in
       Tiny_httpd_prometheus.instrument_server server prometheus;
@@ -1790,6 +1817,7 @@ module Cmd = struct
       (* maybe serve the API *)
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       handle_root self;
+      handle_health self;
       handle_list_benchs self;
       handle_file_summary self;
       handle_css server;
@@ -1955,8 +1983,16 @@ module Admin = struct
 end
 
 let () =
+  Opentelemetry.Globals.service_name := "benchpress";
+  Opentelemetry.Globals.service_namespace := Some "c-cube";
+  ()
+
+let () =
   CCFormat.set_color_default true;
-  if Sys.getenv_opt "PROFILE" = Some "1" then Profile.enable ();
+  let@ () = Opentelemetry_client_ocurl.with_setup () in
+  Ambient_context.set_current_storage Ambient_context_tls.storage;
+  Opentelemetry_trace.setup ();
+  Opentelemetry.Gc_metrics.setup ~min_interval_s:60 ();
   let serve_t, serve_i = Cmd.cmd in
   (* wrap serve result: (unit, Error.t) result -> unit *)
   let serve_t' =
@@ -1974,6 +2010,7 @@ let () =
       (Cmdliner.Cmd.info ~version:"dev" "benchpress-server")
       [ serve_cmd; Admin.user_cmd; Admin.api_key_cmd ]
   in
-  match Profile.with1 "cmdliner" Cmdliner.Cmd.eval group with
+  let@ _sp = Common.with_span ~__FILE__ ~__LINE__ "cmdliner.eval" in
+  match Cmdliner.Cmd.eval group with
   | 0 -> ()
   | n -> exit n

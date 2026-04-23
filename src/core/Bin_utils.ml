@@ -1,3 +1,4 @@
+open Common
 module T = Test
 module Db = Misc.Db
 module MStr = Misc.Str_map
@@ -198,6 +199,9 @@ let load_file_full (file : string) : string * Test_top_result.t =
     Error.failf "invalid name %S, expected a .sqlite file" file
 
 let with_file_as_db ~map_err filename file : _ =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "with-file-as-db" in
+  Trace.add_data_to_span _sp [ "filename", `String filename ];
+
   Error.guard map_err @@ fun () ->
   Error.guard (Error.wrapf "processing DB '%s'" filename) @@ fun () ->
   let filename = mk_file_full filename in

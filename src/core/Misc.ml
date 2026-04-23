@@ -147,6 +147,6 @@ let config_dir () = Xdg.config_dir () // !Xdg.name_of_project
 let default_config () = config_dir () // "conf.sexp"
 
 (** Get current time in seconds since epoch *)
-let now_s = Common.now_s
+let now_s () = Ptime_clock.now () |> Ptime.to_float_s
 
-let reset_line = Common.reset_line
+let reset_line = "\x1b[2K\r"

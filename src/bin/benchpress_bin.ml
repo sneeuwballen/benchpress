@@ -545,7 +545,7 @@ let parse_opt () =
 
 let () =
   CCFormat.set_color_default true;
-  if Sys.getenv_opt "PROFILE" = Some "1" then Profile.enable ();
+  let@ () = Trace_tef.with_setup () in
   match parse_opt () with
   | Error (`Parse | `Term | `Exn) -> exit 2
   | Ok (`Ok true | `Version | `Help) -> ()

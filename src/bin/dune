@@ -14,7 +14,9 @@
   logs
   logs.cli
   sqlite3_utils
-  base64)
+  base64
+  trace.core
+  trace-tef)
  (preprocess
   (pps ppx_subliner))
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress))

@@ -106,7 +106,7 @@ let job_live_status self ~uuid =
 let loop self =
   while true do
     let job = Moonpool.Blocking_queue.pop self.jobs in
-    Profile.with_ "task-queue.job" @@ fun () ->
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "task-queue.job" in
     job.j_started_time <- Unix.gettimeofday ();
     M.set self.cur (Some job);
     Log.info (fun k -> k "run job for task %s" job.j_task.Task.name);

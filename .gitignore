@@ -4,6 +4,7 @@ _opam
 _build
 *.native
 *.byte
+*.tmp
 .session
 TAGS
 *.docdir
@@ -15,3 +16,4 @@ qtest*
 *.exe
 *.install
 *.tmp
+.env*

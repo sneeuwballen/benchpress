@@ -1,0 +1,22 @@
+FROM ocaml/opam:debian-13-ocaml-5.4 AS build
+
+WORKDIR /home/opam/
+RUN sudo apt-get install gnuplot libsqlite3-dev gnuplot-x11 libcurl4-gnutls-dev libjemalloc-dev -y
+RUN cd /home/opam/opam-repository && git fetch && git checkout 4f056bfedf536e66065c3783e694e6aa0b38261a
+
+COPY dune-project Makefile *.opam .gitignore ./
+RUN opam install . --deps-only -y
+
+COPY ./vendor/ ./vendor/
+RUN opam install ./vendor/opentelemetry/opentelemetry.opam ./vendor/opentelemetry/opentelemetry-client.opam ./vendor/opentelemetry/opentelemetry-client-ocurl.opam --deps-only -y
+
+COPY ./data/ ./data/
+COPY ./src/ ./src/
+RUN opam exec -- dune build src/server/benchpress_server.exe
+
+
+FROM debian:trixie-slim AS runtime
+COPY --from=build /usr/lib64/* /usr/lib64/
+COPY --from=build /usr/lib/x86_64-linux-gnu/* /usr/lib/x86_64-linux-gnu/
+COPY --from=build /home/opam/_build/default/src/server/benchpress_server.exe benchpress_server
+ENTRYPOINT ./benchpress_server -p 8080

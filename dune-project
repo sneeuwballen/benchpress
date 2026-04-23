@@ -58,6 +58,8 @@
    (and
     (>= 0.4)
     (< 0.6)))
+  (trace (>= 0.12))
+  trace-tef
   (printbox
    (>= 0.6))
   (printbox-text
@@ -126,8 +128,8 @@
    (>= 2.0))
   (twirp_tiny_httpd
    (>= 0.2))
-  (ocaml-protoc
-   (>= 4.0))
+  (opentelemetry (>= 0.90))
+  (opentelemetry-client-ocurl (>= 0.90))
   (pbrt
    (>= 4.0))
   (pbrt_services
@@ -160,8 +162,6 @@
   dune
   (ocaml
    (>= 4.14))
-  (ocaml-protoc
-   (>= 4.0))
   (pbrt
    (>= 4.0))
   (pbrt_services

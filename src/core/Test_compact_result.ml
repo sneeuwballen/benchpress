@@ -11,7 +11,7 @@ type t = {
 (** A kind of lightweight result *)
 
 let of_db ?full db : t =
-  Profile.with_ "compact-res.of-db" @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "compact-res.of-db" in
   Error.guard (Error.wrap "reading compact results") @@ fun () ->
   Db.transact db (fun _ ->
       let cr_meta = Test_metadata.of_db db in

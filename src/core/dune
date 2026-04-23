@@ -26,6 +26,7 @@
   cmdliner
   pp_loc
   processor
+  trace.core
   yojson)
  (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 

@@ -27,7 +27,8 @@ depends: [
   "jemalloc" {>= "0.2" & < "0.3"}
   "mirage-crypto-rng" {>= "2.0"}
   "twirp_tiny_httpd" {>= "0.2"}
-  "ocaml-protoc" {>= "4.0"}
+  "opentelemetry" {>= "0.90"}
+  "opentelemetry-client-ocurl" {>= "0.90"}
   "pbrt" {>= "4.0"}
   "pbrt_services" {>= "4.0"}
   "pbrt_yojson" {>= "4.0"}

@@ -17,7 +17,7 @@ let run ~limits ~proof_file prover pb : _ Run_result.t =
        Fmt.Dump.(option string)
        proof_file)
   @@ fun () ->
-  Profile.with_ "run-prover" ~args:[ "prover", prover.Prover.name ] @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-prover" in
   let timeout =
     CCOpt.get_or ~default:Limit.Time.(mk ~s:30 ()) limits.Limit.All.time
   in
@@ -40,7 +40,7 @@ let run_proof_check ~limits prover checker pb ~proof_file : check_res =
        "run checker '%s' on proof file '%s' (problem '%s', prover '%s')"
        checker.Proof_checker.name proof_file pb.Problem.name prover.Prover.name)
   @@ fun () ->
-  Profile.with_ "run-checker" ~args:[ "checker", checker.name ] @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-checker" in
   let raw =
     Proof_checker.run ~limits ~problem:pb.Problem.name ~proof_file checker
   in
