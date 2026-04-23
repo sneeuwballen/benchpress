@@ -16,3 +16,4 @@ qtest*
 *.exe
 *.install
 *.tmp
+.env*
