@@ -1,9 +1,3 @@
 [submodule "vendor/trace"]
 	path = vendor/trace
 	url = https://github.com/ocaml-tracing/ocaml-trace.git
-[submodule "vendor/ambient-context"]
-	path = vendor/ambient-context
-	url = https://github.com/ocaml-tracing/ambient-context
-[submodule "vendor/opentelemetry"]
-	path = vendor/opentelemetry
-	url = https://github.com/ocaml-tracing/ocaml-opentelemetry
