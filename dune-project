@@ -42,7 +42,6 @@
   logs
   uuidm
   base64
-  ISO8601
   ptime
   processor
   (pp_loc

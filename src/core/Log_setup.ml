@@ -34,8 +34,9 @@ module Log_report = struct
     CCFormat.set_color_default true;
     let buf_out, buf_flush = buf_fmt () in
     let pp_header fmt header =
-      let now = Ptime_clock.now () |> Ptime.to_float_s in
-      CCFormat.fprintf fmt "@[<2>[%a|t%d] %a@ " ISO8601.Permissive.pp_datetime
+      let now = Ptime_clock.now () in
+      CCFormat.fprintf fmt "@[<2>[%a|t%d] %a@ "
+        (Ptime.pp_rfc3339 ~frac_s:3 ())
         now
         Thread.(id @@ self ())
         pp_h header
