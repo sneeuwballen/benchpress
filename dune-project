@@ -58,6 +58,8 @@
    (and
     (>= 0.4)
     (< 0.6)))
+  (trace (>= 0.12))
+  trace-tef
   (printbox
    (>= 0.6))
   (printbox-text
