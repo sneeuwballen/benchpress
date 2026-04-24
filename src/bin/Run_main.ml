@@ -81,6 +81,7 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   Log.info (fun k ->
       k "run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
+  Log.debug (fun k -> k "definitions: %a" Definitions.pp defs);
   let timestamp = Unix.gettimeofday () in
   let notify = Notify.make defs in
   (* parse list of files, if need be *)
