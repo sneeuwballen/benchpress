@@ -28,6 +28,7 @@ jobs:
           apt-get install -y --no-install-recommends \
             libsqlite3-dev gnuplot-nox /tmp/hurl.deb
       - run: opam pin .#HEAD -y -n
+      - run: opam pin https://github.com/c-cube/linol.git -y -n
       - run: opam install -t . --deps-only
       - run: opam exec -- dune build @all --ignore-promoted-rules
       - run: opam exec -- dune runtest -p benchpress
