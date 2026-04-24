@@ -82,7 +82,7 @@
  (synopsis "Server and web UI for benchpress")
  (depends
   (ocaml
-   (>= 4.12))
+   (>= 5.1))
   dune
   base-unix
   (containers
@@ -134,7 +134,7 @@
  (synopsis "A benchpress helper worker")
  (depends
   (ocaml
-   (>= 4.12))
+   (>= 5.1))
   dune
   (containers
    (and
@@ -151,7 +151,7 @@
  (depends
   dune
   (ocaml
-   (>= 4.14))
+   (>= 5.1))
   (pbrt
    (>= 4.0))
   (pbrt_services
@@ -166,7 +166,7 @@
  (depends
   dune
   (ocaml
-   (>= 4.14))
+   (>= 5.1))
   (cmdliner
    (>= 1.1.0))
   curly

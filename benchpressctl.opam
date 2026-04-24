@@ -9,7 +9,7 @@ homepage: "https://github.com/sneeuwballen/benchpress"
 bug-reports: "https://github.com/sneeuwballen/benchpress/issues"
 depends: [
   "dune" {>= "3.2"}
-  "ocaml" {>= "4.14"}
+  "ocaml" {>= "5.1"}
   "cmdliner" {>= "1.1.0"}
   "curly"
   "twirp_core" {>= "0.2"}
