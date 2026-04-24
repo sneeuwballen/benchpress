@@ -35,15 +35,23 @@ let run cmd : Run_proc_result.t =
 
   let env = child_env () in
 
-  (* Capture stdout and stderr via pipes, run concurrently with Eio fibers *)
+  (* Capture stdout and stderr via pipes.
+
+     We race two alternatives with Eio.Fiber.any:
+       1. Both drain fibers complete naturally (pipe write-ends closed on child exit).
+       2. A watcher fiber observes the direct child exiting and cancels the drains.
+
+     The watcher yields once before awaiting the child so the drain fibers get
+     scheduled first and can drain whatever is already in the pipe buffer.  This
+     ensures we get full output in the common case (no background grandchildren)
+     while also not hanging when grandchildren keep the write-ends open. *)
   let stdout, stderr, errcode =
     try
       Eio.Switch.run @@ fun sw ->
       let stdin_r, stdin_w = Eio_unix.pipe sw in
       let stdout_r, stdout_w = Eio_unix.pipe sw in
       let stderr_r, stderr_w = Eio_unix.pipe sw in
-      (* Close stdin write-end immediately so child sees EOF on stdin,
-         matching the old Unix.open_process_full + close_out ic behaviour. *)
+      (* Close stdin write-end immediately so child sees EOF on stdin. *)
       Eio.Resource.close stdin_w;
       let child =
         Eio.Process.spawn ~sw proc_mgr ~env
@@ -52,21 +60,30 @@ let run cmd : Run_proc_result.t =
           ~stderr:(stderr_w :> Eio.Flow.sink_ty Eio.Resource.t)
           [ "/bin/sh"; "-c"; cmd ]
       in
-      (* Close write-ends in parent so reads terminate when child exits *)
       Eio.Resource.close stdin_r;
       Eio.Resource.close stdout_w;
       Eio.Resource.close stderr_w;
-      (* Read both streams concurrently *)
-      let out = ref "" and err = ref "" in
-      Eio.Fiber.both
-        (fun () -> out := Eio.Flow.read_all stdout_r)
-        (fun () -> err := Eio.Flow.read_all stderr_r);
+      let buf_out = Buffer.create 256 and buf_err = Buffer.create 64 in
+      Eio.Fiber.any
+        [
+          (fun () ->
+            Eio.Fiber.both
+              (fun () ->
+                Eio.Flow.copy stdout_r (Eio.Flow.buffer_sink buf_out))
+              (fun () ->
+                Eio.Flow.copy stderr_r (Eio.Flow.buffer_sink buf_err)));
+          (fun () ->
+            (* Yield first so drain fibers are scheduled and can drain buffered
+               data before we decide to cancel them. *)
+            Eio.Fiber.yield ();
+            ignore (Eio.Process.await child));
+        ];
       let status = Eio.Process.await child in
       let errcode =
         match status with
         | `Exited n | `Signaled n -> n
       in
-      !out, !err, errcode
+      Buffer.contents buf_out, Buffer.contents buf_err, errcode
     with e -> "", "process died: " ^ Printexc.to_string e, 1
   in
 
