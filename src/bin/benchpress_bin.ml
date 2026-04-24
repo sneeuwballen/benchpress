@@ -78,7 +78,7 @@ module Run = struct
         (** select provers *)
     csv: string option;  (** CSV output file *)
     summary: string option;  (** write summary in FILE *)
-    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    color: bool;  (** enable colored output *)
     output: string option; [@names [ "o"; "output" ]]
         (** output database file *)
     save: bool; [@default true]  (** save results on disk *)
@@ -98,7 +98,7 @@ module Run = struct
   let run (p : params) cpus (log_lvl, defs) =
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
-    if p.no_color then CCFormat.set_color_default false;
+    if p.color then CCFormat.set_color_default true;
     let dyn =
       if p.progress then
         Some true
@@ -144,7 +144,7 @@ module Slurm = struct
         (** select provers *)
     csv: string option;  (** CSV output file *)
     summary: string option;  (** write summary in FILE *)
-    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    color: bool;  (** enable colored output *)
     output: string option; [@names [ "o"; "output" ]]
         (** output database file *)
     save: bool; [@default true]  (** save results on disk *)
@@ -176,7 +176,7 @@ module Slurm = struct
   let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
-    if p.no_color then CCFormat.set_color_default false;
+    if p.color then CCFormat.set_color_default true;
     let dyn =
       if p.progress then
         Some true
@@ -243,7 +243,7 @@ module Show = struct
     jsonl_file: string option;  (** JSONL output file *)
     file: string option; [@pos 0] [@docv "FILE"]
         (** file to read (default: latest) *)
-    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    color: bool;  (** enable colored output *)
     check: bool;  (** check results *)
     bad: bool;  (** list bad results *)
     summary: string option;  (** write summary in FILE *)
@@ -254,7 +254,7 @@ module Show = struct
   let run (p : params) debug =
     catch_err @@ fun () ->
     Misc.setup_logs debug;
-    if p.no_color then CCFormat.set_color_default false;
+    if p.color then CCFormat.set_color_default true;
     let file =
       match p.file with
       | Some f -> f
@@ -517,7 +517,6 @@ let parse_opt () =
   Cmd.eval_value (Cmd.group info ~default cmds)
 
 let () =
-  CCFormat.set_color_default true;
   let@ () = Trace_tef.with_setup () in
   Eio_posix.run @@ fun _env ->
   Trace_eio.setup ();

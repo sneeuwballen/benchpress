@@ -1991,7 +1991,6 @@ let () =
   ()
 
 let () =
-  CCFormat.set_color_default true;
   let@ () = Opentelemetry_client_ocurl.with_setup () in
   Opentelemetry_trace.setup ();
   Opentelemetry.Gc_metrics.setup ~min_interval_s:60 ();
