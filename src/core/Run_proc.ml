@@ -39,15 +39,21 @@ let run cmd : Run_proc_result.t =
   let stdout, stderr, errcode =
     try
       Eio.Switch.run @@ fun sw ->
+      let stdin_r, stdin_w = Eio_unix.pipe sw in
       let stdout_r, stdout_w = Eio_unix.pipe sw in
       let stderr_r, stderr_w = Eio_unix.pipe sw in
+      (* Close stdin write-end immediately so child sees EOF on stdin,
+         matching the old Unix.open_process_full + close_out ic behaviour. *)
+      Eio.Resource.close stdin_w;
       let child =
         Eio.Process.spawn ~sw proc_mgr ~env
+          ~stdin:(stdin_r :> Eio.Flow.source_ty Eio.Resource.t)
           ~stdout:(stdout_w :> Eio.Flow.sink_ty Eio.Resource.t)
           ~stderr:(stderr_w :> Eio.Flow.sink_ty Eio.Resource.t)
           [ "/bin/sh"; "-c"; cmd ]
       in
-      (* Close write-ends in parent so reads terminate at child exit *)
+      (* Close write-ends in parent so reads terminate when child exits *)
+      Eio.Resource.close stdin_r;
       Eio.Resource.close stdout_w;
       Eio.Resource.close stderr_w;
       (* Read both streams concurrently *)
