@@ -2,37 +2,101 @@
 
 (** Logging setup *)
 
-module Log_report = struct
-  let buf_fmt () =
-    let b = Buffer.create 512 in
-    let fmt = CCFormat.formatter_of_buffer b in
-    CCFormat.set_color_tag_handling fmt;
-    let flush () =
-      CCFormat.fprintf fmt "@]@?";
-      let m = Buffer.contents b in
-      Buffer.reset b;
-      m
-    in
-    fmt, flush
+module Logfmt = struct
+  let escape_value s =
+    if
+      CCString.exists
+        (fun c ->
+          Char.code c < 0x2f
+          || Char.code c >= 127
+          || c = ' ' || c = '\\' || c = '"')
+        s
+    then
+      Printf.sprintf "%S" s
+    else
+      s
 
-  let pp_h out (src, lvl, _) =
-    let src = Logs.Src.name src in
-    let src =
-      if src = "application" then
-        ""
-      else
-        src
-    in
-    match lvl with
-    | Logs.Debug -> CCFormat.fprintf out "[@{<black>debug@}:%s]" src
-    | Logs.Info -> CCFormat.fprintf out "[@{<cyan>info@}:%s]" src
-    | Logs.Error -> CCFormat.fprintf out "[@{<Red>error@}:%s]" src
-    | Logs.Warning -> CCFormat.fprintf out "[@{<yellow>warning@}:%s]" src
-    | Logs.App -> CCFormat.fprintf out "[@{<blue>app@}:%s]" src
+  let add_kv_to_buffer buf k v =
+    Buffer.add_string buf k;
+    Buffer.add_char buf '=';
+    Buffer.add_string buf (escape_value v)
+
+  let to_buffer buf l =
+    List.iteri
+      (fun i (k, v) ->
+        if i > 0 then Buffer.add_char buf ' ';
+        add_kv_to_buffer buf k v)
+      l
+end
+
+module Log_report = struct
+  type output = { oc: out_channel; must_close: bool }
+
+  let get_output () : output =
+    match Sys.getenv_opt "LOGFILE" with
+    | Some file ->
+      let oc = open_out file in
+      { oc; must_close = true }
+    | None -> { oc = stderr; must_close = false }
 
   let reporter () =
-    CCFormat.set_color_default true;
-    let buf_out, buf_flush = buf_fmt () in
+    let out = get_output () in
+    if out.must_close then
+      at_exit (fun () ->
+          flush out.oc;
+          close_out_noerr out.oc);
+
+    let buf = Buffer.create 32 in
+    let buf_fmt = Format.formatter_of_buffer buf in
+    let buf_lock = Mutex.create () in
+
+    let write_str s =
+      Global_lock.synchronized (fun () ->
+          output_string out.oc s;
+          flush out.oc)
+    in
+
+    let report src level ~over k msgf =
+      let k fmt =
+        Format.pp_print_flush fmt ();
+        (* the log message *)
+        let msg = Buffer.contents buf in
+        Buffer.clear buf;
+
+        (* key values common to all lines *)
+        let common =
+          [
+            "time", Ptime.to_rfc3339 ~space:false (Ptime_clock.now ());
+            "level", Logs.level_to_string (Some level);
+            "src", Logs.Src.name src;
+          ]
+        in
+
+        (* emit one log line per line in the message *)
+        let lines = String.split_on_char '\n' msg in
+        List.iter
+          (fun line ->
+            Buffer.clear buf;
+            Logfmt.to_buffer buf (common @ [ "msg", line ]);
+            Buffer.add_char buf '\n')
+          lines;
+
+        (* get content, we can then unlock buffer *)
+        let log_data = Buffer.contents buf in
+        Buffer.clear buf;
+        Mutex.unlock buf_lock;
+
+        write_str log_data;
+        over ();
+        k ()
+      in
+
+      Mutex.lock buf_lock;
+      msgf (fun ?header:_ ?tags:_ fmt -> CCFormat.kfprintf k buf_fmt fmt)
+    in
+    { Logs.report }
+
+  (*
     let pp_header fmt header =
       let now = Ptime_clock.now () in
       CCFormat.fprintf fmt "@[<2>[%a|t%d] %a@ "
@@ -75,6 +139,7 @@ module Log_report = struct
             pp_header (src, level, header))
     in
     { Logs.report }
+    *)
 end
 
 (** Setup the logging infra *)

@@ -35,7 +35,7 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
     Arg.(
       value & opt bool false
       & info [ "d"; "default" ] ~doc:"combine with the default config file(s)")
-  and debug = Logs_cli.level () in
+  and debug = Logs_cli.level ~env:(Cmd.Env.info "LOG" ~doc:"log level") () in
   Term.(ret (const aux $ args $ with_default $ debug))
 
 let get_definitions () : Definitions.t =
