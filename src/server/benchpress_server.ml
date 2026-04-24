@@ -1996,6 +1996,8 @@ let () =
   Opentelemetry.Gc_metrics.setup ~min_interval_s:60 ();
   Eio_posix.run @@ fun stdenv ->
   Trace_eio.setup ();
+  let proc_mgr = Eio.Stdenv.process_mgr stdenv in
+  Run_proc.with_proc_mgr proc_mgr @@ fun () ->
   let serve_t, serve_i = Cmd.cmd ~stdenv in
   (* wrap serve result: (unit, Error.t) result -> unit *)
   let serve_t' =

@@ -518,8 +518,10 @@ let parse_opt () =
 
 let () =
   let@ () = Trace_tef.with_setup () in
-  Eio_posix.run @@ fun _env ->
+  Eio_posix.run @@ fun env ->
   Trace_eio.setup ();
+  let proc_mgr = Eio.Stdenv.process_mgr env in
+  Run_proc.with_proc_mgr proc_mgr @@ fun () ->
   match parse_opt () with
   | Error (`Parse | `Term | `Exn) -> exit 2
   | Ok (`Ok true | `Version | `Help) -> ()

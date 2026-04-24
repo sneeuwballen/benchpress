@@ -52,6 +52,9 @@ let parse_cmdline =
       $ memory)
 
 let () =
+  Eio_posix.run @@ fun env ->
+  let proc_mgr = Eio.Stdenv.process_mgr env in
+  Run_proc.with_proc_mgr proc_mgr @@ fun () ->
   match Cmdliner.Cmd.eval_value parse_cmdline with
   | Error (`Parse | `Term | `Exn) -> exit 2
   | Ok (`Ok true | `Version | `Help) -> ()
