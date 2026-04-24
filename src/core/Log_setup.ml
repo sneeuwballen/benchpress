@@ -2,6 +2,10 @@
 
 (** Logging setup *)
 
+open struct
+  let ( let@ ) = ( @@ )
+end
+
 module Logfmt = struct
   let escape_value s =
     if
@@ -39,16 +43,33 @@ module Log_report = struct
       { oc; must_close = true }
     | None -> { oc = stderr; must_close = false }
 
+  let buf_fmt () =
+    let b = Buffer.create 512 in
+    let out = CCFormat.formatter_of_buffer b in
+    let flush () =
+      Format.pp_print_flush out ();
+      let m = Buffer.contents b in
+      Buffer.reset b;
+      m
+    in
+    out, b, flush
+
   let reporter () =
     let out = get_output () in
     if out.must_close then
       at_exit (fun () ->
-          flush out.oc;
-          close_out_noerr out.oc);
+          Global_lock.synchronized (fun () ->
+              flush out.oc;
+              close_out_noerr out.oc));
 
-    let buf = Buffer.create 32 in
-    let buf_fmt = Format.formatter_of_buffer buf in
-    let buf_lock = Mutex.create () in
+    let buf_pool =
+      Apool.create ~clear:Buffer.reset ~mk_item:(fun () -> Buffer.create 32) ()
+    in
+    let buf_fmt_pool =
+      Apool.create
+        ~clear:(fun (_, b, _) -> Buffer.reset b)
+        ~mk_item:buf_fmt ~max_size:16 ()
+    in
 
     let write_str s =
       Global_lock.synchronized (fun () ->
@@ -57,89 +78,46 @@ module Log_report = struct
     in
 
     let report src level ~over k msgf =
-      let k fmt =
-        Format.pp_print_flush fmt ();
+      let k flush _fmt =
         (* the log message *)
-        let msg = Buffer.contents buf in
-        Buffer.clear buf;
+        let msg = flush () in
 
         (* key values common to all lines *)
         let common =
           [
-            "time", Ptime.to_rfc3339 ~space:false (Ptime_clock.now ());
+            "time", Ptime.to_rfc3339 ~frac_s:3 ~space:false (Ptime_clock.now ());
             "level", Logs.level_to_string (Some level);
             "src", Logs.Src.name src;
           ]
         in
 
         (* emit one log line per line in the message *)
-        let lines = String.split_on_char '\n' msg in
-        List.iter
-          (fun line ->
-            Buffer.clear buf;
-            Logfmt.to_buffer buf (common @ [ "msg", line ]);
-            Buffer.add_char buf '\n')
-          lines;
+        let log_data =
+          let@ buf = Apool.with_resource buf_pool in
+          let lines = String.split_on_char '\n' msg in
+          List.iter
+            (fun line ->
+              let line = String.trim line in
+              if line <> "" then (
+                Logfmt.to_buffer buf (common @ [ "msg", line ]);
+                Buffer.add_char buf '\n'
+              ))
+            lines;
 
-        (* get content, we can then unlock buffer *)
-        let log_data = Buffer.contents buf in
-        Buffer.clear buf;
-        Mutex.unlock buf_lock;
+          (* get content, we can then unlock buffer *)
+          Buffer.contents buf
+        in
 
         write_str log_data;
         over ();
         k ()
       in
 
-      Mutex.lock buf_lock;
-      msgf (fun ?header:_ ?tags:_ fmt -> CCFormat.kfprintf k buf_fmt fmt)
+      msgf (fun ?header:_ ?tags:_ fmt ->
+          let@ buf_fmt, _, flush = Apool.with_resource buf_fmt_pool in
+          CCFormat.kfprintf (k flush) buf_fmt fmt)
     in
     { Logs.report }
-
-  (*
-    let pp_header fmt header =
-      let now = Ptime_clock.now () in
-      CCFormat.fprintf fmt "@[<2>[%a|t%d] %a@ "
-        (Ptime.pp_rfc3339 ~frac_s:3 ())
-        now
-        Thread.(id @@ self ())
-        pp_h header
-    in
-    let log_out =
-      match Sys.getenv "LOGS_FILE" with
-      | "" -> stderr
-      | file ->
-        (try
-           let oc = open_out file in
-           at_exit (fun () -> close_out_noerr oc);
-           oc
-         with e ->
-           Printf.eprintf "error: cannot open log file '%s': %s\n%!" file
-             (Printexc.to_string e);
-           stderr)
-      | exception Not_found -> stderr
-    in
-    let log_mutex = Mutex.create () in
-    let report src level ~over k msgf =
-      let k _ =
-        let reset_line = "\x1b[2K\r" in
-        let write_str s =
-          Mutex.lock log_mutex;
-          (try Printf.fprintf log_out "%s%s%!" reset_line s with _ -> ());
-          Mutex.unlock log_mutex
-        in
-        let msg = buf_flush () in
-        write_str msg;
-        over ();
-        k ()
-      in
-      msgf (fun ?header ?tags:_ fmt ->
-          CCFormat.kfprintf k buf_out
-            ("%a@[" ^^ fmt ^^ "@]@.")
-            pp_header (src, level, header))
-    in
-    { Logs.report }
-    *)
 end
 
 (** Setup the logging infra *)

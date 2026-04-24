@@ -757,6 +757,8 @@ end = struct
 
         if Run_prover_problem.is_bad res then incr n_fail;
 
+        Log.debug (fun k ->
+            k "%a" (Run_prover_problem.pp_result ~w_prover ~w_pb) res);
         if pp_results then
           Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
         pp_common_ ()
@@ -773,6 +775,7 @@ end = struct
 
       method on_done =
         pp_common_ ();
+        Log.info (fun k -> k "done");
         match cb_progress with
         | None -> ()
         | Some cb -> cb#on_done
