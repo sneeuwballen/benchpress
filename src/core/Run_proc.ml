@@ -7,17 +7,33 @@ let k_proc_mgr : Eio_unix.Process.mgr_ty Eio.Resource.t Eio.Fiber.key =
 
 let with_proc_mgr mgr f = Eio.Fiber.with_binding k_proc_mgr mgr f
 
+(** Vars to strip from child env to avoid inheriting benchpress's tracing/logging setup. *)
+let strip_from_child_env = [| "TRACE"; "LOG" |]
+
+(** Build child environment: current env minus [strip_from_child_env]. *)
+let child_env () : string array =
+  Unix.environment ()
+  |> Array.to_seq
+  |> Seq.filter (fun entry ->
+         not
+           (Array.exists
+              (fun key ->
+                let pfx = key ^ "=" in
+                String.length entry >= String.length pfx
+                && String.sub entry 0 (String.length pfx) = pfx)
+              strip_from_child_env))
+  |> Array.of_seq
+
 let run cmd : Run_proc_result.t =
   let start = Ptime_clock.now () in
-
-  Unix.putenv "TRACE" "";
-  Unix.putenv "LOG" "";
 
   let proc_mgr =
     match Eio.Fiber.get k_proc_mgr with
     | Some m -> m
     | None -> Error.fail "Run_proc.run: no process manager in fiber context"
   in
+
+  let env = child_env () in
 
   (* Capture stdout and stderr via pipes, run concurrently with Eio fibers *)
   let stdout, stderr, errcode =
@@ -26,7 +42,7 @@ let run cmd : Run_proc_result.t =
       let stdout_r, stdout_w = Eio_unix.pipe sw in
       let stderr_r, stderr_w = Eio_unix.pipe sw in
       let child =
-        Eio.Process.spawn ~sw proc_mgr
+        Eio.Process.spawn ~sw proc_mgr ~env
           ~stdout:(stdout_w :> Eio.Flow.sink_ty Eio.Resource.t)
           ~stderr:(stderr_w :> Eio.Flow.sink_ty Eio.Resource.t)
           [ "/bin/sh"; "-c"; cmd ]
