@@ -84,8 +84,10 @@ let pp_result ~w_prover ~w_pb out (res : Test.result) : unit =
   ()
 
 let pp_result_progress ~w_prover ~w_pb r : unit =
-  Misc.synchronized_sync (fun () ->
-      Format.printf "%s%a" Misc.reset_line (pp_result ~w_prover ~w_pb) r);
+  let msg =
+    Format.asprintf "%s%a" Misc.reset_line (pp_result ~w_prover ~w_pb) r
+  in
+  Misc.synchronized_sync (fun () -> Printf.printf "%s%!" msg);
   ()
 
 let pp_check_result ~w_prover ~w_pb out (res : check_res) : unit =
@@ -114,6 +116,8 @@ let pp_check_result ~w_prover ~w_pb out (res : check_res) : unit =
   ()
 
 let pp_check_result_progress ~w_prover ~w_pb r : unit =
-  Misc.synchronized_sync (fun () ->
-      Format.printf "%s%a" Misc.reset_line (pp_check_result ~w_prover ~w_pb) r);
+  let msg =
+    Format.asprintf "%s%a" Misc.reset_line (pp_check_result ~w_prover ~w_pb) r
+  in
+  Misc.synchronized_sync (fun () -> Printf.printf "%s%!" msg);
   ()

@@ -124,9 +124,8 @@ end = struct
              if interrupted () then failwith "interrupted";
              if dyn then
                Misc.synchronized_sync (fun () ->
-                   output_string stdout Misc.reset_line;
-                   Printf.printf "[%6d/%6d] find expect for `%s`…%!" !n_done
-                     n_files
+                   Printf.printf "%s[%6d/%6d] find expect for `%s`…%!"
+                     Misc.reset_line !n_done n_files
                      (Misc.truncate_left 30 path));
              let res =
                Problem.make_find_expect path ~expect:s.Subdir.inside.expect
