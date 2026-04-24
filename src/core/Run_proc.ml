@@ -5,6 +5,10 @@ let int_of_process_status = function
 
 let run cmd : Run_proc_result.t =
   let start = Ptime_clock.now () in
+
+  Unix.putenv "TRACE" "";
+  Unix.putenv "LOG" "";
+
   (* call process and block *)
   let p =
     try
