@@ -123,7 +123,7 @@ end = struct
       |> Misc.Par_map.map_p ~j:3 (fun path ->
              if interrupted () then failwith "interrupted";
              if dyn then
-               Misc.synchronized (fun () ->
+               Misc.synchronized_sync (fun () ->
                    output_string stdout Misc.reset_line;
                    Printf.printf "[%6d/%6d] find expect for `%s`…%!" !n_done
                      n_files
@@ -727,12 +727,13 @@ end = struct
         else
           spf " !%d" !n_fail
       in
-      Misc.synchronized (fun () ->
-          Format.printf "... %5d/%d%s | %3.1f%% [%6s: %s] [eta %6s]@?" !count
+      Misc.synchronized_sync (fun () ->
+          Format.printf "... %6d/%d%s | %3.1f%% [%6s: %s] [eta %6s]@?" !count
             !len fail_indicator percent
             (Misc.human_duration time_elapsed)
             bar (Misc.human_duration eta));
-      if !count = !len then Misc.synchronized (fun () -> Format.printf "@.")
+      if !count = !len then
+        Misc.synchronized_sync (fun () -> Format.printf "@.")
     in
     pp_bar, get_state, bump, tick
 

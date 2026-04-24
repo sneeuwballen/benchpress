@@ -299,7 +299,7 @@ module Sample = struct
     in
     let sample = CCList.map (Array.get files) sample_idx in
     (* print sample *)
-    Misc.synchronized (fun () -> List.iter (Printf.printf "%s\n%!") sample);
+    Misc.synchronized_sync (fun () -> List.iter (Printf.printf "%s\n%!") sample);
     ()
 
   type params = {

@@ -52,27 +52,29 @@ module Log_report = struct
       Buffer.reset b;
       m
     in
-    out, b, flush
+    out, flush
 
   let reporter () =
     let out = get_output () in
     if out.must_close then
       at_exit (fun () ->
-          Global_lock.synchronized (fun () ->
+          Global_lock.synchronized_sync (fun () ->
               flush out.oc;
               close_out_noerr out.oc));
 
     let buf_pool =
-      Apool.create ~clear:Buffer.reset ~mk_item:(fun () -> Buffer.create 32) ()
+      Apool.create ~clear:Buffer.reset ~max_size:16
+        ~mk_item:(fun () -> Buffer.create 32)
+        ()
     in
     let buf_fmt_pool =
       Apool.create
-        ~clear:(fun (_, b, _) -> Buffer.reset b)
+        ~clear:(fun (_, flush) -> ignore (flush () : string))
         ~mk_item:buf_fmt ~max_size:16 ()
     in
 
     let write_str s =
-      Global_lock.synchronized (fun () ->
+      Global_lock.synchronized_sync (fun () ->
           output_string out.oc s;
           flush out.oc)
     in
@@ -104,7 +106,6 @@ module Log_report = struct
               ))
             lines;
 
-          (* get content, we can then unlock buffer *)
           Buffer.contents buf
         in
 
@@ -114,7 +115,7 @@ module Log_report = struct
       in
 
       msgf (fun ?header:_ ?tags:_ fmt ->
-          let@ buf_fmt, _, flush = Apool.with_resource buf_fmt_pool in
+          let@ buf_fmt, flush = Apool.with_resource buf_fmt_pool in
           CCFormat.kfprintf (k flush) buf_fmt fmt)
     in
     { Logs.report }
