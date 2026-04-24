@@ -2,6 +2,7 @@
 
 (** Parallel execution utilities *)
 
+open Common
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.par_map"))
 
 let die_on_sigterm : unit -> unit =
@@ -17,34 +18,30 @@ let die_on_sigterm : unit -> unit =
   in
   fun () -> Lazy.force thunk
 
-(** Map on the list with at most [j] parallel threads *)
+(** Map on the list with at most [j] parallel fibers *)
 let map_p ~j f l =
   if j < 1 then invalid_arg "map_p: ~j";
   die_on_sigterm ();
   match l with
   | [] -> []
+  | _ when j = 1 -> List.map f l
   | _ ->
-    Log.debug (fun k -> k "par-map: create pool j=%d" j);
-    let pool = Moonpool.Fifo_pool.create ~num_threads:j () in
-    let res =
-      try
-        let futs =
-          List.map (fun x -> Moonpool.Fut.spawn ~on:pool (fun () -> f x)) l
-        in
-        let results = List.map Moonpool.Fut.wait_block futs in
-        List.map
-          (function
-            | Ok x -> x
-            | Error (exn, bt) -> Printexc.raise_with_backtrace exn bt)
-          results
-      with e ->
-        Log.debug (fun k -> k "par-map: shutdown pool (exception)");
-        Moonpool.Fifo_pool.shutdown pool;
-        raise e
-    in
-    Log.debug (fun k -> k "par-map: shutdown pool");
-    Moonpool.Fifo_pool.shutdown pool;
-    res
+    Log.debug (fun k -> k "par-map: start j=%d n=%d" j (List.length l));
+    let n = List.length l in
+    let results = Array.make n None in
+    let sem = Eio.Semaphore.make j in
+    Eio.Switch.run (fun sw ->
+        List.iteri
+          (fun i x ->
+            Eio.Fiber.fork ~sw (fun () ->
+                Eio.Semaphore.acquire sem;
+                let@ () =
+                  Fun.protect ~finally:(fun () -> Eio.Semaphore.release sem)
+                in
+                results.(i) <- Some (f x)))
+          l);
+    Log.debug (fun k -> k "par-map: done");
+    Array.to_list results |> List.map (fun x -> Option.get x)
 
 (** Map on the list [l] with each call to [f] being associated one of the
     resources from [resources] that is guaranteed not to be used concurrently by
@@ -56,44 +53,24 @@ let map_with_resource ~resources f l =
     if CCList.is_empty resources then
       invalid_arg "map_with_resource: ~resources";
     die_on_sigterm ();
-    let jobs = List.length resources in
-    let queue = Moonpool.Blocking_queue.create () in
-    List.iter (Moonpool.Blocking_queue.push queue) resources;
-    let f_with_resource x =
-      let resource = Moonpool.Blocking_queue.pop queue in
-      Fun.protect
-        ~finally:(fun () -> Moonpool.Blocking_queue.push queue resource)
-        (fun () -> f resource x)
+    let n = List.length l in
+    let results = Array.make n None in
+    let queue = Eio.Stream.create (List.length resources) in
+    List.iter (Eio.Stream.add queue) resources;
+    let f_with_resource i x =
+      let resource = Eio.Stream.take queue in
+      let@ () =
+        Fun.protect ~finally:(fun () -> Eio.Stream.add queue resource)
+      in
+      results.(i) <- Some (f resource x)
     in
-    Log.debug (fun m -> m "par-map: create pool j=%d" jobs);
-    let pool = Moonpool.Fifo_pool.create ~num_threads:jobs () in
-    let res =
-      try
-        let futs =
-          List.map
-            (fun x -> Moonpool.Fut.spawn ~on:pool (fun () -> f_with_resource x))
-            l
-        in
-        let results = List.map Moonpool.Fut.wait_block futs in
-        Moonpool.Blocking_queue.close queue;
-        List.map
-          (function
-            | Ok x -> x
-            | Error (exn, bt) -> Printexc.raise_with_backtrace exn bt)
-          results
-      with e ->
-        Log.debug (fun m -> m "par-map: shutdown pool (exception)");
-        Moonpool.Blocking_queue.close queue;
-        Moonpool.Fifo_pool.shutdown pool;
-        raise e
-    in
-    Log.debug (fun m -> m "par-map: shutdown pool");
-    Moonpool.Fifo_pool.shutdown pool;
-    res
-
-let synchronized f =
-  let lock = Moonpool.Lock.create () in
-  Moonpool.Lock.with_ lock f
+    Log.debug (fun m -> m "par-map: start n=%d" n);
+    Eio.Switch.run (fun sw ->
+        List.iteri
+          (fun i x -> Eio.Fiber.fork ~sw (fun () -> f_with_resource i x))
+          l);
+    Log.debug (fun m -> m "par-map: done");
+    Array.to_list results |> List.map (fun x -> Option.get x)
 
 let with_affinity cpu f =
   let aff = Processor.Affinity.get_ids () in

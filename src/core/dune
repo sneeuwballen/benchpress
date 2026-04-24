@@ -8,7 +8,8 @@
  (libraries
   containers
   containers.unix
-  moonpool
+  eio
+  eio.unix
   re
   re.perl
   csv

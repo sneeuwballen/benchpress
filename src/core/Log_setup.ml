@@ -55,12 +55,14 @@ module Log_report = struct
            stderr)
       | exception Not_found -> stderr
     in
+    let log_mutex = Mutex.create () in
     let report src level ~over k msgf =
       let k _ =
         let reset_line = "\x1b[2K\r" in
         let write_str s =
-          Moonpool.Lock.with_ (Moonpool.Lock.create ()) @@ fun () ->
-          Printf.fprintf log_out "%s%s%!" reset_line s
+          Mutex.lock log_mutex;
+          (try Printf.fprintf log_out "%s%s%!" reset_line s with _ -> ());
+          Mutex.unlock log_mutex
         in
         let msg = buf_flush () in
         write_str msg;

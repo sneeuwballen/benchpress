@@ -12,7 +12,7 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
       (Error.wrapf "run prover action@ `@[%a@]`" Action.pp_run_provers r)
   in
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-prover" in
-  let interrupted = Moonpool.Lock.create false in
+  let interrupted = Atomic.make false in
   let r =
     Exec_action.Exec_run_provers.expand ?dyn ?j ?cpus ?proof_dir ?limits defs
       r.limits r.j r.pattern r.dirs r.provers
@@ -25,7 +25,7 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
   let result =
     Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
     Exec_action.Exec_run_provers.run ~uuid ?timestamp
-      ~interrupted:(fun () -> Moonpool.Lock.get interrupted)
+      ~interrupted:(fun () -> Atomic.get interrupted)
       ~on_solve:progress#on_res ~save ~wal_mode
       ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
       ~on_proof_check:progress#on_proof_check_res
@@ -44,7 +44,7 @@ let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
          Action.pp_run_provers_slurm r)
   in
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-submit-job-action" in
-  let interrupted = Moonpool.Lock.create false in
+  let interrupted = Atomic.make false in
   let exp_r =
     Exec_action.Exec_run_provers.expand ~slurm:true ?dyn ?j ?proof_dir ?limits
       defs r.limits r.j r.pattern r.dirs r.provers
@@ -57,7 +57,7 @@ let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
   let result =
     Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
     Exec_action.Exec_run_provers.run_sbatch_job ~uuid ?timestamp
-      ~interrupted:(fun () -> Moonpool.Lock.get interrupted)
+      ~interrupted:(fun () -> Atomic.get interrupted)
       ?partition:r.partition ~nodes:r.nodes ~addr:r.addr ~port:r.port
       ~ntasks:r.ntasks ~save ~wal_mode ~on_solve:progress#on_res
       ~on_start_proof_check:(fun () -> progress#on_start_proof_check)

@@ -13,7 +13,11 @@
   uuidm
   logs
   logs.cli
+  eio
+  eio.unix
+  eio_posix
   tiny_httpd
+  tiny_httpd_eio
   tiny_httpd.prometheus
   sqlite3_utils
   base64

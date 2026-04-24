@@ -62,8 +62,8 @@ let establish_server = Net_utils.establish_server
 let mk_shell_cmd = Net_utils.mk_shell_cmd
 
 (* Parallel execution (re-export from Par_map) *)
-let _lock = Moonpool.Lock.create ()
-let synchronized f = Moonpool.Lock.with_ _lock f
+let _lock = Eio.Mutex.create ()
+let synchronized f = Eio.Mutex.use_ro _lock f
 let with_affinity = Par_map.with_affinity
 let with_affinity_opt = Par_map.with_affinity_opt
 

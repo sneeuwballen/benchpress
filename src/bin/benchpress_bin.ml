@@ -519,6 +519,8 @@ let parse_opt () =
 let () =
   CCFormat.set_color_default true;
   let@ () = Trace_tef.with_setup () in
+  Eio_posix.run @@ fun _env ->
+  Trace_eio.setup ();
   match parse_opt () with
   | Error (`Parse | `Term | `Exn) -> exit 2
   | Ok (`Ok true | `Version | `Help) -> ()
