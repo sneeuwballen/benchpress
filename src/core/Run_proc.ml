@@ -7,13 +7,13 @@ let k_proc_mgr : Eio_unix.Process.mgr_ty Eio.Resource.t Eio.Fiber.key =
 
 let with_proc_mgr mgr f = Eio.Fiber.with_binding k_proc_mgr mgr f
 
-(** Vars to strip from child env to avoid inheriting benchpress's tracing/logging setup. *)
+(** Vars to strip from child env to avoid inheriting benchpress's
+    tracing/logging setup. *)
 let strip_from_child_env = [| "TRACE"; "LOG" |]
 
 (** Build child environment: current env minus [strip_from_child_env]. *)
 let child_env () : string array =
-  Unix.environment ()
-  |> Array.to_seq
+  Unix.environment () |> Array.to_seq
   |> Seq.filter (fun entry ->
          not
            (Array.exists
@@ -68,10 +68,8 @@ let run cmd : Run_proc_result.t =
         [
           (fun () ->
             Eio.Fiber.both
-              (fun () ->
-                Eio.Flow.copy stdout_r (Eio.Flow.buffer_sink buf_out))
-              (fun () ->
-                Eio.Flow.copy stderr_r (Eio.Flow.buffer_sink buf_err)));
+              (fun () -> Eio.Flow.copy stdout_r (Eio.Flow.buffer_sink buf_out))
+              (fun () -> Eio.Flow.copy stderr_r (Eio.Flow.buffer_sink buf_err)));
           (fun () ->
             (* Yield first so drain fibers are scheduled and can drain buffered
                data before we decide to cancel them. *)
