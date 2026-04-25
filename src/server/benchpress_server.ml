@@ -1725,7 +1725,7 @@ let handle_file_summary (self : t) : unit =
       k "summary for %s in %.3fs" file (Misc.Chrono.since_last chrono));
   r
 
-let handle_css self : unit =
+let handle_assets self : unit =
   let mk_path p' ctype value =
     H.add_route_handler self ~meth:`GET
       H.Route.(exact p' @/ return)
@@ -1736,7 +1736,8 @@ let handle_css self : unit =
           H.Response.make_raw ~code:304 ""
         ) else
           H.Response.make_string
-            ~headers:[ "content-type", ctype; "Etag", h ]
+            ~headers:
+              [ "content-type", ctype; "Etag", h; "Cache-Control", "no-cache" ]
             (Ok value))
   in
   mk_path "css" "text/css" Web_data.css;
@@ -1816,7 +1817,7 @@ module Cmd = struct
       handle_health self;
       handle_list_benchs self;
       handle_file_summary self;
-      handle_css server;
+      handle_assets server;
       handle_show self;
       handle_show_echarts self;
       handle_prover_in self;
