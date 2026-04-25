@@ -1731,13 +1731,17 @@ let handle_assets self : unit =
       H.Route.(exact p' @/ return)
       (fun req ->
         let h = Digest.to_hex (Digest.string value) in
-        if H.Request.get_header req "If-None-Match" = Some h then (
+        let etag = Printf.sprintf {|"%s"|} h in
+        let inm = H.Request.get_header req "If-None-Match" in
+        if inm = Some etag then (
           Log.debug (fun k -> k "cached object (etag: %S)" h);
           H.Response.make_raw ~code:304 ""
         ) else
           H.Response.make_string
             ~headers:
-              [ "content-type", ctype; "Etag", h; "Cache-Control", "no-cache" ]
+              [
+                "content-type", ctype; "Etag", etag; "Cache-Control", "no-cache";
+              ]
             (Ok value))
   in
   mk_path "css" "text/css" Web_data.css;
