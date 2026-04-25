@@ -34,7 +34,6 @@
     ../src/bin/benchpress_bin.exe
     run
     --save=false
-    --nc
     -q
     -c
     conf_prover1.sexp
