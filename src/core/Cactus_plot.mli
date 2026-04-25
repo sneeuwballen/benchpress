@@ -9,6 +9,7 @@ type t
 val of_db : ?provers:Prover.name list -> Db.t -> t
 val of_file : ?provers:Prover.name list -> string -> t
 val combine : (string * t) list -> t
+
 val to_echarts_json : t -> string
-(** Serialize the cactus plot data as an ECharts option JSON string,
-    suitable for use with the htmx-echarts extension. *)
+(** Serialize the cactus plot data as an ECharts option JSON string, suitable
+    for use with the htmx-echarts extension. *)

@@ -75,8 +75,7 @@ let to_echarts_json (self : t) : string =
             (fun (cum, acc) rtime ->
               let cum' = cum +. rtime in
               cum', [ `Float cum'; `Int (List.length acc + 1) ] :: acc)
-            (0., [])
-            rtimes
+            (0., []) rtimes
         in
         let data = List.rev rev_data in
         `Assoc
@@ -103,30 +102,31 @@ let to_echarts_json (self : t) : string =
   let option =
     `Assoc
       [
-        "title",
-        `Assoc
-          [
-            "text", `String "Cactus plot";
-            "subtext", `String "cumulative time for n\xc2\xb0 of problems solved";
-          ];
+        ( "title",
+          `Assoc
+            [
+              "text", `String "Cactus plot";
+              ( "subtext",
+                `String "cumulative time for n\xc2\xb0 of problems solved" );
+            ] );
         "tooltip", `Assoc [ "trigger", `String "axis" ];
         "legend", `Assoc [ "data", `List legend_data ];
-        "xAxis",
-        `Assoc
-          [
-            "name", `String "time (s)";
-            "type", `String "value";
-            "nameLocation", `String "middle";
-            "nameGap", `Int 25;
-          ];
-        "yAxis",
-        `Assoc
-          [
-            "name", `String "problems solved (accumulated)";
-            "type", `String "value";
-            "nameLocation", `String "middle";
-            "nameGap", `Int 50;
-          ];
+        ( "xAxis",
+          `Assoc
+            [
+              "name", `String "time (s)";
+              "type", `String "value";
+              "nameLocation", `String "middle";
+              "nameGap", `Int 25;
+            ] );
+        ( "yAxis",
+          `Assoc
+            [
+              "name", `String "problems solved (accumulated)";
+              "type", `String "value";
+              "nameLocation", `String "middle";
+              "nameGap", `Int 50;
+            ] );
         "series", `List series;
       ]
   in

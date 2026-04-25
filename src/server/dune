@@ -72,7 +72,6 @@
     (cat %{htmx_echarts})
     (echo "|hejs}")))))
 
-
 (rule
  (with-stdout-to
   benchpress-server.1
