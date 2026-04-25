@@ -34,7 +34,6 @@
     ../src/bin/benchpress_bin.exe
     run
     --save=false
-    --pp-results=false
     --nc
     -q
     -c
