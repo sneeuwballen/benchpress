@@ -64,7 +64,6 @@ module Run = struct
   type params = {
     j: int; [@default 1]  (** level of parallelism *)
     progress: bool;  (** print progress bar *)
-    pp_results: bool; [@default true]  (** print results as they are found *)
     paths: string list; [@pos_all] [@docv "PATH"]
         (** target paths (or directories containing tests) *)
     dir_files: string list; [@opt_all] [@names [ "F" ]] [@default []]
@@ -105,7 +104,7 @@ module Run = struct
       else
         None
     in
-    Run_main.main ~pp_results:p.pp_results ?dyn ~j:p.j ?cpus ?timeout:p.timeout
+    Run_main.main ~pp_results:p.progress ?dyn ~j:p.j ?cpus ?timeout:p.timeout
       ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
       ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
       ?output:p.output ~save:p.save ~wal_mode:p.wal_mode
@@ -130,7 +129,6 @@ module Slurm = struct
         (** number of parallel threads each worker will launch on the node on
             which it's running. *)
     progress: bool;  (** print progress bar *)
-    pp_results: bool; [@default true]  (** print results as they are found *)
     paths: string list; [@pos_all] [@docv "PATH"]
         (** target paths (or directories containing tests) *)
     dir_files: string list; [@opt_all] [@names [ "F" ]] [@default []]
@@ -188,7 +186,7 @@ module Slurm = struct
       | None -> None
       | Some s -> Some (Unix.inet_addr_of_string s)
     in
-    Run_main.main ~sbatch:true ~pp_results:p.pp_results ?dyn ~j:p.j
+    Run_main.main ~sbatch:true ~pp_results:p.progress ?dyn ~j:p.j
       ?timeout:p.timeout ?memory:p.memory ?csv:p.csv ~provers:p.provers
       ~meta:p.meta ?task:p.task ?summary:p.summary ~dir_files:p.dir_files
       ?proof_dir:p.proof_dir ?output:p.output ~wal_mode:p.wal_mode
