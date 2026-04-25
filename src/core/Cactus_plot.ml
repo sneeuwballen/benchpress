@@ -1,7 +1,6 @@
 open Common
 open Misc
 open Test
-module Gp = Gnuplot
 
 type t = { lines: (string * Prover.name * float list) list }
 
@@ -56,45 +55,79 @@ let of_file ?provers file : t =
   try Db.with_db ~timeout:500 ~mode:`READONLY file (of_db ?provers)
   with e -> Error.(raise @@ of_exn e)
 
-let to_gp ~output self =
-  Error.guard (Error.wrap "plot.gnuplot") @@ fun () ->
-  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "cactus-plot.gnuplot" in
-  Gp.with_ (fun gp ->
-      let series =
-        self.lines
-        |> CCList.map (fun (pre, prover, l) ->
-               let l =
-                 let sum = ref 0. in
-                 CCList.mapi
-                   (fun i rtime ->
-                     sum := !sum +. rtime;
-                     !sum, float i)
-                   l
-               in
-               let title =
-                 if pre = "" then
-                   prover
-                 else
-                   pre ^ "." ^ prover
-               in
-               Gp.Series.linespoints_xy ~title l)
-      in
-      Gp.plot_many
-        ~labels:
-          (Gp.Labels.create ~x:"time (s)" ~y:"problems solved (accumulated)" ())
-        ~title:"cumulative time for n° of problems solved" gp series ~output);
-  ()
-
-let show (self : t) = to_gp self ~output:(Gp.Output.create `X11)
-
-let save_to_file (self : t) file =
-  to_gp self ~output:(Gp.Output.create ~size:(1800, 1024) @@ `Png file)
-
-let to_png (self : t) : string =
-  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "plot.to-png" in
-  CCIO.File.with_temp ~prefix:"benchpress_plot" ~suffix:".png" (fun file ->
-      Logs.debug (fun k -> k "plot into file %s" file);
-      save_to_file self file;
-      let s = CCIO.with_in file CCIO.read_all in
-      Logs.debug (fun k -> k "read %d bytes from file" (String.length s));
-      s)
+let to_echarts_json (self : t) : string =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "plot.to-echarts-json" in
+  (* Build series: for each prover, compute cumulative time vs. problem count.
+     x = cumulative time (sum of rtimes up to problem i)
+     y = i+1 (number of problems solved so far) *)
+  let series =
+    List.map
+      (fun (pre, prover, rtimes) ->
+        let title =
+          if pre = "" then
+            prover
+          else
+            pre ^ "." ^ prover
+        in
+        (* Build list of [cumtime, count] pairs *)
+        let _sum, rev_data =
+          List.fold_left
+            (fun (cum, acc) rtime ->
+              let cum' = cum +. rtime in
+              cum', [ `Float cum'; `Int (List.length acc + 1) ] :: acc)
+            (0., []) rtimes
+        in
+        let data = List.rev rev_data in
+        `Assoc
+          [
+            "name", `String title;
+            "type", `String "line";
+            "showSymbol", `Bool false;
+            "data", `List (List.map (fun pt -> `List pt) data);
+          ])
+      self.lines
+  in
+  let legend_data =
+    List.map
+      (fun (pre, prover, _) ->
+        let title =
+          if pre = "" then
+            prover
+          else
+            pre ^ "." ^ prover
+        in
+        `String title)
+      self.lines
+  in
+  let option =
+    `Assoc
+      [
+        ( "title",
+          `Assoc
+            [
+              "text", `String "Cactus plot";
+              ( "subtext",
+                `String "cumulative time for n\xc2\xb0 of problems solved" );
+            ] );
+        "tooltip", `Assoc [ "trigger", `String "axis" ];
+        "legend", `Assoc [ "data", `List legend_data ];
+        ( "xAxis",
+          `Assoc
+            [
+              "name", `String "time (s)";
+              "type", `String "value";
+              "nameLocation", `String "middle";
+              "nameGap", `Int 25;
+            ] );
+        ( "yAxis",
+          `Assoc
+            [
+              "name", `String "problems solved (accumulated)";
+              "type", `String "value";
+              "nameLocation", `String "middle";
+              "nameGap", `Int 50;
+            ] );
+        "series", `List series;
+      ]
+  in
+  Yojson.Basic.to_string option

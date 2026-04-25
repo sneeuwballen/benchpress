@@ -48,10 +48,6 @@
    (and
     (>= 2.0)
     (< 3.0)))
-  (gnuplot
-   (and
-    (>= 0.6)
-    (< 0.8)))
   (sqlite3
    (>= 5.0.3))
   (sqlite3_utils
@@ -103,10 +99,6 @@
   logs
   uuidm
   base64
-  (gnuplot
-   (and
-    (>= 0.6)
-    (< 0.8)))
   sqlite3
   (sqlite3_utils
    (and
