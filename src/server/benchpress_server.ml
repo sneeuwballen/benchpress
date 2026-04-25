@@ -181,7 +181,7 @@ module Html = struct
                 A.content "width=device-width, initial-scale=1";
               ];
             script [ A.src "/js"; "type", "module" ] [ txt "" ];
-            script [ A.src "https://unpkg.com/htmx.org@1.7.0" ] [ txt "" ];
+            script [ A.src "/htmx.js" ] [ txt "" ];
             script [ A.src "/echarts.js" ] [ txt "" ];
             script [ A.src "/htmx-echarts.js" ] [ txt "" ];
           ];
@@ -1727,14 +1727,14 @@ let handle_file_summary (self : t) : unit =
 
 let handle_assets self : unit =
   let mk_path p' ctype value =
+    let h = Digest.to_hex (Digest.string value) in
+    let etag = Printf.sprintf {|"%s"|} h in
     H.add_route_handler self ~meth:`GET
       H.Route.(exact p' @/ return)
       (fun req ->
-        let h = Digest.to_hex (Digest.string value) in
-        let etag = Printf.sprintf {|"%s"|} h in
         let inm = H.Request.get_header req "If-None-Match" in
         if inm = Some etag then (
-          Log.debug (fun k -> k "cached object (etag: %S)" h);
+          Log.debug (fun k -> k "cached object (etag: %s)" etag);
           H.Response.make_raw ~code:304 ""
         ) else
           H.Response.make_string
@@ -1748,6 +1748,7 @@ let handle_assets self : unit =
   mk_path "js" "text/javascript" Web_data.js;
   mk_path "echarts.js" "text/javascript" Web_data.echarts_js;
   mk_path "htmx-echarts.js" "text/javascript" Web_data.htmx_echarts_js;
+  mk_path "htmx.js" "text/javascript" Web_data.htmx_js;
   mk_path "favicon.png" "media/png" Web_data.favicon;
   ()
 

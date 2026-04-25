@@ -51,7 +51,8 @@
   (:js embed.js)
   (:icon ../../data/favicon.png.b64)
   (:echarts echarts.min.js)
-  (:htmx_echarts htmx-echarts.min.js))
+  (:htmx_echarts htmx-echarts.min.js)
+  (:htmx htmx.min.js))
  (action
   (with-stdout-to
    %{targets}
@@ -70,7 +71,10 @@
     (echo "|ejs}")
     (echo "let htmx_echarts_js = {hejs|")
     (cat %{htmx_echarts})
-    (echo "|hejs}")))))
+    (echo "|hejs}")
+    (echo "let htmx_js = {htmxjs|")
+    (cat %{htmx})
+    (echo "|htmxjs}")))))
 
 (rule
  (with-stdout-to
