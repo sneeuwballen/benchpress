@@ -72,9 +72,9 @@ let to_echarts_json (self : t) : string =
         (* Build list of [cumtime, count] pairs *)
         let _sum, rev_data =
           List.fold_left
-            (fun (cum, acc) rtime ->
-              let cum' = cum +. rtime in
-              cum', [ `Float cum'; `Int (List.length acc + 1) ] :: acc)
+            (fun (cumsum, acc) rtime ->
+              let cumsum' = cumsum +. rtime in
+              cumsum', [ `Float cumsum'; `Int (List.length acc + 1) ] :: acc)
             (0., []) rtimes
         in
         let data = List.rev rev_data in
