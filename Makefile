@@ -35,7 +35,7 @@ reindent:
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 sed -i 's/[[:space:]]*$$//'
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 ocp-indent -i
 
-HURL ?= ~/bin/hurl
+HURL ?= hurl
 HURL_HOST ?= localhost:8083
 
 test-api: ## Run API auth tests (requires running server; set API_KEY=<key>)

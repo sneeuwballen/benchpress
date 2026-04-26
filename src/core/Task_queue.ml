@@ -8,6 +8,8 @@ type job = {
   j_action: Action.t;
   j_task: Task.t; (* task this action comes from *)
   j_interrupted: bool Atomic.t;
+  j_interrupt_promise: unit Eio.Promise.t;
+  j_interrupt_resolver: unit Eio.Promise.u;
   mutable j_started_time: float; (* -1. if not started *)
   mutable j_percent_completion: int;
   mutable j_eta: float;
@@ -56,7 +58,11 @@ let cur_job self = Eio.Mutex.use_ro self.cur_mu (fun () -> self.cur)
 let interrupt self ~uuid : bool =
   match CCHashtbl.get self.jobs_tbl uuid, CCHashtbl.get self.api_jobs uuid with
   | Some j, _ ->
-    Atomic.set j.j_interrupted true;
+    (* CAS ensures we resolve the promise exactly once *)
+    if Atomic.compare_and_set j.j_interrupted false true then (
+      try Eio.Promise.resolve j.j_interrupt_resolver ()
+      with Invalid_argument _ -> ()
+    );
     true
   | None, Some aj ->
     aj.aj_interrupted <- true;
@@ -79,6 +85,7 @@ let push self ?(on_complete : (string -> unit) option) task : string =
   let j_uuid =
     Uuidm.v4_gen (Random.State.make_self_init ()) () |> Uuidm.to_string
   in
+  let j_interrupt_promise, j_interrupt_resolver = Eio.Promise.create () in
   let j =
     {
       j_action = task.Task.action;
@@ -86,6 +93,8 @@ let push self ?(on_complete : (string -> unit) option) task : string =
       j_uuid;
       j_eta = 0.;
       j_interrupted = Atomic.make false;
+      j_interrupt_promise;
+      j_interrupt_resolver;
       j_started_time = -1.;
       j_percent_completion = 0;
       j_on_complete = on_complete;
@@ -129,10 +138,19 @@ let loop self =
         "sqlite"
     in
     let completed = ref false in
+    (* Race job execution against the interrupt promise. When [interrupt] is
+       called it resolves the promise, which causes [Fiber.any] to cancel the
+       job fiber — propagating the cancellation into [Run_proc.run]'s switch
+       and killing any running child process. *)
     (try
-       Exec_action.run defs job.j_action ~output:output_file ~cb_progress
-         ~interrupted:(fun () -> Job.interrupted job);
-       completed := not (Atomic.get job.j_interrupted)
+       Eio.Fiber.any
+         [
+           (fun () -> Eio.Promise.await job.j_interrupt_promise);
+           (fun () ->
+             Exec_action.run defs job.j_action ~output:output_file ~cb_progress
+               ~interrupted:(fun () -> Job.interrupted job);
+             completed := not (Atomic.get job.j_interrupted));
+         ]
      with
     | Error.E e ->
       Log.err (fun k ->
