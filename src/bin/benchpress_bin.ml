@@ -173,7 +173,7 @@ module Slurm = struct
 
   let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     if p.color then CCFormat.set_color_default true;
     let dyn =
       if p.progress then
@@ -207,7 +207,7 @@ end
 
 module List_files = struct
   let main ?(abs = false) () : bool =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let data_dir = Misc.data_dir () in
     let entries, _ = Bin_utils.list_entries data_dir in
     List.iter
@@ -250,7 +250,7 @@ module Show = struct
   [@@deriving subliner]
 
   let run (p : params) debug =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     Misc.setup_logs debug;
     if p.color then CCFormat.set_color_default true;
     let file =
@@ -278,7 +278,7 @@ end
 (** {2 Sample} *)
 module Sample = struct
   let files_of_dir (p : string) : string list =
-    Error.guard (Error.wrapf "expanding subdir of_dir %S" p) @@ fun () ->
+    let@ () = Error.guard (Error.wrapf "expanding subdir of_dir %S" p) in
     CCIO.File.walk_l p
     |> CCList.filter_map (fun (kind, f) ->
            match kind with
@@ -286,7 +286,7 @@ module Sample = struct
            | _ -> None)
 
   let run ~n dirs =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let files = CCList.flat_map files_of_dir dirs |> Array.of_list in
     let len = Array.length files in
     if len < n then Error.failf "not enough files (need %d, got %d)" n len;
@@ -321,7 +321,7 @@ module Dir = struct
   type which = Config | State [@@deriving subliner_enum]
 
   let run c =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     Format.printf "%s@."
       (match c with
       | Config -> Misc.config_dir ()
@@ -350,7 +350,7 @@ module Check_config = struct
   [@@deriving subliner]
 
   let run (p : params) debug =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     Misc.setup_logs debug;
     let default_file = Misc.default_config () in
     let f =
@@ -385,7 +385,7 @@ module Prover_show = struct
 
   let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let l = CCList.map (Definitions.find_prover' defs) p.names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
     ()
@@ -403,7 +403,7 @@ end
 module Prover_list = struct
   let run (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let l = Definitions.all_provers defs in
     Format.printf "@[<v>%a@]@."
       (Misc.pp_list @@ Fmt.map With_loc.view Prover.pp_name)
@@ -425,7 +425,7 @@ module Task_show = struct
 
   let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let l = CCList.map (Definitions.find_task' defs) p.names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
     ()
@@ -443,7 +443,7 @@ end
 module Task_list = struct
   let run (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let l = Definitions.all_tasks defs in
     Format.printf "@[<v>%a@]@."
       (Misc.pp_list @@ Fmt.map With_loc.view Task.pp_name)
@@ -466,7 +466,9 @@ module Sql_convert = struct
   }
   [@@deriving subliner]
 
-  let run (p : params) defs = catch_err @@ fun () -> Sql_res.run defs p.files
+  let run (p : params) defs =
+    let@ () = catch_err in
+    Sql_res.run defs p.files
 
   let cmd =
     let doc = "convert result(s) into sqlite files" in
@@ -516,7 +518,7 @@ let parse_opt () =
 
 let () =
   let@ () = Trace_tef.with_setup () in
-  Eio_posix.run @@ fun env ->
+  let@ env = Eio_posix.run in
   Trace_eio.setup ();
   let proc_mgr = Eio.Stdenv.process_mgr env in
   Run_proc.with_proc_mgr proc_mgr @@ fun () ->
