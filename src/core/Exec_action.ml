@@ -123,10 +123,9 @@ end = struct
       |> Misc.Par_map.map_p ~j:3 (fun path ->
              if interrupted () then failwith "interrupted";
              if dyn then
-               Misc.synchronized (fun () ->
-                   output_string stdout Misc.reset_line;
-                   Printf.printf "[%6d/%6d] find expect for `%s`…%!" !n_done
-                     n_files
+               Misc.synchronized_sync (fun () ->
+                   Printf.printf "%s[%6d/%6d] find expect for `%s`…%!"
+                     Misc.reset_line !n_done n_files
                      (Misc.truncate_left 30 path));
              let res =
                Problem.make_find_expect path ~expect:s.Subdir.inside.expect
@@ -253,9 +252,9 @@ end = struct
 
     CCOpt.iter Misc.mkdir_rec self.proof_dir;
 
-    let run_prover_pb ~prover ~pb ~db () : _ list =
-      (* Also runs the proof checker, if the prover is proof producing
-         and returns "UNSAT". *)
+    let run_prover_pb ~prover ~pb ~(db : Sqlite3.db * Eio.Mutex.t) () : _ list =
+      let raw_db, db_mu = db in
+      let with_db f = Eio.Mutex.use_ro db_mu (fun () -> f raw_db) in
       if interrupted () then Error.fail "run.interrupted";
       Error.guard
         (Error.wrapf "(@[running :prover %a :on %a@])" Prover.pp_name prover
@@ -289,7 +288,7 @@ end = struct
       in
       (* insert into DB here *)
       let ev_prover = Run_event.mk_prover result in
-      Moonpool.Lock.with_ db (fun db -> Run_event.to_db db ev_prover);
+      with_db (fun db -> Run_event.to_db db ev_prover);
 
       let ev_proof =
         match result.res, proof_file with
@@ -319,7 +318,7 @@ end = struct
           on_proof_check res;
 
           (* insert into DB here *)
-          Moonpool.Lock.with_ db (fun db -> Run_event.to_db db ev_checker);
+          with_db (fun db -> Run_event.to_db db ev_checker);
           [ ev_checker ]
         | _ -> []
       in
@@ -338,18 +337,18 @@ end = struct
     in
     (* run provers *)
     let res_l =
-      let db = Moonpool.Lock.create db in
+      let db_pair = db, Eio.Mutex.create () in
       match self.j with
       | Bounded j ->
         Misc.Par_map.map_p ~j
-          (fun (prover, pb) -> run_prover_pb ~prover ~pb ~db ())
+          (fun (prover, pb) -> run_prover_pb ~prover ~pb ~db:db_pair ())
           jobs
         |> CCList.flatten
       | Cpus cpus ->
         Misc.Par_map.map_with_resource ~resources:cpus
           (fun cpu (prover, pb) ->
             Log.debug (fun m -> m "Running on cpu %d" cpu);
-            Misc.with_affinity cpu (run_prover_pb ~prover ~pb ~db))
+            Misc.with_affinity cpu (run_prover_pb ~prover ~pb ~db:db_pair))
           jobs
         |> CCList.flatten
     in
@@ -445,7 +444,6 @@ end = struct
       let nb_resps = ref 0 in
       let resps_ref = ref [] in
       let resps_lock = Mutex.create () in
-      let db_wl = Moonpool.Lock.create db in
       let add_resps evl =
         Mutex.lock resps_lock;
         nb_resps := !nb_resps + List.length evl;
@@ -455,7 +453,7 @@ end = struct
             (match ev with
             | Run_event.Prover_run r -> on_solve r
             | Checker_run r -> on_proof_check r);
-            Moonpool.Lock.with_ db_wl (fun db -> Run_event.to_db db ev))
+            Run_event.to_db db ev)
           evl;
         Mutex.unlock resps_lock
       in
@@ -728,12 +726,13 @@ end = struct
         else
           spf " !%d" !n_fail
       in
-      Misc.synchronized (fun () ->
-          Format.printf "... %5d/%d%s | %3.1f%% [%6s: %s] [eta %6s]@?" !count
+      Misc.synchronized_sync (fun () ->
+          Format.printf "... %6d/%d%s | %3.1f%% [%6s: %s] [eta %6s]@?" !count
             !len fail_indicator percent
             (Misc.human_duration time_elapsed)
             bar (Misc.human_duration eta));
-      if !count = !len then Misc.synchronized (fun () -> Format.printf "@.")
+      if !count = !len then
+        Misc.synchronized_sync (fun () -> Format.printf "@.")
     in
     pp_bar, get_state, bump, tick
 
@@ -758,6 +757,8 @@ end = struct
 
         if Run_prover_problem.is_bad res then incr n_fail;
 
+        Log.debug (fun k ->
+            k "%a" (Run_prover_problem.pp_result ~w_prover ~w_pb) res);
         if pp_results then
           Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
         pp_common_ ()
@@ -774,6 +775,7 @@ end = struct
 
       method on_done =
         pp_common_ ();
+        Log.info (fun k -> k "done");
         match cb_progress with
         | None -> ()
         | Some cb -> cb#on_done

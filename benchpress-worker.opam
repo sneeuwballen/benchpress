@@ -8,7 +8,7 @@ license: "BSD-2-Clause"
 homepage: "https://github.com/sneeuwballen/benchpress"
 bug-reports: "https://github.com/sneeuwballen/benchpress/issues"
 depends: [
-  "ocaml" {>= "4.12"}
+  "ocaml" {>= "5.1"}
   "dune" {>= "3.2"}
   "containers" {>= "3.0" & < "4.0"}
   "benchpress" {= version}

@@ -1778,7 +1778,7 @@ let handle_file self : unit =
 
 module Cmd = struct
   let main ?(local_only = false) ?port ~allow_delete ~log_lvl
-      (defs : Definitions.t) () =
+      ~(stdenv : Eio_unix.Stdenv.base) (defs : Definitions.t) () =
     try
       Logger.setup log_lvl;
       let addr =
@@ -1787,8 +1787,9 @@ module Cmd = struct
         else
           "0.0.0.0"
       in
+      Eio.Switch.run @@ fun sw ->
       let server =
-        H.create
+        Tiny_httpd_eio.create ~stdenv ~sw
           ~middlewares:[ `Stage 1, trace_middleware ]
           ~max_connections:32 ~addr ?port ()
       in
@@ -1814,8 +1815,8 @@ module Cmd = struct
           auth;
         }
       in
-      (* thread to execute tasks *)
-      let _th_r = Thread.create Task_queue.loop self.task_q in
+      (* fiber to execute tasks *)
+      Eio.Fiber.fork ~sw (fun () -> Task_queue.loop self.task_q);
       (* maybe serve the API *)
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       handle_root self;
@@ -1846,7 +1847,7 @@ module Cmd = struct
     with e -> Error (Error.of_exn e)
 
   (* sub-command to serve the web UI *)
-  let cmd =
+  let cmd ~stdenv =
     let open Cmdliner in
     let port =
       Arg.(
@@ -1862,7 +1863,7 @@ module Cmd = struct
     and defs = Bin_utils.definitions_term in
     let doc = "serve embedded web UI on given port" in
     let aux (log_lvl, defs) port local_only allow_delete () =
-      main ?port ~local_only ~allow_delete defs ~log_lvl ()
+      main ?port ~local_only ~allow_delete ~stdenv defs ~log_lvl ()
     in
     ( Term.(const aux $ defs $ port $ local_only $ allow_delete $ const ()),
       Cmd.info ~doc "serve" )
@@ -1990,12 +1991,14 @@ let () =
   ()
 
 let () =
-  CCFormat.set_color_default true;
   let@ () = Opentelemetry_client_ocurl.with_setup () in
-  Ambient_context.set_current_storage Ambient_context_tls.storage;
   Opentelemetry_trace.setup ();
   Opentelemetry.Gc_metrics.setup ~min_interval_s:60 ();
-  let serve_t, serve_i = Cmd.cmd in
+  let@ stdenv = Eio_posix.run in
+  Trace_eio.setup ();
+  let proc_mgr = Eio.Stdenv.process_mgr stdenv in
+  let@ () = Run_proc.with_proc_mgr proc_mgr in
+  let serve_t, serve_i = Cmd.cmd ~stdenv in
   (* wrap serve result: (unit, Error.t) result -> unit *)
   let serve_t' =
     Cmdliner.Term.(

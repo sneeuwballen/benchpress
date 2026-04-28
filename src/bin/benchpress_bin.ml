@@ -64,7 +64,6 @@ module Run = struct
   type params = {
     j: int; [@default 1]  (** level of parallelism *)
     progress: bool;  (** print progress bar *)
-    pp_results: bool; [@default true]  (** print results as they are found *)
     paths: string list; [@pos_all] [@docv "PATH"]
         (** target paths (or directories containing tests) *)
     dir_files: string list; [@opt_all] [@names [ "F" ]] [@default []]
@@ -78,7 +77,7 @@ module Run = struct
         (** select provers *)
     csv: string option;  (** CSV output file *)
     summary: string option;  (** write summary in FILE *)
-    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    color: bool;  (** enable colored output *)
     output: string option; [@names [ "o"; "output" ]]
         (** output database file *)
     save: bool; [@default true]  (** save results on disk *)
@@ -98,14 +97,14 @@ module Run = struct
   let run (p : params) cpus (log_lvl, defs) =
     Misc.setup_logs log_lvl;
     catch_err @@ fun () ->
-    if p.no_color then CCFormat.set_color_default false;
+    if p.color then CCFormat.set_color_default true;
     let dyn =
       if p.progress then
         Some true
       else
         None
     in
-    Run_main.main ~pp_results:p.pp_results ?dyn ~j:p.j ?cpus ?timeout:p.timeout
+    Run_main.main ~pp_results:p.progress ?dyn ~j:p.j ?cpus ?timeout:p.timeout
       ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
       ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
       ?output:p.output ~save:p.save ~wal_mode:p.wal_mode
@@ -130,7 +129,6 @@ module Slurm = struct
         (** number of parallel threads each worker will launch on the node on
             which it's running. *)
     progress: bool;  (** print progress bar *)
-    pp_results: bool; [@default true]  (** print results as they are found *)
     paths: string list; [@pos_all] [@docv "PATH"]
         (** target paths (or directories containing tests) *)
     dir_files: string list; [@opt_all] [@names [ "F" ]] [@default []]
@@ -144,7 +142,7 @@ module Slurm = struct
         (** select provers *)
     csv: string option;  (** CSV output file *)
     summary: string option;  (** write summary in FILE *)
-    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    color: bool;  (** enable colored output *)
     output: string option; [@names [ "o"; "output" ]]
         (** output database file *)
     save: bool; [@default true]  (** save results on disk *)
@@ -175,8 +173,8 @@ module Slurm = struct
 
   let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
-    if p.no_color then CCFormat.set_color_default false;
+    let@ () = catch_err in
+    if p.color then CCFormat.set_color_default true;
     let dyn =
       if p.progress then
         Some true
@@ -188,7 +186,7 @@ module Slurm = struct
       | None -> None
       | Some s -> Some (Unix.inet_addr_of_string s)
     in
-    Run_main.main ~sbatch:true ~pp_results:p.pp_results ?dyn ~j:p.j
+    Run_main.main ~sbatch:true ~pp_results:p.progress ?dyn ~j:p.j
       ?timeout:p.timeout ?memory:p.memory ?csv:p.csv ~provers:p.provers
       ~meta:p.meta ?task:p.task ?summary:p.summary ~dir_files:p.dir_files
       ?proof_dir:p.proof_dir ?output:p.output ~wal_mode:p.wal_mode
@@ -209,7 +207,7 @@ end
 
 module List_files = struct
   let main ?(abs = false) () : bool =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let data_dir = Misc.data_dir () in
     let entries, _ = Bin_utils.list_entries data_dir in
     List.iter
@@ -243,7 +241,7 @@ module Show = struct
     jsonl_file: string option;  (** JSONL output file *)
     file: string option; [@pos 0] [@docv "FILE"]
         (** file to read (default: latest) *)
-    no_color: bool; [@names [ "no-color"; "nc" ]]  (** disable colored output *)
+    color: bool;  (** enable colored output *)
     check: bool;  (** check results *)
     bad: bool;  (** list bad results *)
     summary: string option;  (** write summary in FILE *)
@@ -252,9 +250,9 @@ module Show = struct
   [@@deriving subliner]
 
   let run (p : params) debug =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     Misc.setup_logs debug;
-    if p.no_color then CCFormat.set_color_default false;
+    if p.color then CCFormat.set_color_default true;
     let file =
       match p.file with
       | Some f -> f
@@ -280,7 +278,7 @@ end
 (** {2 Sample} *)
 module Sample = struct
   let files_of_dir (p : string) : string list =
-    Error.guard (Error.wrapf "expanding subdir of_dir %S" p) @@ fun () ->
+    let@ () = Error.guard (Error.wrapf "expanding subdir of_dir %S" p) in
     CCIO.File.walk_l p
     |> CCList.filter_map (fun (kind, f) ->
            match kind with
@@ -288,7 +286,7 @@ module Sample = struct
            | _ -> None)
 
   let run ~n dirs =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let files = CCList.flat_map files_of_dir dirs |> Array.of_list in
     let len = Array.length files in
     if len < n then Error.failf "not enough files (need %d, got %d)" n len;
@@ -299,7 +297,7 @@ module Sample = struct
     in
     let sample = CCList.map (Array.get files) sample_idx in
     (* print sample *)
-    Misc.synchronized (fun () -> List.iter (Printf.printf "%s\n%!") sample);
+    Misc.synchronized_sync (fun () -> List.iter (Printf.printf "%s\n%!") sample);
     ()
 
   type params = {
@@ -323,7 +321,7 @@ module Dir = struct
   type which = Config | State [@@deriving subliner_enum]
 
   let run c =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     Format.printf "%s@."
       (match c with
       | Config -> Misc.config_dir ()
@@ -352,7 +350,7 @@ module Check_config = struct
   [@@deriving subliner]
 
   let run (p : params) debug =
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     Misc.setup_logs debug;
     let default_file = Misc.default_config () in
     let f =
@@ -387,7 +385,7 @@ module Prover_show = struct
 
   let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let l = CCList.map (Definitions.find_prover' defs) p.names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Prover.pp) l;
     ()
@@ -405,7 +403,7 @@ end
 module Prover_list = struct
   let run (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let l = Definitions.all_provers defs in
     Format.printf "@[<v>%a@]@."
       (Misc.pp_list @@ Fmt.map With_loc.view Prover.pp_name)
@@ -427,7 +425,7 @@ module Task_show = struct
 
   let run (p : params) (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let l = CCList.map (Definitions.find_task' defs) p.names in
     Format.printf "@[<v>%a@]@." (Misc.pp_list Task.pp) l;
     ()
@@ -445,7 +443,7 @@ end
 module Task_list = struct
   let run (log_lvl, defs) =
     Misc.setup_logs log_lvl;
-    catch_err @@ fun () ->
+    let@ () = catch_err in
     let l = Definitions.all_tasks defs in
     Format.printf "@[<v>%a@]@."
       (Misc.pp_list @@ Fmt.map With_loc.view Task.pp_name)
@@ -468,7 +466,9 @@ module Sql_convert = struct
   }
   [@@deriving subliner]
 
-  let run (p : params) defs = catch_err @@ fun () -> Sql_res.run defs p.files
+  let run (p : params) defs =
+    let@ () = catch_err in
+    Sql_res.run defs p.files
 
   let cmd =
     let doc = "convert result(s) into sqlite files" in
@@ -517,8 +517,11 @@ let parse_opt () =
   Cmd.eval_value (Cmd.group info ~default cmds)
 
 let () =
-  CCFormat.set_color_default true;
   let@ () = Trace_tef.with_setup () in
+  let@ env = Eio_posix.run in
+  Trace_eio.setup ();
+  let proc_mgr = Eio.Stdenv.process_mgr env in
+  Run_proc.with_proc_mgr proc_mgr @@ fun () ->
   match parse_opt () with
   | Error (`Parse | `Term | `Exn) -> exit 2
   | Ok (`Ok true | `Version | `Help) -> ()

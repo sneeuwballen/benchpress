@@ -1,9 +1,9 @@
-[31;1mError[0m:
+Error:
   expected a valid Perl regex
   13 |   (sat "))) ^SATISFIABLE")
              ^^^^^^^^^^^^^^^^^^
   ------------------------------------------------------------
-[34;1mContext[0m:
+Context:
   expected a stanza
   10 | (prover
   11 |   (name minisat)

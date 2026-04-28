@@ -13,7 +13,8 @@ depends: [
   "dune" {>= "3.2"}
   "base-unix"
   "containers" {>= "3.3" & < "4.0"}
-  "moonpool" {>= "0.8"}
+  "eio" {>= "1.0"}
+  "eio_posix" {>= "1.0"}
   "re" {>= "1.8" & < "2.0"}
   "csv"
   "cmdliner" {>= "1.1.0"}

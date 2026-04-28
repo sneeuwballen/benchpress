@@ -27,8 +27,8 @@
    (and
     (>= 3.3)
     (< 4.0)))
-  (moonpool
-   (>= 0.8))
+  (eio (>= 1.0))
+  (eio_posix (>= 1.0))
   (re
    (and
     (>= 1.8)
@@ -70,21 +70,19 @@
    (and
     (>= 3.0)
     (< 4.0)))
-  (moonpool
-   (>= 0.8))
+  (eio (>= 1.0))
+  (eio_posix (>= 1.0))
   (benchpress
    (= :version))
-  (linol
-   (and
-    (>= 0.10)
-    (< 0.11)))))
+  (linol (>= 0.11))
+  (linol-eio (>= 0.11))))
 
 (package
  (name benchpress-server)
  (synopsis "Server and web UI for benchpress")
  (depends
   (ocaml
-   (>= 4.12))
+   (>= 5.1))
   dune
   base-unix
   (containers
@@ -104,10 +102,10 @@
    (and
     (>= 0.4)
     (< 0.5)))
-  (tiny_httpd
-   (and
-    (>= 0.17)
-    (< 1.0)))
+  (tiny_httpd (>= 0.17))
+  tiny_httpd_eio
+  (eio (>= 1.0))
+  (eio_posix (>= 1.0))
   (printbox
    (>= 0.12))
   (printbox-text
@@ -136,7 +134,7 @@
  (synopsis "A benchpress helper worker")
  (depends
   (ocaml
-   (>= 4.12))
+   (>= 5.1))
   dune
   (containers
    (and
@@ -153,7 +151,7 @@
  (depends
   dune
   (ocaml
-   (>= 4.14))
+   (>= 5.1))
   (pbrt
    (>= 4.0))
   (pbrt_services
@@ -168,7 +166,7 @@
  (depends
   dune
   (ocaml
-   (>= 4.14))
+   (>= 5.1))
   (cmdliner
    (>= 1.1.0))
   curly

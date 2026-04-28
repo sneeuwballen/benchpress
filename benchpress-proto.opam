@@ -9,7 +9,7 @@ homepage: "https://github.com/sneeuwballen/benchpress"
 bug-reports: "https://github.com/sneeuwballen/benchpress/issues"
 depends: [
   "dune" {>= "3.2"}
-  "ocaml" {>= "4.14"}
+  "ocaml" {>= "5.1"}
   "pbrt" {>= "4.0"}
   "pbrt_services" {>= "4.0"}
   "pbrt_yojson" {>= "4.0"}

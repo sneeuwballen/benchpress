@@ -10,7 +10,6 @@ module Str_map = CCMap.Make (String)
 module Str_set = CCSet.Make (String)
 module Db = Sqlite3_utils
 module PB = PrintBox
-module Log_report = Log_setup.Log_report
 module Par_map = Par_map
 module Pp = Pp
 module Chrono = Human.Chrono
@@ -62,8 +61,8 @@ let establish_server = Net_utils.establish_server
 let mk_shell_cmd = Net_utils.mk_shell_cmd
 
 (* Parallel execution (re-export from Par_map) *)
-let _lock = Moonpool.Lock.create ()
-let synchronized f = Moonpool.Lock.with_ _lock f
+include Global_lock
+
 let with_affinity = Par_map.with_affinity
 let with_affinity_opt = Par_map.with_affinity_opt
 

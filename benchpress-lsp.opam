@@ -10,9 +10,11 @@ bug-reports: "https://github.com/sneeuwballen/benchpress/issues"
 depends: [
   "dune" {>= "3.2"}
   "containers" {>= "3.0" & < "4.0"}
-  "moonpool" {>= "0.8"}
+  "eio" {>= "1.0"}
+  "eio_posix" {>= "1.0"}
   "benchpress" {= version}
-  "linol" {>= "0.10" & < "0.11"}
+  "linol" {>= "0.11"}
+  "linol-eio" {>= "0.11"}
   "odoc" {with-doc}
 ]
 build: [

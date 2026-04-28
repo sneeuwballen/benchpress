@@ -2,75 +2,121 @@
 
 (** Logging setup *)
 
+open struct
+  let ( let@ ) = ( @@ )
+end
+
+module Logfmt = struct
+  let escape_value s =
+    if
+      CCString.exists
+        (fun c ->
+          Char.code c < 0x2f
+          || Char.code c >= 127
+          || c = ' ' || c = '\\' || c = '"')
+        s
+    then
+      Printf.sprintf "%S" s
+    else
+      s
+
+  let add_kv_to_buffer buf k v =
+    Buffer.add_string buf k;
+    Buffer.add_char buf '=';
+    Buffer.add_string buf (escape_value v)
+
+  let to_buffer buf l =
+    List.iteri
+      (fun i (k, v) ->
+        if i > 0 then Buffer.add_char buf ' ';
+        add_kv_to_buffer buf k v)
+      l
+end
+
 module Log_report = struct
+  type output = { oc: out_channel; must_close: bool }
+
+  let get_output () : output =
+    match Sys.getenv_opt "LOGFILE" with
+    | Some file ->
+      let oc = open_out file in
+      { oc; must_close = true }
+    | None -> { oc = stderr; must_close = false }
+
   let buf_fmt () =
     let b = Buffer.create 512 in
-    let fmt = CCFormat.formatter_of_buffer b in
-    CCFormat.set_color_tag_handling fmt;
+    let out = CCFormat.formatter_of_buffer b in
     let flush () =
-      CCFormat.fprintf fmt "@]@?";
+      Format.pp_print_flush out ();
       let m = Buffer.contents b in
       Buffer.reset b;
       m
     in
-    fmt, flush
-
-  let pp_h out (src, lvl, _) =
-    let src = Logs.Src.name src in
-    let src =
-      if src = "application" then
-        ""
-      else
-        src
-    in
-    match lvl with
-    | Logs.Debug -> CCFormat.fprintf out "[@{<black>debug@}:%s]" src
-    | Logs.Info -> CCFormat.fprintf out "[@{<cyan>info@}:%s]" src
-    | Logs.Error -> CCFormat.fprintf out "[@{<Red>error@}:%s]" src
-    | Logs.Warning -> CCFormat.fprintf out "[@{<yellow>warning@}:%s]" src
-    | Logs.App -> CCFormat.fprintf out "[@{<blue>app@}:%s]" src
+    out, flush
 
   let reporter () =
-    CCFormat.set_color_default true;
-    let buf_out, buf_flush = buf_fmt () in
-    let pp_header fmt header =
-      let now = Ptime_clock.now () in
-      CCFormat.fprintf fmt "@[<2>[%a|t%d] %a@ "
-        (Ptime.pp_rfc3339 ~frac_s:3 ())
-        now
-        Thread.(id @@ self ())
-        pp_h header
+    let out = get_output () in
+    if out.must_close then
+      at_exit (fun () ->
+          Global_lock.synchronized_sync (fun () ->
+              flush out.oc;
+              close_out_noerr out.oc));
+
+    let buf_pool =
+      Apool.create ~clear:Buffer.reset ~max_size:16
+        ~mk_item:(fun () -> Buffer.create 32)
+        ()
     in
-    let log_out =
-      match Sys.getenv "LOGS_FILE" with
-      | "" -> stderr
-      | file ->
-        (try
-           let oc = open_out file in
-           at_exit (fun () -> close_out_noerr oc);
-           oc
-         with e ->
-           Printf.eprintf "error: cannot open log file '%s': %s\n%!" file
-             (Printexc.to_string e);
-           stderr)
-      | exception Not_found -> stderr
+    let buf_fmt_pool =
+      Apool.create
+        ~clear:(fun (_, flush) -> ignore (flush () : string))
+        ~mk_item:buf_fmt ~max_size:16 ()
     in
+
+    let write_str s =
+      Global_lock.synchronized_sync (fun () ->
+          output_string out.oc s;
+          flush out.oc)
+    in
+
     let report src level ~over k msgf =
-      let k _ =
-        let reset_line = "\x1b[2K\r" in
-        let write_str s =
-          Moonpool.Lock.with_ (Moonpool.Lock.create ()) @@ fun () ->
-          Printf.fprintf log_out "%s%s%!" reset_line s
+      let k flush _fmt =
+        (* the log message *)
+        let msg = flush () in
+
+        (* key values common to all lines *)
+        let common =
+          [
+            "time", Ptime.to_rfc3339 ~frac_s:3 ~space:false (Ptime_clock.now ());
+            "level", Logs.level_to_string (Some level);
+            "src", Logs.Src.name src;
+          ]
         in
-        let msg = buf_flush () in
-        write_str msg;
+
+        (* emit one log line per line in the message *)
+        let log_data =
+          let@ buf = Apool.with_resource buf_pool in
+          let lines = String.split_on_char '\n' msg in
+          List.iter
+            (fun line ->
+              let line = String.trim line in
+              if line <> "" then (
+                Logfmt.to_buffer buf (common @ [ "msg", line ]);
+                Buffer.add_char buf '\n'
+              ))
+            lines;
+
+          Buffer.contents buf
+        in
+
+        write_str log_data;
         over ();
         k ()
       in
-      msgf (fun ?header ?tags:_ fmt ->
-          CCFormat.kfprintf k buf_out
-            ("%a@[" ^^ fmt ^^ "@]@.")
-            pp_header (src, level, header))
+
+      msgf (fun ?header:_ ?tags:_ fmt ->
+          let@ buf_fmt, flush = Apool.with_resource buf_fmt_pool in
+          CCFormat.kfprintf (k flush) buf_fmt fmt)
     in
     { Logs.report }
 end

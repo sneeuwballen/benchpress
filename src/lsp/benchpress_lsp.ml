@@ -3,13 +3,13 @@ module Stanza = Benchpress.Stanza
 module Error = Benchpress.Error
 module Definitions = Benchpress.Definitions
 module Sexp_loc = Benchpress.Sexp_loc
-module Lock = Moonpool.Lock
+module Trace_eio = Benchpress.Trace_eio
 
 type 'a or_error = ('a, Error.t) result
 
 module E = CCResult
-module IO = Linol.Blocking_IO
-module L = Linol.Jsonrpc2.Make (IO)
+module IO = Linol_eio.IO_eio
+module L = Linol_eio.Jsonrpc2
 module LT = Linol.Lsp.Types
 module Log = (val Logs.src_log Logs.Src.(create "lsp"))
 
@@ -98,16 +98,16 @@ let find_atom_under_ (s : string) (pos : Loc.pos) : string option =
 
 let catch_e f = try Ok (f ()) with Error.E e -> Error e
 
-class blsp =
+class blsp ~(sw : Eio.Switch.t) =
   object (self)
     inherit L.server
 
     (* one env per document *)
-    val buffers
-        : (Linol.Lsp.Types.DocumentUri.t, processed_buf) Hashtbl.t Lock.t =
-      Lock.create @@ Hashtbl.create 32
+    val buffers_tbl : (Linol.Lsp.Types.DocumentUri.t, processed_buf) Hashtbl.t =
+      Hashtbl.create 32
 
-    method spawn_query_handler f = ignore (Thread.create (fun () -> f ()) ())
+    val buffers_mu = Eio.Mutex.create ()
+    method spawn_query_handler f = Linol_eio.spawn ~sw (fun () -> ignore (f ()))
     method! config_hover = Some (`Bool true)
     method! config_definition = Some (`Bool true)
 
@@ -125,7 +125,9 @@ class blsp =
     method! on_req_hover ~notify_back:_ ~id:_ ~uri ~pos ~workDoneToken:_
         (_ : L.doc_state) : LT.Hover.t option =
       let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
-      match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
+      match
+        Eio.Mutex.use_ro buffers_mu (fun () -> CCHashtbl.get buffers_tbl uri)
+      with
       | Some { defs = Ok defs; text; _ } ->
         Log.debug (fun k -> k "found buffer with defs");
         (match find_atom_under_ text pos with
@@ -150,7 +152,9 @@ class blsp =
     method! on_req_definition ~notify_back:_ ~id:_ ~uri ~pos ~workDoneToken:_
         ~partialResultToken:_ (_ : L.doc_state) : LT.Locations.t option =
       let pos = Loc.Pos.of_line_col pos.L.Position.line pos.character in
-      match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
+      match
+        Eio.Mutex.use_ro buffers_mu (fun () -> CCHashtbl.get buffers_tbl uri)
+      with
       | Some { defs = Ok defs; text; _ } ->
         Log.debug (fun k -> k "found buffer with defs");
         (match find_atom_under_ text pos with
@@ -179,7 +183,9 @@ class blsp =
           k "completion request in '%s' at pos: %d line, %d col"
             (uri_to_string uri) pos.line pos.character);
       let pos = Loc.Pos.of_line_col pos.line pos.character in
-      match Lock.with_ buffers (fun b -> CCHashtbl.get b uri) with
+      match
+        Eio.Mutex.use_ro buffers_mu (fun () -> CCHashtbl.get buffers_tbl uri)
+      with
       | Some { defs = Ok defs; text; _ } ->
         Log.debug (fun k -> k "found local doc");
         (match find_atom_under_ text pos with
@@ -221,7 +227,8 @@ class blsp =
         catch_e @@ fun () -> Definitions.of_stanza_l ~reify_errors:true stanzas
       in
       let pdoc = { stanzas; defs; text = contents } in
-      Lock.with_ buffers (fun b -> Hashtbl.replace b uri pdoc);
+      Eio.Mutex.use_ro buffers_mu (fun () ->
+          Hashtbl.replace buffers_tbl uri pdoc);
       let diags = diagnostics ~uri pdoc in
       Log.debug (fun k -> k "send diags for %s" (uri_to_string uri));
       notify_back#send_diagnostic diags
@@ -244,8 +251,7 @@ class blsp =
     method on_notif_doc_did_close ~notify_back:_
         (d : LT.TextDocumentIdentifier.t) : unit IO.t =
       Log.debug (fun k -> k "close %s" (uri_to_string d.uri));
-      Lock.with_ buffers (fun b -> Hashtbl.remove b d.uri);
-      IO.return ()
+      Eio.Mutex.use_ro buffers_mu (fun () -> Hashtbl.remove buffers_tbl d.uri)
   end
 
 let setup_debug () =
@@ -262,6 +268,9 @@ let setup_debug () =
 
 let () =
   setup_debug ();
-  let lsp = new blsp in
-  let server = L.create ~ic:stdin ~oc:stdout lsp in
+  Eio_posix.run @@ fun env ->
+  Trace_eio.setup ();
+  Eio.Switch.run @@ fun sw ->
+  let lsp = new blsp ~sw in
+  let server = L.create_stdio ~env lsp in
   L.run server

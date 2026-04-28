@@ -1,14 +1,15 @@
 (** {1 Task queue for the server} *)
 
 open Common
-module M = Moonpool.Lock
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.task-queue"))
 
 type job = {
   j_uuid: string;
   j_action: Action.t;
   j_task: Task.t; (* task this action comes from *)
-  j_interrupted: bool M.t;
+  j_interrupted: bool Atomic.t;
+  j_interrupt_promise: unit Eio.Promise.t;
+  j_interrupt_resolver: unit Eio.Promise.u;
   mutable j_started_time: float; (* -1. if not started *)
   mutable j_percent_completion: int;
   mutable j_eta: float;
@@ -23,7 +24,7 @@ module Job = struct
 
   let pp out self =
     Fmt.fprintf out "(@[task%s@ :uuid %s@ %a@])"
-      (if M.get self.j_interrupted then
+      (if Atomic.get self.j_interrupted then
          "[int]"
        else
          "")
@@ -31,8 +32,8 @@ module Job = struct
 
   let uuid self = self.j_uuid
   let to_string = Fmt.to_string pp
-  let interrupt self = M.set self.j_interrupted true
-  let interrupted self = M.get self.j_interrupted
+  let interrupt self = Atomic.set self.j_interrupted true
+  let interrupted self = Atomic.get self.j_interrupted
   let time_elapsed self = Unix.gettimeofday () -. self.j_started_time
   let percent_completion self = self.j_percent_completion
 end
@@ -42,21 +43,26 @@ end
 type api_job = { mutable aj_last_seen: float; mutable aj_interrupted: bool }
 
 type t = {
-  defs: Definitions.t M.t;
-  jobs: job Moonpool.Blocking_queue.t;
+  defs: Definitions.t;
+  jobs: job Eio.Stream.t;
   jobs_tbl: (string, Job.t) Hashtbl.t;
   api_jobs: (string, api_job) Hashtbl.t; (* last seen+descr *)
-  cur: job option M.t;
+  cur_mu: Eio.Mutex.t;
+  mutable cur: job option;
 }
 
 let defs self = self.defs
-let size self = Moonpool.Blocking_queue.size self.jobs
-let cur_job self = M.get self.cur
+let size self = Eio.Stream.length self.jobs
+let cur_job self = Eio.Mutex.use_ro self.cur_mu (fun () -> self.cur)
 
 let interrupt self ~uuid : bool =
   match CCHashtbl.get self.jobs_tbl uuid, CCHashtbl.get self.api_jobs uuid with
   | Some j, _ ->
-    M.set j.j_interrupted true;
+    (* CAS ensures we resolve the promise exactly once *)
+    if Atomic.compare_and_set j.j_interrupted false true then (
+      try Eio.Promise.resolve j.j_interrupt_resolver ()
+      with Invalid_argument _ -> ()
+    );
     true
   | None, Some aj ->
     aj.aj_interrupted <- true;
@@ -65,11 +71,12 @@ let interrupt self ~uuid : bool =
 
 let create ?(defs = Definitions.empty) () : t =
   {
-    jobs = Moonpool.Blocking_queue.create ();
-    defs = M.create defs;
+    defs;
+    jobs = Eio.Stream.create max_int;
     jobs_tbl = Hashtbl.create 8;
     api_jobs = Hashtbl.create 8;
-    cur = M.create None;
+    cur_mu = Eio.Mutex.create ();
+    cur = None;
   }
 
 type job_live_status = Queued | Running of int | Completed | Unknown
@@ -78,24 +85,27 @@ let push self ?(on_complete : (string -> unit) option) task : string =
   let j_uuid =
     Uuidm.v4_gen (Random.State.make_self_init ()) () |> Uuidm.to_string
   in
+  let j_interrupt_promise, j_interrupt_resolver = Eio.Promise.create () in
   let j =
     {
       j_action = task.Task.action;
       j_task = task;
       j_uuid;
       j_eta = 0.;
-      j_interrupted = M.create false;
+      j_interrupted = Atomic.make false;
+      j_interrupt_promise;
+      j_interrupt_resolver;
       j_started_time = -1.;
       j_percent_completion = 0;
       j_on_complete = on_complete;
     }
   in
   Hashtbl.add self.jobs_tbl j_uuid j;
-  Moonpool.Blocking_queue.push self.jobs j;
+  Eio.Stream.add self.jobs j;
   j_uuid
 
 let job_live_status self ~uuid =
-  match M.get self.cur with
+  match cur_job self with
   | Some j when j.j_uuid = uuid -> Running j.j_percent_completion
   | _ ->
     (match Hashtbl.find_opt self.jobs_tbl uuid with
@@ -105,12 +115,12 @@ let job_live_status self ~uuid =
 
 let loop self =
   while true do
-    let job = Moonpool.Blocking_queue.pop self.jobs in
+    let job = Eio.Stream.take self.jobs in
     let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "task-queue.job" in
     job.j_started_time <- Unix.gettimeofday ();
-    M.set self.cur (Some job);
+    Eio.Mutex.use_rw ~protect:true self.cur_mu (fun () -> self.cur <- Some job);
     Log.info (fun k -> k "run job for task %s" job.j_task.Task.name);
-    let defs = M.get self.defs in
+    let defs = self.defs in
     (* run the job *)
     let cb_progress =
       object
@@ -128,10 +138,19 @@ let loop self =
         "sqlite"
     in
     let completed = ref false in
+    (* Race job execution against the interrupt promise. When [interrupt] is
+       called it resolves the promise, which causes [Fiber.any] to cancel the
+       job fiber — propagating the cancellation into [Run_proc.run]'s switch
+       and killing any running child process. *)
     (try
-       Exec_action.run defs job.j_action ~output:output_file ~cb_progress
-         ~interrupted:(fun () -> Job.interrupted job);
-       completed := not (M.get job.j_interrupted)
+       Eio.Fiber.any
+         [
+           (fun () -> Eio.Promise.await job.j_interrupt_promise);
+           (fun () ->
+             Exec_action.run defs job.j_action ~output:output_file ~cb_progress
+               ~interrupted:(fun () -> Job.interrupted job);
+             completed := not (Atomic.get job.j_interrupted));
+         ]
      with
     | Error.E e ->
       Log.err (fun k ->
@@ -148,6 +167,5 @@ let loop self =
       | None -> ()
     );
     Hashtbl.remove self.jobs_tbl job.j_uuid;
-    (* cleanup *)
-    M.set self.cur None
+    Eio.Mutex.use_rw ~protect:true self.cur_mu (fun () -> self.cur <- None)
   done

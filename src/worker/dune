@@ -6,7 +6,7 @@
  (promote
   (into ../../)
   (until-clean))
- (libraries benchpress containers)
+ (libraries benchpress containers eio_posix)
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress -linkall))
 
 (rule
