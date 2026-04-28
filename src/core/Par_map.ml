@@ -27,21 +27,22 @@ let map_p ~j f l =
   | _ when j = 1 -> List.map f l
   | _ ->
     Log.debug (fun k -> k "par-map: start j=%d n=%d" j (List.length l));
-    let n = List.length l in
-    let results = Array.make n None in
     let sem = Eio.Semaphore.make j in
-    Eio.Switch.run (fun sw ->
-        List.iteri
-          (fun i x ->
-            Eio.Fiber.fork ~sw (fun () ->
-                Eio.Semaphore.acquire sem;
-                let@ () =
-                  Fun.protect ~finally:(fun () -> Eio.Semaphore.release sem)
-                in
-                results.(i) <- Some (f x)))
-          l);
+    let promises =
+      let@ sw = Eio.Switch.run ~name:"parmap" in
+      List.rev_map
+        (fun x ->
+          let@ () = Eio.Fiber.fork_promise ~sw in
+          Eio.Semaphore.acquire sem;
+          let@ () =
+            Fun.protect ~finally:(fun () -> Eio.Semaphore.release sem)
+          in
+          f x)
+        l
+    in
+    let res = List.rev_map Eio.Promise.await_exn promises in
     Log.debug (fun k -> k "par-map: done");
-    Array.to_list results |> List.map (fun x -> Option.get x)
+    res
 
 (** Map on the list [l] with each call to [f] being associated one of the
     resources from [resources] that is guaranteed not to be used concurrently by
