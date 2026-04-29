@@ -222,6 +222,9 @@ let load_file f = snd @@ load_file_full f
 let with_loaded_file ~map_err filename (process : Test_top_result.t -> 'a) : 'a
     =
   Error.guard map_err @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "with-loaded-file" in
+  Trace.add_data_to_span _sp [ "file", `String filename ];
+
   let filename = mk_file_full filename in
   let _, r = load_file_full filename in
   process r

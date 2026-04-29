@@ -498,6 +498,8 @@ let () =
   let@ () = Trace_tef.with_setup () in
   let@ env = Eio_posix.run in
   Trace_eio.setup ();
+
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   let proc_mgr = Eio.Stdenv.process_mgr env in
   Run_proc.with_proc_mgr proc_mgr @@ fun () ->
   match parse_opt () with

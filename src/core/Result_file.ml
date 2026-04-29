@@ -1,5 +1,11 @@
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.result-file"))
 
+open struct
+  module Trace = Trace_core
+
+  let ( let@ ) = ( @@ )
+end
+
 (* --- Writing --- *)
 
 type writer = {
@@ -10,7 +16,7 @@ type writer = {
   meta: Test_metadata.t;
 }
 
-let open_write zip_path ~meta =
+let open_write zip_path ~meta : writer =
   let w =
     {
       events_buf = Buffer.create (1024 * 64);
@@ -44,7 +50,8 @@ let register_blob w (raw_bytes : string) : Benchpress_core.data_ref =
   | Benchpress_core.Inline _ -> ());
   dr
 
-let write_event w (ev : Run_event.t) : unit =
+let write_event (w : writer) (ev : Run_event.t) : unit =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "res-file.write-event" in
   (* For large outputs, register blobs and encode as sha256 refs *)
   let ev_pb =
     match ev with
@@ -115,6 +122,9 @@ let parse_rfc3339 (s : string) : float option =
   )
 
 let make_manifest_json w ~total_wall_time ~n_results ~n_bad ~dirs : string =
+  let@ _sp =
+    Trace.with_span ~__FILE__ ~__LINE__ "res-file.make-manifest-json"
+  in
   let meta = w.meta in
   let m =
     Benchpress_core.make_manifest
@@ -158,6 +168,10 @@ let read_zip_entry zip_path =
     match Hashtbl.find_opt cache name with
     | Some b -> b
     | None ->
+      let@ _sp =
+        Trace.with_span ~__FILE__ ~__LINE__ "res-file.zip.read-entry"
+      in
+      Trace.add_data_to_span _sp [ "name", `String name ];
       (try
          let entry = Zip.find_entry iz name in
          let s = Zip.read_entry iz entry in
@@ -169,6 +183,7 @@ let read_zip_entry zip_path =
   iz, reader
 
 let read_events zip_path : Run_event.t list =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "res-file.zip.read-events" in
   let iz, read_zip_entry = read_zip_entry zip_path in
   try
     let entry = Zip.find_entry iz "events.jsonl" in
@@ -196,6 +211,7 @@ let read_events zip_path : Run_event.t list =
     Error.failf "reading events from %s: %s" zip_path (Printexc.to_string exn)
 
 let read_meta zip_path : Test_metadata.t =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "res-file.zip.read-meta" in
   let iz = Zip.open_in zip_path in
   try
     let entry = Zip.find_entry iz "manifest.json" in
