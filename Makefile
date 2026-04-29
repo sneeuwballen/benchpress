@@ -17,6 +17,9 @@ test:
 protoc-gen: ## Regenerate protobuf OCaml files from .proto sources
 	FORCE_GENPROTO=true dune build @lint
 
+gen-protobuf: ## Regenerate all protobuf OCaml files (API + core)
+	FORCE_GENPROTO=true dune build @gen-protobuf @lint
+
 format:
 	@dune build @fmt --auto-promote
 
@@ -51,4 +54,4 @@ test-api-compose: ## Run API tests via docker compose (server + runner container
 	    --build --abort-on-container-exit --exit-code-from runner
 	docker compose -f docker/compose.test.yml down -v
 
-.PHONY: all clean watch test-api test-api-docker test-api-compose protoc-gen
+.PHONY: all clean watch test-api test-api-docker test-api-compose protoc-gen gen-protobuf

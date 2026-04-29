@@ -1,0 +1,14 @@
+(rule
+ (alias gen-protobuf)
+ (mode promote)
+ (enabled_if %{env:FORCE_GENPROTO=false})
+ (targets benchpress_core.ml benchpress_core.mli)
+ (deps benchpress_core.proto)
+ (action
+  (run ocaml-protoc --binary --yojson --pp --make --ml_out . %{deps})))
+
+(library
+ (name benchpress_core_proto)
+ (package benchpress)
+ (wrapped false)
+ (libraries pbrt pbrt_yojson yojson))

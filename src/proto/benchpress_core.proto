@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package benchpress_core;
+
+// A problem file with its expected result.
+// [expected] uses Res.to_string: "sat" | "unsat" | "unknown" | "timeout" | "error" | tag-name
+message Problem {
+  string name = 1;
+  string expected = 2;
+}
+
+// Blob content: inline bytes (if small) or a sha256 reference into the zip.
+// If sha256ref="abc123", the actual bytes are in zip entry "data.abc123".
+message DataRef {
+  oneof content {
+    bytes inline = 1;
+    string sha256ref = 2;
+  }
+}
+
+// Raw output from running a process.
+message RunProcResult {
+  int32 errcode = 1;
+  DataRef stdout = 2;
+  DataRef stderr = 3;
+  double rtime = 4;
+  double utime = 5;
+  double stime = 6;
+}
+
+// --- Event types (all appear as lines in events.jsonl) ---
+
+// First event in events.jsonl.
+message RunStart {
+  string uuid = 1;
+  optional double timestamp = 2;
+  repeated string dirs = 3;
+  repeated string provers = 4;
+}
+
+// Last event in events.jsonl.
+message RunDone {
+  double total_wall_time = 1;
+  int32 n_results = 2;
+  int32 n_bad = 3;
+}
+
+message ProverStart {
+  string prover = 1;
+  Problem problem = 2;
+  int64 timeout_s = 3;
+}
+
+// [res] uses Res.to_string: "sat" | "unsat" | "unknown" | "timeout" | "error" | tag-name
+// [labels] carries the tag name for Tag results; empty for standard results.
+message ProverDone {
+  string prover = 1;
+  Problem problem = 2;
+  string res = 3;
+  repeated string labels = 4;
+  int64 timeout_s = 5;
+  RunProcResult raw = 6;
+}
+
+message CheckerStart {
+  string prover = 1;
+  string checker = 2;
+  Problem problem = 3;
+}
+
+// [proof_check_res] uses Proof_check_res.to_string: "valid" | "invalid" | "unknown:<msg>"
+message CheckerDone {
+  string prover = 1;
+  string checker = 2;
+  Problem problem = 3;
+  string proof_check_res = 4;
+  RunProcResult raw = 5;
+}
+
+// Summary stored as manifest.json in the zip; RFC3339 timestamp string.
+message Manifest {
+  string uuid = 1;
+  string timestamp = 2;         // RFC3339, e.g. "2026-04-28T09:15:00Z"; empty if unknown
+  repeated string provers = 3;
+  double total_wall_time = 4;
+  int32 n_results = 5;
+  int32 n_bad = 6;
+  repeated string dirs = 7;
+}
+
+// Top-level event discriminant — one JSON line in events.jsonl.
+message Event {
+  oneof event {
+    RunStart run_start = 1;
+    RunDone run_done = 2;
+    ProverStart prover_start = 3;
+    ProverDone prover_done = 4;
+    CheckerStart checker_start = 5;
+    CheckerDone checker_done = 6;
+  }
+}
