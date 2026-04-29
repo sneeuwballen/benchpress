@@ -3,18 +3,10 @@
 open Common
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.runexec-action"))
 
-let has_zst_suffix s =
-  Filename.check_suffix s ".sqlite.zst"
-  || Filename.check_suffix s ".sqlite.zstd"
-
-let strip_zst_suffix s =
-  if Filename.check_suffix s ".sqlite.zst" then
-    Filename.chop_suffix s ".zst"
-  else
-    Filename.chop_suffix s ".zstd"
-
 let compress_sqlite_to_zst ~src ~dst =
   let rc =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "zstd.compress" in
+    Trace.add_data_to_span _sp [ "src", `String src; "dst", `String dst ];
     Sys.command
       (Printf.sprintf "zstd -q %s -o %s" (Filename.quote src)
          (Filename.quote dst))
@@ -270,7 +262,7 @@ end = struct
     (* resolve output: strip .zst/.zstd if present, or add .zst if --compress *)
     let effective_output, compress_to =
       match output with
-      | Some f when has_zst_suffix f -> Some (strip_zst_suffix f), Some f
+      | Some f when Misc.is_zst_file f -> Some (Misc.strip_zst_suffix f), Some f
       | Some f when compress -> Some f, Some (f ^ ".zst")
       | Some f -> Some f, None
       | None when compress && save ->
@@ -446,7 +438,7 @@ end = struct
     let start = Misc.now_s () in
     let effective_output, compress_to =
       match output with
-      | Some f when has_zst_suffix f -> Some (strip_zst_suffix f), Some f
+      | Some f when Misc.is_zst_file f -> Some (Misc.strip_zst_suffix f), Some f
       | Some f when compress -> Some f, Some (f ^ ".zst")
       | Some f -> Some f, None
       | None when compress && save ->

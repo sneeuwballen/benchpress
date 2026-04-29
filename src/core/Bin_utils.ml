@@ -47,9 +47,14 @@ let with_decompressed_zst (path : string) (f : string -> 'a) : 'a =
     ~finally:(fun () -> try Sys.remove tmp with _ -> ())
     (fun () ->
       let rc =
-        Sys.command
-          (Printf.sprintf "zstd -q -f -d %s -o %s" (Filename.quote path)
-             (Filename.quote tmp))
+        let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "zstd.decompress" in
+        let cmd =
+          Printf.sprintf "zstd -q -f -d %s -o %s" (Filename.quote path)
+            (Filename.quote tmp)
+        in
+        Trace.add_data_to_span _sp
+          [ "file", `String path; "tmp", `String tmp; "cmd", `String cmd ];
+        Sys.command cmd
       in
       if rc <> 0 then
         Error.failf "zstd decompression of '%s' failed (exit %d)" path rc;
@@ -249,6 +254,8 @@ let load_file f = snd @@ load_file_full f
 let with_loaded_file ~map_err filename (process : Test_top_result.t -> 'a) : 'a
     =
   Error.guard map_err @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "with-loaded-file" in
+  Trace.add_data_to_span _sp [ "file", `String filename ];
   let filename = mk_file_full filename in
   if is_zst_file filename then
     with_decompressed_zst filename (fun tmp ->
