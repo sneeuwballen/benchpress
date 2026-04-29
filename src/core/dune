@@ -27,7 +27,10 @@
   pp_loc
   processor
   trace.core
-  yojson)
+  yojson
+  benchpress_core_proto
+  digestif
+  camlzip)
  (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 
 (rule

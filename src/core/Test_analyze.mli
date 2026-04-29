@@ -17,12 +17,12 @@ type t = {
   total: int;
 }
 
-val of_db_for : ?full:bool -> Db.t -> prover:Prover.name -> t
-val of_db : ?full:bool -> Db.t -> (Prover.name * t) list
 val of_db_dirs : Db.t -> string list
-
 val of_db_n_bad : Db.t -> int
-(** Compute number of bad results *)
+val of_events_for : prover:Prover.name -> Run_event.t list -> t
+val of_events : ?full:bool -> Run_event.t list -> (Prover.name * t) list
+val of_events_n_bad : Run_event.t list -> int
+val of_events_dirs : Run_event.t list -> string list
 
 val to_printbox_l :
   ?link:prover_string_linker -> (Prover.name * t) list -> PrintBox.t

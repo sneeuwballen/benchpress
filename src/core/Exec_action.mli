@@ -99,8 +99,6 @@ module Progress_run_provers : sig
         callback when progress is made, with a percentage and ETA *)
 end
 
-val dump_results_sqlite : Test_top_result.t -> unit
-
 val run :
   ?output:string ->
   ?save:bool ->

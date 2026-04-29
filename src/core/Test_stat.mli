@@ -23,6 +23,6 @@ type t = {
 val to_printbox_l :
   ?details:bool -> ?to_link:prover_string_linker -> (string * t) list -> PB.t
 
-val of_db_for : prover:Prover.name -> Db.t -> t
-val of_db : Db.t -> (Prover.name * t) list
+val of_events_for : prover:Prover.name -> Run_event.t list -> t
+val of_events : Run_event.t list -> (Prover.name * t) list
 val pp : t Fmt.printer

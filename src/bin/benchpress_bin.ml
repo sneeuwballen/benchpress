@@ -457,27 +457,6 @@ module Task_list = struct
       Cmdliner.Term.(const run $ Bin_utils.definitions_term)
 end
 
-(** {2 Convert results to Sql} *)
-
-module Sql_convert = struct
-  type params = {
-    files: string list; [@pos_all] [@non_empty] [@docv "FILES"]
-        (** files to read *)
-  }
-  [@@deriving subliner]
-
-  let run (p : params) defs =
-    let@ () = catch_err in
-    Sql_res.run defs p.files
-
-  let cmd =
-    let doc = "convert result(s) into sqlite files" in
-    Cmdliner.Cmd.v
-      (Cmdliner.Cmd.info ~doc "sql-convert")
-      Cmdliner.Term.(
-        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
-end
-
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -508,7 +487,6 @@ let parse_opt () =
       Check_config.cmd;
       Prover_show.cmd;
       Prover_list.cmd;
-      Sql_convert.cmd;
       Task_list.cmd;
       Task_show.cmd;
       Slurm.cmd;

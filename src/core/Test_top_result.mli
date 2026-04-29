@@ -12,7 +12,6 @@ type t = {
   events: Run_event.t list;
   stats: (Prover.name * Test_stat.t) list;
   analyze: (Prover.name * Test_analyze.t) list;
-  db: Db.t; (* in-memory database *)
 }
 
 (** Filter on the list of all results *)
@@ -42,14 +41,6 @@ val make :
   Run_event.t list ->
   t
 (** Make from a list of results *)
-
-val of_db : analyze_full:bool -> Db.t -> t
-(** Parse from a DB *)
-
-val db_prepare : Db.t -> unit
-
-val to_db : Db.t -> t -> unit
-(** Dump into the DB *)
 
 val stat : t -> (Prover.name * Test_stat.t) list
 (** Compute or retrieve stats *)

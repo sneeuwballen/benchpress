@@ -155,7 +155,8 @@ let list_entries ?(off = 0) ?(limit = max_int) data_dir :
        | `File, s
          when Filename.check_suffix s ".json.gz"
               || Filename.check_suffix s ".json"
-              || Filename.check_suffix s ".sqlite" ->
+              || Filename.check_suffix s ".sqlite"
+              || Filename.check_suffix s ".zip" ->
          let size = (Unix.stat s).Unix.st_size in
          Some (s, size)
        | _ -> None)
@@ -190,13 +191,18 @@ let guess_uuid (f : string) =
 (** Load file by name *)
 let load_file_full (file : string) : string * Test_top_result.t =
   let file = mk_file_full file in
-  if Filename.check_suffix file ".sqlite" then
+  if Filename.check_suffix file ".zip" then
     Error.guard (Error.wrapf "load_file_full '%s'" file) @@ fun () ->
-    Db.with_db ~timeout:1500 ~mode:`NO_CREATE file (fun db ->
-        let r = Test_top_result.of_db ~analyze_full:true db in
-        file, r)
+    let meta = Result_file.read_meta file in
+    let events = Result_file.read_events file in
+    file, Test_top_result.make ~analyze_full:true ~meta ~provers:[] events
+  else if Filename.check_suffix file ".sqlite" then
+    Error.guard (Error.wrapf "load_file_full '%s'" file) @@ fun () ->
+    let meta = Sqlite_cli.read_meta file in
+    let events = Sqlite_cli.read_events file in
+    file, Test_top_result.make ~analyze_full:true ~meta ~provers:[] events
   else
-    Error.failf "invalid name %S, expected a .sqlite file" file
+    Error.failf "invalid name %S, expected a .zip or .sqlite file" file
 
 let with_file_as_db ~map_err filename file : _ =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "with-file-as-db" in
@@ -212,22 +218,26 @@ let with_file_as_db ~map_err filename file : _ =
 
 let load_file f = snd @@ load_file_full f
 
-(** Load a file and process it while keeping the DB open *)
+(** Load a file and process it *)
 let with_loaded_file ~map_err filename (process : Test_top_result.t -> 'a) : 'a
     =
   Error.guard map_err @@ fun () ->
   let filename = mk_file_full filename in
-  Db.with_db ~timeout:1500 ~mode:`READONLY filename (fun db ->
-      let r = Test_top_result.of_db ~analyze_full:true db in
-      process r)
+  let _, r = load_file_full filename in
+  process r
 
 let load_file_summary ?(full = false) (file : string) :
     string * Test_compact_result.t =
-  if Filename.check_suffix file ".sqlite" then (
+  if Filename.check_suffix file ".zip" then (
     let file = mk_file_full file in
-    Db.with_db ~timeout:500 ~mode:`READONLY file (fun db ->
-        let cr = Test_compact_result.of_db ~full db in
-        file, cr)
+    let meta = Result_file.read_meta file in
+    let events = Result_file.read_events file in
+    file, Test_compact_result.of_events ~full ~meta events
+  ) else if Filename.check_suffix file ".sqlite" then (
+    let file = mk_file_full file in
+    let meta = Sqlite_cli.read_meta file in
+    let events = Sqlite_cli.read_events file in
+    file, Test_compact_result.of_events ~full ~meta events
   ) else (
     let file', res = load_file_full file in
     let cr = Test_top_result.to_compact_result res in

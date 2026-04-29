@@ -189,72 +189,58 @@ end = struct
       CCFun.finally ~h:(fun () -> try Sys.remove file with _ -> ()) ~f
     | _ -> f ()
 
-  let prepare_db ~wal_mode ?output ~update timestamp uuid save provers =
-    let db =
-      if save then (
-        let db_file =
-          match output with
-          | Some output ->
-            if Sys.file_exists output then
-              if update then (
-                Sys.remove output;
-                output
-              ) else
-                Error.failf "The file %s exists" output
-            else
+  let prepare_writer ?output ~update timestamp uuid save
+      (provers : Prover.t list) =
+    if save then (
+      let zip_file =
+        match output with
+        | Some output ->
+          if Sys.file_exists output then
+            if update then (
+              Sys.remove output;
               output
-          | None -> Misc.file_for_uuid "res" ~timestamp uuid "sqlite"
-        in
-        Log.debug (fun k -> k "output database file %s" db_file);
-        let db = Sqlite3.db_open ~mutex:`FULL db_file in
-        if wal_mode then (
-          match Db.exec0 db "pragma journal_mode=WAL;" with
-          | Ok _ -> db
-          | Error rc -> Error.raise (Misc.err_of_db rc)
-        ) else
-          db
-      ) else
-        Sqlite3.db_open ":memory:"
-    in
-    let ms =
-      match Sys.getenv "BENCHPRESS_BUSY_TIMEOUT" with
-      | n ->
-        (try int_of_string n
-         with _e -> Error.fail "BENCHPRESS_BUSY_TIMEOUT must be an integer")
-      | exception Not_found -> 3000
-    in
-    Db.setup_timeout db ~ms;
-    Test_top_result.db_prepare db;
-    Test_metadata.to_db db
-      {
-        Test_metadata.timestamp = Some timestamp;
-        uuid;
-        total_wall_time = None;
-        n_bad = 0;
-        n_results = 0;
-        dirs = [];
-        provers = [];
-      };
-    ( Error.guard (Error.wrap "inserting provers into DB") @@ fun () ->
-      List.iter (Prover.to_db db) provers );
-    db
+            ) else
+              Error.failf "The file %s exists" output
+          else
+            output
+        | None -> Misc.file_for_uuid "res" ~timestamp uuid "zip"
+      in
+      Log.debug (fun k -> k "output file: %s" zip_file);
+      let meta =
+        {
+          Test_metadata.timestamp = Some timestamp;
+          uuid;
+          total_wall_time = None;
+          n_bad = 0;
+          n_results = 0;
+          dirs = [];
+          provers = List.map (fun p -> p.Prover.name) provers;
+        }
+      in
+      Some (zip_file, Result_file.open_write zip_file ~meta)
+    ) else
+      None
 
   let run ?(timestamp = Misc.now_s ()) ?(on_start = _nop) ?(on_solve = _nop)
       ?(on_start_proof_check = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
       ?(interrupted = fun _ -> false) ?output ?(update = false) ~uuid ~save
-      ~wal_mode (self : expanded) : _ * _ =
+      ~wal_mode:_ (self : expanded) : _ * _ =
     let start = Misc.now_s () in
-    (* prepare DB *)
-    let db =
-      prepare_db ~wal_mode ?output ~update timestamp uuid save self.provers
+    let writer_opt =
+      prepare_writer ?output ~update timestamp uuid save self.provers
+    in
+    let writer_mu = Eio.Mutex.create () in
+    let write_ev ev =
+      match writer_opt with
+      | None -> ()
+      | Some (_, w) ->
+        Eio.Mutex.use_ro writer_mu (fun () -> Result_file.write_event w ev)
     in
     on_start self;
 
     CCOpt.iter Misc.mkdir_rec self.proof_dir;
 
-    let run_prover_pb ~prover ~pb ~(db : Sqlite3.db * Eio.Mutex.t) () : _ list =
-      let raw_db, db_mu = db in
-      let with_db f = Eio.Mutex.use_ro db_mu (fun () -> f raw_db) in
+    let run_prover_pb ~prover ~pb () : _ list =
       if interrupted () then Error.fail "run.interrupted";
       Error.guard
         (Error.wrapf "(@[running :prover %a :on %a@])" Prover.pp_name prover
@@ -271,9 +257,7 @@ end = struct
             match self.proof_dir with
             | None -> Filename.concat (Filename.dirname pb) basename, false
             | Some dir ->
-              (* copy problem *)
               copy_problem ~proof_dir:dir ~prover pb;
-              (* user asked to keep proofs, in given directory. *)
               Filename.concat dir basename, true
           in
           Some filename, keep
@@ -281,19 +265,16 @@ end = struct
           None, false
       in
 
-      (* continue but ensure we cleanup the proof file *)
       with_proof_file_opt ~proof_file ~keep @@ fun () ->
       let result =
         Run_prover_problem.run ~limits:self.limits ~proof_file prover pb
       in
-      (* insert into DB here *)
       let ev_prover = Run_event.mk_prover result in
-      with_db (fun db -> Run_event.to_db db ev_prover);
+      write_ev ev_prover;
 
       let ev_proof =
         match result.res, proof_file with
         | Res.Unsat, Some pfile when prover.Prover.produces_proof ->
-          (* run proof checker *)
           Log.debug (fun k ->
               k "proof-file size: %d"
                 (try Unix.((stat pfile).st_size) with _ -> 0));
@@ -316,79 +297,74 @@ end = struct
           in
           let ev_checker = Run_event.mk_checker res in
           on_proof_check res;
-
-          (* insert into DB here *)
-          with_db (fun db -> Run_event.to_db db ev_checker);
+          write_ev ev_checker;
           [ ev_checker ]
         | _ -> []
       in
 
       on_solve result;
 
-      (* only now we can announce our "solve" result *)
       Run_event.mk_prover result :: ev_proof
     in
 
-    (* build list of tasks *)
     let jobs =
       CCList.flat_map
         (fun pb -> CCList.map (fun prover -> prover, pb) self.provers)
         self.problems
     in
-    (* run provers *)
     let res_l =
-      let db_pair = db, Eio.Mutex.create () in
       match self.j with
       | Bounded j ->
         Misc.Par_map.map_p ~j
-          (fun (prover, pb) -> run_prover_pb ~prover ~pb ~db:db_pair ())
+          (fun (prover, pb) -> run_prover_pb ~prover ~pb ())
           jobs
         |> CCList.flatten
       | Cpus cpus ->
         Misc.Par_map.map_with_resource ~resources:cpus
           (fun cpu (prover, pb) ->
             Log.debug (fun m -> m "Running on cpu %d" cpu);
-            Misc.with_affinity cpu (run_prover_pb ~prover ~pb ~db:db_pair))
+            Misc.with_affinity cpu (run_prover_pb ~prover ~pb))
           jobs
         |> CCList.flatten
     in
 
     if interrupted () then Error.fail "run.interrupted";
     let total_wall_time = Misc.now_s () -. start in
-    let uuid = uuid in
     Logs.info (fun k ->
         k "benchmark done in %a, uuid=%a" Misc.pp_human_duration total_wall_time
           Uuidm.pp uuid);
-    let timestamp = Some timestamp in
-    let total_wall_time = Some total_wall_time in
+    let n_results = List.length res_l in
+    let n_bad = Test_analyze.of_events_n_bad res_l in
     let meta =
       {
         Test_metadata.uuid;
-        timestamp;
-        total_wall_time;
-        n_results = 0;
-        dirs = [];
-        n_bad = 0;
+        timestamp = Some timestamp;
+        total_wall_time = Some total_wall_time;
+        n_results;
+        dirs = Test_analyze.of_events_dirs res_l;
+        n_bad;
         provers = List.map Prover.name self.provers;
       }
     in
-    Logs.debug (fun k -> k "saving metadata…");
-    Test_metadata.to_db db meta;
+    (match writer_opt with
+    | None -> ()
+    | Some (zip_path, w) ->
+      Logs.debug (fun k -> k "closing zip file %s" zip_path);
+      Result_file.close_write w ~total_wall_time ~n_results ~n_bad
+        ~dirs:meta.Test_metadata.dirs);
     let top_res =
       lazy
         (let provers = CCList.map fst jobs in
          Test_top_result.make ~analyze_full:true ~meta ~provers res_l)
     in
-    let r = Test_compact_result.of_db ~full:true db in
+    let r = Test_compact_result.of_events ~full:true ~meta res_l in
     on_done r;
-    Logs.debug (fun k -> k "closing db…");
-    ignore (Sqlite3.db_close db : bool);
     top_res, r
 
   let run_sbatch_job ?(timestamp = Misc.now_s ()) ?(on_start = _nop)
       ?(on_solve = _nop) ?(on_start_proof_check = _nop) ?(on_proof_check = _nop)
       ?(on_done = _nop) ?(interrupted = fun _ -> false) ?partition ~nodes ~addr
-      ~port ~ntasks ?output ?(update = false) ~uuid ~save ~wal_mode
+      ~port ~ntasks ?output ?(update = false) ~uuid ~save ~wal_mode:_
       (self : expanded) : _ * _ =
     ignore on_start_proof_check;
     let j =
@@ -399,8 +375,17 @@ end = struct
         List.length cpus
     in
     let start = Misc.now_s () in
-    let db =
-      prepare_db ~wal_mode ?output ~update timestamp uuid save self.provers
+    let writer_opt =
+      prepare_writer ?output ~update timestamp uuid save self.provers
+    in
+    let writer_mu = Mutex.create () in
+    let write_ev ev =
+      match writer_opt with
+      | None -> ()
+      | Some (_, w) ->
+        Mutex.lock writer_mu;
+        Result_file.write_event w ev;
+        Mutex.unlock writer_mu
     in
     on_start self;
     let jobs =
@@ -453,7 +438,7 @@ end = struct
             (match ev with
             | Run_event.Prover_run r -> on_solve r
             | Checker_run r -> on_proof_check r);
-            Run_event.to_db db ev)
+            write_ev ev)
           evl;
         Mutex.unlock resps_lock
       in
@@ -614,25 +599,29 @@ end = struct
 
     if interrupted () then Error.fail "run.interrupted";
     let total_wall_time = Misc.now_s () -. start in
-    let uuid = uuid in
     Logs.info (fun k ->
         k "benchmark done in %a, uuid=%a" Misc.pp_human_duration total_wall_time
           Uuidm.pp uuid);
-    let timestamp = Some timestamp in
-    let total_wall_time = Some total_wall_time in
+    let res_l = get_resps () in
+    let n_results = List.length res_l in
+    let n_bad = Test_analyze.of_events_n_bad res_l in
+    let dirs = Test_analyze.of_events_dirs res_l in
     let meta =
       {
         Test_metadata.uuid;
-        timestamp;
-        total_wall_time;
-        n_results = 0;
-        dirs = [];
-        n_bad = 0;
+        timestamp = Some timestamp;
+        total_wall_time = Some total_wall_time;
+        n_results;
+        dirs;
+        n_bad;
         provers = List.map Prover.name self.provers;
       }
     in
-    Logs.debug (fun k -> k "saving metadata…");
-    Test_metadata.to_db db meta;
+    (match writer_opt with
+    | None -> ()
+    | Some (zip_path, w) ->
+      Logs.debug (fun k -> k "closing zip file %s" zip_path);
+      Result_file.close_write w ~total_wall_time ~n_results ~n_bad ~dirs);
     let top_res =
       lazy
         (let provers_map =
@@ -643,12 +632,10 @@ end = struct
          let provers =
            List.map (fun (pn, _) -> Misc.Str_map.find pn provers_map) jobs
          in
-         Test_top_result.make ~analyze_full:true ~meta ~provers (get_resps ()))
+         Test_top_result.make ~analyze_full:true ~meta ~provers res_l)
     in
-    let r = Test_compact_result.of_db db in
+    let r = Test_compact_result.of_events ~full:true ~meta res_l in
     on_done r;
-    Logs.debug (fun k -> k "closing db…");
-    ignore (Sqlite3.db_close db : bool);
     top_res, r
 end
 
@@ -801,34 +788,6 @@ end = struct
       progress ~w_prover ~w_pb ?cb_progress ~pp_results ~dyn
         (len * List.length r.provers)
 end
-
-let dump_results_sqlite (results : Test_top_result.t) : unit =
-  let uuid = results.Test_top_result.meta.uuid in
-  (* save results *)
-  let dump_file =
-    let filename =
-      Printf.sprintf "res-%s-%s.sqlite"
-        (CCOpt.map_or ~default:"date" Misc.human_datetime
-           results.Test_top_result.meta.timestamp)
-        (Uuidm.to_string uuid)
-    in
-    let data_dir = Filename.concat (Xdg.data_dir ()) !Xdg.name_of_project in
-    (try Unix.mkdir data_dir 0o744 with _ -> ());
-    Filename.concat data_dir filename
-  in
-  Logs.app (fun k -> k "write results into sqlite DB `%s`" dump_file);
-  (try
-     Db.with_db ~timeout:500 dump_file (fun db ->
-         Test_top_result.to_db db results)
-   with
-  | Error.E e ->
-    Logs.err (fun k -> k "error when saving to %s:@ %a" dump_file Error.pp e);
-    exit 1
-  | e ->
-    Logs.err (fun k ->
-        k "error when saving to %s:@ %s" dump_file (Printexc.to_string e));
-    exit 1);
-  ()
 
 let with_chdir d f =
   let cur_dir = Sys.getcwd () in

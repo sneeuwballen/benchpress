@@ -20,7 +20,21 @@ val mk_checker :
   (Prover.name * Proof_checker.name, Proof_check_res.t) Run_result.t -> t
 
 val pp : t CCFormat.printer
-val db_prepare : Db.t -> unit
-val to_db_prover_result : Db.t -> (Prover.name, Res.t) Run_result.t -> unit
-val to_db : Db.t -> t -> unit
-val of_db_l : Db.t -> t list
+
+(* --- Protobuf / JSON encoding --- *)
+
+val to_event_pb : ?no_data:bool -> t -> Benchpress_core.event
+(** Convert to a proto [Event]. If [~no_data:true], stdout/stderr are
+    represented as sha256 refs (blobs not embedded). *)
+
+val of_event_pb :
+  read_zip_entry:(string -> bytes) -> Benchpress_core.event -> t option
+(** Convert from a proto [Event]; returns [None] for non-result events
+    (RunStart, etc.). [read_zip_entry name] is called to resolve sha256 data
+    refs. *)
+
+val to_json_line : ?no_data:bool -> t -> string
+(** JSON-encode as a single line (no trailing newline). *)
+
+val of_json_line : read_zip_entry:(string -> bytes) -> string -> t option
+(** Parse a JSON line; returns [None] for non-result events. *)

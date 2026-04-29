@@ -9,46 +9,52 @@ type t = {
   tbl: (Prover.name * Prover.name * single) list;
 }
 
-let of_db db : t =
-  (* get a single integer *)
-  let db_get db s x1 x2 =
-    let l =
-      Db.exec db s x1 x2
-        ~ty:Db.Ty.(p2 text text, p1 int, id)
-        ~f:Db.Cursor.to_list_rev
-      |> Misc.unwrap_db (fun () -> "extract comparison-short from DB")
-    in
-    match l with
-    | [ x ] -> x
-    | _ -> Error.failf "expected a single integer, got %a" Fmt.(Dump.list int) l
+let of_events (events : Run_event.t list) : t =
+  let provers =
+    List.filter_map
+      (function
+        | Run_event.Prover_run r -> Some r.Run_result.program
+        | _ -> None)
+      events
+    |> List.sort_uniq String.compare
   in
-  Error.guard (Error.wrap "comparison-short.of_db") @@ fun () ->
-  let provers = list_provers db in
-  (* TODO: make a single query and group-by? *)
+  (* problem_name -> prover_name -> Res.t *)
+  let by_problem : (string, (string * Res.t) list) Hashtbl.t =
+    Hashtbl.create 64
+  in
+  List.iter
+    (function
+      | Run_event.Prover_run r ->
+        let pb = r.Run_result.problem.Problem.name in
+        let prev = Option.value ~default:[] (Hashtbl.find_opt by_problem pb) in
+        Hashtbl.replace by_problem pb
+          ((r.Run_result.program, r.Run_result.res) :: prev)
+      | _ -> ())
+    events;
+  let is_solved = function
+    | Res.Sat | Res.Unsat -> true
+    | _ -> false
+  in
   let tbl =
     CCList.diagonal provers
     |> List.rev_map (fun (p1, p2) ->
-           assert (p1 <> p2);
-           let better =
-             db_get db
-               {|select count(r1.file) from prover_res r1, prover_res r2
-                  where r1.prover=? and r2.prover=? and r1.file=r2.file
-                  and r1.res in ('sat','unsat') and not (r2.res in ('sat','unsat')); |}
-               p1 p2
-           and worse =
-             db_get db
-               {|select count(r1.file) from prover_res r1, prover_res r2
-                  where r1.prover=? and r2.prover=? and r1.file=r2.file
-                  and not (r1.res in ('sat','unsat')) and (r2.res in ('sat','unsat')); |}
-               p1 p2
-           and same =
-             db_get db
-               {|select count(r1.file) from prover_res r1, prover_res r2
-                  where r1.prover=? and r2.prover=? and r1.file=r2.file
-                  and r1.res in ('sat','unsat') and (r2.res in ('sat','unsat')); |}
-               p1 p2
-           in
-           p1, p2, { better; worse; same })
+           let better = ref 0 and worse = ref 0 and same = ref 0 in
+           Hashtbl.iter
+             (fun _pb results ->
+               let r1 = List.assoc_opt p1 results in
+               let r2 = List.assoc_opt p2 results in
+               match r1, r2 with
+               | Some res1, Some res2 ->
+                 let s1 = is_solved res1 and s2 = is_solved res2 in
+                 if s1 && s2 then
+                   incr same
+                 else if s1 && not s2 then
+                   incr better
+                 else if (not s1) && s2 then
+                   incr worse
+               | _ -> ())
+             by_problem;
+           p1, p2, { better = !better; worse = !worse; same = !same })
   in
   { provers; tbl }
 

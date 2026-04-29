@@ -25,152 +25,129 @@ let mk_prover r = Prover_run r
 let mk_checker r = Checker_run r
 
 (* main schema for results! *)
-let db_prepare (db : Db.t) : unit =
-  Prover.db_prepare db;
-  Db.exec0 db
-    {|create table if not exists
-      prover_res (
-        prover text not null,
-        file text not null,
-        res text not null,
-        file_expect text not null,
-        timeout int,
-        errcode int not null,
-        stdout blob,
-        stderr blob,
-        rtime float,
-        utime float,
-        stime float,
-        unique (prover, file) on conflict fail
-      );
+(* --- Protobuf / JSON encoding --- *)
 
-    create table if not exists
-      proof_check_res (
-        prover text not null,
-        file text not null,
-        checker text not null,
-        res text not null,
-        rtime float,
-        stdout text,
-        stderr text
-    );
+let pb_of_problem (pb : Problem.t) : Benchpress_core.problem =
+  Benchpress_core.make_problem ~name:pb.Problem.name
+    ~expected:(Res.to_string pb.Problem.expected)
+    ()
 
-    create index if not exists pr_prover_res on prover_res(prover,res,file_expect);
-    create index if not exists pr_file on prover_res(file);
-    create index if not exists prf_all on proof_check_res(prover,checker,file);
-    create index if not exists prf_file on proof_check_res(file);
-    |}
-  |> Misc.unwrap_db (fun () -> "run-event.db-prepare")
+let problem_of_pb (p : Benchpress_core.problem) : Problem.t =
+  {
+    Problem.name = p.Benchpress_core.name;
+    expected = Res.of_string ~tags:[] p.Benchpress_core.expected;
+  }
 
-let to_db_prover_result (db : Db.t) (self : (Prover.name, _) Run_result.t) : _ =
-  Db.exec_no_cursor db
-    {|insert into prover_res
-    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-    |}
-    ~ty:
-      Db.Ty.
-        [ text; text; text; text; int; int; blob; blob; float; float; float ]
-    self.program self.problem.Problem.name
-    (self.res |> Res.to_string)
-    (self.problem.Problem.expected |> Res.to_string)
-    (self.timeout |> Limit.Time.as_int Seconds)
-    self.raw.errcode self.raw.stdout self.raw.stderr self.raw.rtime
-    self.raw.utime self.raw.stime
-  |> Misc.unwrap_db (fun () -> "run-event.to-db-prover-result")
+let pb_of_raw ~no_data (raw : Run_proc_result.t) :
+    Benchpress_core.run_proc_result =
+  let blob s =
+    if no_data then
+      Benchpress_core.Sha256ref (Blob_ref.sha256_hex (Bytes.of_string s))
+    else
+      Blob_ref.of_string s
+  in
+  Benchpress_core.make_run_proc_result ~errcode:(Int32.of_int raw.errcode)
+    ~stdout:(blob raw.stdout) ~stderr:(blob raw.stderr) ~rtime:raw.rtime
+    ~utime:raw.utime ~stime:raw.stime ()
 
-let to_db_check_result (db : Db.t) (self : _ Run_result.t) : _ =
-  let p, c = self.program in
-  Db.exec_no_cursor db
-    {|insert into proof_check_res (prover, file, checker, res, rtime, stdout, stderr)
-      values (?, ?, ?, ?, ?, ?, ?); |}
-    ~ty:Db.Ty.[ text; text; text; text; float; blob; blob ]
-    p self.problem.Problem.name c
-    (Proof_check_res.to_string self.res)
-    self.raw.rtime self.raw.stdout self.raw.stderr
-  |> Misc.unwrap_db (fun () -> "run-event.to-db-checker-result")
+let raw_of_pb ~read_zip_entry (r : Benchpress_core.run_proc_result) :
+    Run_proc_result.t =
+  let get_blob = function
+    | None -> ""
+    | Some dr -> Blob_ref.to_string ~read_zip_entry dr
+  in
+  {
+    errcode = Int32.to_int r.Benchpress_core.errcode;
+    stdout = get_blob r.Benchpress_core.stdout;
+    stderr = get_blob r.Benchpress_core.stderr;
+    rtime = r.Benchpress_core.rtime;
+    utime = r.Benchpress_core.utime;
+    stime = r.Benchpress_core.stime;
+  }
 
-let to_db db self : _ =
+let to_event_pb ?(no_data = false) (self : t) : Benchpress_core.event =
   match self with
-  | Prover_run r -> to_db_prover_result db r
-  | Checker_run r -> to_db_check_result db r
+  | Prover_run r ->
+    let res = r.Run_result.res in
+    let labels =
+      match res with
+      | Res.Tag s -> [ s ]
+      | _ -> []
+    in
+    Benchpress_core.Prover_done
+      (Benchpress_core.make_prover_done ~prover:r.Run_result.program
+         ~problem:(pb_of_problem r.Run_result.problem)
+         ~res:(Res.to_string res) ~labels
+         ~timeout_s:
+           (Int64.of_int (Limit.Time.as_int Seconds r.Run_result.timeout))
+         ~raw:(pb_of_raw ~no_data r.Run_result.raw)
+         ())
+  | Checker_run r ->
+    let p, c = r.Run_result.program in
+    Benchpress_core.Checker_done
+      (Benchpress_core.make_checker_done ~prover:p ~checker:c
+         ~problem:(pb_of_problem r.Run_result.problem)
+         ~proof_check_res:(Proof_check_res.to_string r.Run_result.res)
+         ~raw:(pb_of_raw ~no_data r.Run_result.raw)
+         ())
 
-let of_db_provers_map db ~f : _ list =
-  let tags = Prover.tags_of_db db in
-  Db.exec_no_params db
-    {|
-    select
-      prover, file, res, file_expect, timeout, errcode, stdout, stderr,
-      rtime, utime, stime
-     from prover_res;
-    |}
-    ~ty:
-      Db.Ty.(
-        ( p4 text text text text @>> p2 int int @>> p2 blob blob
-          @>> p3 float float float,
-          fun pname
-            pb_name
-            res
-            expected
-            timeout
-            errcode
-            stdout
-            stderr
-            rtime
-            utime
-            stime
-          ->
-            let pb =
-              {
-                Problem.name = pb_name;
-                expected = Res.of_string ~tags expected;
-              }
-            in
-            let timeout = Limit.Time.mk ~s:timeout () in
-            let p =
-              Run_result.make pname pb ~timeout ~res:(Res.of_string ~tags res)
-                { errcode; stderr; stdout; rtime; utime; stime }
-            in
-            f p ))
-    ~f:Db.Cursor.to_list_rev
-  |> Misc.unwrap_db (fun () -> "run-event.of-db-map")
+let of_event_pb ~read_zip_entry (ev : Benchpress_core.event) : t option =
+  match ev with
+  | Benchpress_core.Prover_done pd ->
+    let pb = Option.map problem_of_pb pd.Benchpress_core.problem in
+    Option.map
+      (fun problem ->
+        Prover_run
+          (Run_result.make pd.Benchpress_core.prover
+             ~timeout:
+               (Limit.Time.mk ~s:(Int64.to_int pd.Benchpress_core.timeout_s) ())
+             ~res:(Res.of_string ~tags:[] pd.Benchpress_core.res)
+             problem
+             (Option.fold
+                ~none:
+                  Run_proc_result.
+                    {
+                      errcode = 0;
+                      stdout = "";
+                      stderr = "";
+                      rtime = 0.;
+                      utime = 0.;
+                      stime = 0.;
+                    }
+                ~some:(raw_of_pb ~read_zip_entry)
+                pd.Benchpress_core.raw)))
+      pb
+  | Benchpress_core.Checker_done cd ->
+    let pb = Option.map problem_of_pb cd.Benchpress_core.problem in
+    Option.map
+      (fun problem ->
+        Checker_run
+          (Run_result.make
+             (cd.Benchpress_core.prover, cd.Benchpress_core.checker)
+             ~timeout:(Limit.Time.mk ~s:0 ())
+             ~res:(Proof_check_res.of_string cd.Benchpress_core.proof_check_res)
+             problem
+             (Option.fold
+                ~none:
+                  Run_proc_result.
+                    {
+                      errcode = 0;
+                      stdout = "";
+                      stderr = "";
+                      rtime = 0.;
+                      utime = 0.;
+                      stime = 0.;
+                    }
+                ~some:(raw_of_pb ~read_zip_entry)
+                cd.Benchpress_core.raw)))
+      pb
+  | _ -> None
 
-let of_db_checker_map' db ~f : _ list =
-  let tags = Prover.tags_of_db db in
-  Db.exec_no_params db
-    {|
-    select p.prover, p.file, e.file_expect, p.checker,
-           p.res, p.rtime, p.stdout, p.stderr
-      from proof_check_res p,
-        (select distinct file, file_expect from prover_res) as e
-      where p.file = e.file;
-    |}
-    ~ty:
-      Db.Ty.(
-        ( [ any_str; any_str; any_str; any_str; any_str; float; blob; blob ],
-          fun prover file expected checker res rtime stdout stderr ->
-            let pb =
-              { Problem.name = file; expected = Res.of_string ~tags expected }
-            and res = Proof_check_res.of_string res in
-            let p =
-              Run_result.make (prover, checker) pb
-                ~timeout:Limit.(Time.mk ~s:0 ())
-                ~res
-                { errcode = 0; stderr; stdout; rtime; utime = 0.; stime = 0. }
-            in
-            f p ))
-    ~f:Db.Cursor.to_list_rev
-  |> Misc.unwrap_db (fun () -> "run-event.of-db-checker-map")
+let to_json_line ?(no_data = false) (self : t) : string =
+  let ev = to_event_pb ~no_data self in
+  Yojson.Basic.to_string (Benchpress_core.encode_json_event ev)
 
-let of_db_checker_map db ~f : _ list =
-  Error.guard (Error.wrap "run-event.checker.of-db") @@ fun () ->
-  if Misc.db_has_table db "proof_check_res" then
-    of_db_checker_map' db ~f
-  else (
-    Log.debug (fun k -> k "no table proof_check_res found");
-    []
-  )
-
-let of_db_l db : t list =
-  let l1 = of_db_provers_map db ~f:(fun x -> Prover_run x) in
-  let l2 = of_db_checker_map db ~f:(fun x -> Checker_run x) in
-  List.rev_append l1 l2
+let of_json_line ~read_zip_entry (line : string) : t option =
+  let json = Yojson.Basic.from_string line in
+  let ev = Benchpress_core.decode_json_event json in
+  of_event_pb ~read_zip_entry ev

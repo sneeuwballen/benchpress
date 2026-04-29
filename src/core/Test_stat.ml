@@ -143,97 +143,98 @@ let to_printbox_l ?(details = false) ?to_link l : PB.t =
   let rows = r1 @ r2 @ r3 in
   PB.grid_l ~bars:true (header :: rows)
 
-(* obtain stats for this prover *)
-let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
-  Error.guard (Error.wrapf "reading stat(%s) from DB" prover) @@ fun () ->
-  let custom = Prover.tags_of_db db in
-  let get_res r =
-    Error.guard (Error.wrapf "get-res %S" r) @@ fun () ->
-    let count : int option =
-      Db.exec db {| select count(*) from prover_res where prover=? and res=?; |}
-        prover r
-        ~ty:Db.Ty.(p2 text text, p1 (nullable int), Fun.id)
-        ~f:Db.Cursor.get_one_exn
-      |> Misc.unwrap_db (fun () -> spf "problems with result %s" r)
-    in
-
-    let stats =
-      let stat = ref Stats.init in
-      Db.exec db {| select rtime from prover_res where prover=? and res=?; |}
-        prover r
-        ~ty:Db.Ty.(p2 text text, p1 float, Fun.id)
-        ~f:(fun cursor ->
-          Db.Cursor.iter cursor ~f:(fun rtime -> stat := Stats.step !stat rtime))
-      |> Misc.unwrap_db (fun () -> spf "problems with result %s" r);
-      !stat
-    in
-
-    let total = Stats.total stats in
-    let mean = Stats.mean stats in
-    let sd = Stats.sd stats in
-    { n = CCOpt.get_or ~default:0 count; total; mean; sd }
+let of_events_for ~(prover : Prover.name) (events : Run_event.t list) : t =
+  let acc_by_res : (string, Stats.acc) Hashtbl.t = Hashtbl.create 8 in
+  let get_acc res =
+    match Hashtbl.find_opt acc_by_res res with
+    | Some a -> a
+    | None ->
+      let a = Stats.init in
+      Hashtbl.add acc_by_res res a;
+      a
   in
-
-  let get_proof_res r =
-    Error.guard (Error.wrapf "get-proof-res %S %S" prover r) @@ fun () ->
-    try
-      Db.exec db
-        {| select count( * ) from proof_check_res where prover=? and res=?; |}
-        prover r
-        ~ty:Db.Ty.([ text; text ], [ int ], fun i -> i)
-        ~f:Db.Cursor.get_one_exn
-      |> Misc.unwrap_db (fun () -> spf "problems with result %s" r)
-    with
-    | Sqlite3.SqliteError msg | Sqlite3.Error msg ->
-      Log.err (fun k ->
-          k "cannot get proof res %S %S:@ sqlite error:@ %s" prover r msg);
-      0
-    | Error.E e ->
-      Log.err (fun k -> k "cannot get proof res %S %S:@ %a" prover r Error.pp e);
-      0
+  let valid_proof = ref 0 in
+  let invalid_proof = ref 0 in
+  let invalid_proof_full = ref [] in
+  List.iter
+    (function
+      | Run_event.Prover_run r when r.Run_result.program = prover ->
+        let res_s = Res.to_string r.Run_result.res in
+        let rtime = r.Run_result.raw.Run_proc_result.rtime in
+        Hashtbl.replace acc_by_res res_s (Stats.step (get_acc res_s) rtime)
+      | Run_event.Checker_run r when fst r.Run_result.program = prover ->
+        (match r.Run_result.res with
+        | Proof_check_res.Valid -> incr valid_proof
+        | Proof_check_res.Invalid ->
+          incr invalid_proof;
+          invalid_proof_full :=
+            ( r.Run_result.problem,
+              r.Run_result.res,
+              r.Run_result.raw.Run_proc_result.rtime )
+            :: !invalid_proof_full
+        | Proof_check_res.Unknown _ -> ())
+      | _ -> ())
+    events;
+  let detail res_s =
+    match Hashtbl.find_opt acc_by_res res_s with
+    | None -> { n = 0; total = 0.; mean = 0.; sd = 0. }
+    | Some a ->
+      {
+        n = a.Stats.n;
+        total = Stats.total a;
+        mean = Stats.mean a;
+        sd = Stats.sd a;
+      }
   in
-  let sat = get_res "sat" in
-  let unsat = get_res "unsat" in
-  let unknown = get_res "unknown" in
-  let timeout = (get_res "timeout").n in
-  let memory = (get_res "memory").n in
-  let errors = (get_res "error").n in
-  let valid_proof = get_proof_res "valid" in
-  let invalid_proof = get_proof_res "invalid" in
-  let custom = CCList.map (fun tag -> tag, get_res tag) custom in
+  let sat = detail "sat" in
+  let unsat = detail "unsat" in
+  let unknown = detail "unknown" in
+  let timeout = (detail "timeout").n in
+  let memory = (detail "memory").n in
+  let errors = (detail "error").n in
+  let standard_keys =
+    [ "sat"; "unsat"; "unknown"; "timeout"; "memory"; "error" ]
+  in
+  let custom =
+    Hashtbl.fold
+      (fun k _ acc ->
+        if List.mem k standard_keys then
+          acc
+        else
+          (k, detail k) :: acc)
+      acc_by_res []
+    |> List.sort (fun (a, _) (b, _) -> String.compare a b)
+  in
   let total =
     sat.n + unsat.n + unknown.n + timeout + memory + errors
-    + List.fold_left (fun acc (_, { n; _ }) -> acc + n) 0 custom
+    + List.fold_left (fun n (_, d) -> n + d.n) 0 custom
   in
-  let total_time =
-    Db.exec db
-      {|
-        select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
-          |}
-      prover
-      ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.)
-      ~f:Db.Cursor.get_one_exn
-    |> Misc.unwrap_db (fun () -> spf "obtaining total time for %s" prover)
-  in
+  let total_time = sat.total +. unsat.total in
+  ignore invalid_proof_full;
   {
     sat;
     unsat;
+    errors;
+    unknown;
     timeout;
     memory;
-    unknown;
-    valid_proof;
-    invalid_proof;
-    errors;
+    valid_proof = !valid_proof;
+    invalid_proof = !invalid_proof;
     custom;
     total;
     total_time;
   }
 
-let of_db (db : Db.t) : (Prover.name * t) list =
-  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "stat.of-db" in
-  Error.guard (Error.wrap "reading statistics from DB") @@ fun () ->
-  let provers = list_provers db in
-  CCList.map (fun p -> p, of_db_for db ~prover:p) provers
+let of_events (events : Run_event.t list) : (Prover.name * t) list =
+  let provers =
+    List.filter_map
+      (function
+        | Run_event.Prover_run r -> Some r.Run_result.program
+        | _ -> None)
+      events
+    |> List.sort_uniq String.compare
+  in
+  List.map (fun p -> p, of_events_for ~prover:p events) provers
 
 let pp out (s : t) : unit =
   Fmt.fprintf out

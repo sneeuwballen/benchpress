@@ -9,7 +9,6 @@ type t = {
   events: Run_event.t list;
   stats: (Prover.name * Test_stat.t) list;
   analyze: (Prover.name * Test_analyze.t) list;
-  db: Db.t; (* in-memory database *)
 }
 
 (** Filter on the list of all results *)
@@ -57,7 +56,7 @@ let pp out (self : t) : unit =
   Format.fprintf out "(@[<2>%a@ %a@])" pp_header self (pp_list_ pp_tup) a
 
 let to_compact_result (self : t) : Test_compact_result.t =
-  let cr_comparison = Test_comparison_short.of_db self.db in
+  let cr_comparison = Test_comparison_short.of_events self.events in
   let cr_analyze = analyze self in
   let cr_stat = stat self in
   {
@@ -149,8 +148,99 @@ let db_to_table ?(offset = 0) ?(page_size = max_int) ?provers ?(filter_pb = "")
     Log.err (fun k -> k "conversion to CSV failed:@ %a" Error.pp err);
     raise exn
 
+let events_to_table ?(offset = 0) ?(page_size = max_int) ?provers
+    ?(filter_pb = "") ?(filter_res = TRF_all) (events : Run_event.t list)
+    (meta : Test_metadata.t) : table =
+  let line0 =
+    Printf.sprintf "(snapshot :uuid %s :date %s)"
+      (Uuidm.to_string meta.uuid)
+      (CCOpt.map_or ~default:"<none>" Misc.human_datetime meta.timestamp)
+  in
+  (* Collect all prover results grouped by problem name *)
+  let by_problem : (string, (string * Res.t * float) list) Hashtbl.t =
+    Hashtbl.create 64
+  in
+  List.iter
+    (function
+      | Run_event.Prover_run r ->
+        let pb = r.Run_result.problem.Problem.name in
+        let prev = Option.value ~default:[] (Hashtbl.find_opt by_problem pb) in
+        Hashtbl.replace by_problem pb
+          (( r.Run_result.program,
+             r.Run_result.res,
+             r.Run_result.raw.Run_proc_result.rtime )
+          :: prev)
+      | _ -> ())
+    events;
+  let all_provers =
+    match provers with
+    | Some l -> l
+    | None ->
+      List.filter_map
+        (function
+          | Run_event.Prover_run r -> Some r.Run_result.program
+          | _ -> None)
+        events
+      |> List.sort_uniq String.compare
+  in
+  let filter_pb_re =
+    if filter_pb = "" then
+      None
+    else
+      Some Re.(compile (seq [ rep any; str filter_pb; rep any ]))
+  in
+  let is_solved = function
+    | Res.Sat | Res.Unsat -> true
+    | _ -> false
+  in
+  (* Apply filters and build rows *)
+  let rows =
+    Hashtbl.fold
+      (fun pb results acc ->
+        let results =
+          List.filter (fun (p, _, _) -> List.mem p all_provers) results
+        in
+        let ok_pb =
+          (match filter_pb_re with
+          | None -> true
+          | Some re -> Re.execp re pb)
+          &&
+          match filter_res with
+          | TRF_all -> true
+          | TRF_different ->
+            let ress = List.map (fun (_, r, _) -> r) results in
+            (match ress with
+            | [] | [ _ ] -> false
+            | r :: rest -> List.exists (( <> ) r) rest)
+          | TRF_bad ->
+            let ress =
+              List.filter_map
+                (fun (_, r, _) ->
+                  if is_solved r then
+                    Some r
+                  else
+                    None)
+                results
+            in
+            (match ress with
+            | [] | [ _ ] -> false
+            | r :: rest -> List.exists (( <> ) r) rest)
+        in
+        if ok_pb then
+          { tr_problem = pb; tr_res = results } :: acc
+        else
+          acc)
+      by_problem []
+  in
+  let rows =
+    List.sort (fun a b -> String.compare a.tr_problem b.tr_problem) rows
+  in
+  let rows = CCList.drop offset rows in
+  let rows = CCList.take page_size rows in
+  { t_meta = line0; t_rows = rows; t_provers = all_provers }
+
 let to_table ?offset ?page_size ?provers (self : t) : table =
-  db_to_table ?offset ?page_size ?provers self.db
+  events_to_table ?offset ?page_size ?provers self.events self.meta
 
 let time_to_csv (_ : Res.t) f = Printf.sprintf "%.2f" f
 
@@ -278,58 +368,16 @@ let str_of_csv_ csv =
 let db_to_csv_string ?provers db = db_to_csv ?provers db |> str_of_csv_
 let to_csv_string ?provers t = to_csv ?provers t |> str_of_csv_
 
-let db_prepare (db : Db.t) : _ =
-  Test_metadata.db_prepare db;
-  Run_event.db_prepare db;
-  Prover.db_prepare db;
-  ()
-
-let to_db (db : Db.t) (self : t) : unit =
-  Log.info (fun k -> k "dump top-result into DB");
-  Error.guard (Error.wrap "dumping top_result to DB") @@ fun () ->
-  db_prepare db;
-  Test_metadata.to_db db self.meta;
-  Prover.db_prepare db;
-  (* insert within one transaction, much faster *)
-  Db.transact db (fun _ ->
-      List.iter (fun p -> Prover.to_db db p) self.provers;
-      List.iter (fun ev -> Run_event.to_db db ev) self.events);
-  ()
-
-let of_db_ ~analyze_full ~meta ~provers ~events db : t =
-  Log.debug (fun k -> k "computing stats");
-  let stats = Test_stat.of_db db in
-  Log.debug (fun k -> k "computing analyze");
-  let analyze = Test_analyze.of_db ~full:analyze_full db in
+let of_events_ ~analyze_full ~meta ~provers ~events : t =
+  Log.debug (fun k -> k "computing stats from events");
+  let stats = Test_stat.of_events events in
+  Log.debug (fun k -> k "computing analyze from events");
+  let analyze = Test_analyze.of_events ~full:analyze_full events in
   Log.debug (fun k -> k "done");
-  { db; events; meta; provers; stats; analyze }
+  { events; meta; provers; stats; analyze }
 
 let make ~analyze_full ~meta ~provers (events : Run_event.t list) : t =
-  Error.guard (Error.wrap "reading top_res from events") @@ fun () ->
-  (* create a temporary in-memory DB *)
-  let db = Sqlite3.db_open ":memory:" in
-  db_prepare db;
-  Test_metadata.to_db db meta;
-  (* insert all events into the DB *)
-  Db.transact db (fun _ ->
-      Error.guard (Error.wrap "updating in-memory DB") @@ fun () ->
-      List.iter
-        (fun p ->
-          Error.guard (Error.wrapf "adding prover '%s'" p.Prover.name)
-          @@ fun () -> Prover.to_db db p)
-        provers;
-      List.iter (fun ev -> Run_event.to_db db ev) events);
-  of_db_ ~analyze_full db ~meta ~provers ~events
-
-let of_db ~analyze_full (db : Db.t) : t =
-  Error.guard (Error.wrapf "reading top_res from DB") @@ fun () ->
-  Log.debug (fun k -> k "loading metadata from DB");
-  let meta = Test_metadata.of_db db in
-  let prover_names = Prover.db_names db in
-  let provers = CCList.map (fun p -> Prover.of_db db p) prover_names in
-  Log.debug (fun k -> k "loading events from DB");
-  let events = Run_event.of_db_l db in
-  of_db_ ~analyze_full ~meta ~provers ~events db
+  of_events_ ~analyze_full ~meta ~provers ~events
 
 (** Convert a result to JSON *)
 let res_to_json (r : Res.t) : Yojson.Basic.t =

@@ -10,14 +10,11 @@ type t = {
 }
 (** A kind of lightweight result *)
 
-let of_db ?full db : t =
-  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "compact-res.of-db" in
-  Error.guard (Error.wrap "reading compact results") @@ fun () ->
-  Db.transact db (fun _ ->
-      let cr_meta = Test_metadata.of_db db in
-      let cr_stat = Test_stat.of_db db in
-      let cr_analyze = Test_analyze.of_db ?full db in
-      let cr_comparison = Test_comparison_short.of_db db in
-      { cr_stat; cr_analyze; cr_comparison; cr_meta })
+let of_events ?(full = false) ~meta (events : Run_event.t list) : t =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "compact-res.of-events" in
+  let cr_stat = Test_stat.of_events events in
+  let cr_analyze = Test_analyze.of_events ~full events in
+  let cr_comparison = Test_comparison_short.of_events events in
+  { cr_stat; cr_analyze; cr_comparison; cr_meta = meta }
 
 let pp out (_self : _ lazy_t * t) = Fmt.fprintf out "<compact result>"

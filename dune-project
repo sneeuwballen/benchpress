@@ -40,7 +40,6 @@
   (iter
    (>= 1.0))
   logs
-  uuidm
   base64
   ptime
   processor
@@ -59,7 +58,14 @@
   (printbox
    (>= 0.6))
   (printbox-text
-   (>= 0.6))))
+   (>= 0.6))
+  (pbrt
+   (>= 4.0))
+  (pbrt_yojson
+   (>= 4.0))
+  camlzip
+  (uuidm
+   (>= 0.9.9))))
 
 (package
  (name benchpress-lsp)

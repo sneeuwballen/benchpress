@@ -9,5 +9,5 @@ type t = {
   tbl: (Prover.name * Prover.name * single) list;
 }
 
-val of_db : Db.t -> t
+val of_events : Run_event.t list -> t
 val to_printbox_l : t -> PrintBox.t

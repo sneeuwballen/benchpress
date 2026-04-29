@@ -87,159 +87,6 @@ let int1_cursor ~ctx c =
   Db.Cursor.next c
   |> Error.unwrap_opt' (fun () -> spf "expected a result in %s" ctx)
 
-let get1_int db ~ctx q ~ty p =
-  Db.exec db q ~ty p ~f:(int1_cursor ~ctx)
-  |> Misc.unwrap_db (fun () -> "expected integer")
-
-let of_db_for ?(full = false) (db : Db.t) ~prover : t =
-  let tags = Prover.tags_of_db db in
-  Error.guard (Error.wrapf "reading analyze(%s) from DB" prover) @@ fun () ->
-  let ok =
-    get1_int ~ctx:"get ok results" db
-      ~ty:Db.Ty.(p1 text, p1 int, id)
-      {| select count(*) from prover_res where prover=?
-              and res=file_expect; |}
-      prover
-  and disappoint =
-    get1_int ~ctx:"get disappoint results" db
-      ~ty:Db.Ty.(p1 text, p1 int, id)
-      {| select count(*) from prover_res where prover=?
-              and not (res in ('sat','unsat'))
-              and file_expect in ('sat','unsat'); |}
-      prover
-  and improved =
-    get1_int ~ctx:"get improved results" db
-      ~ty:Db.Ty.(p1 text, p1 int, id)
-      {| select count(*) from prover_res where prover=?
-              and res in ('sat','unsat')
-              and not (file_expect in ('sat','unsat')); |}
-      prover
-  and total =
-    get1_int ~ctx:"get total results" db
-      ~ty:Db.Ty.(p1 text, p1 int, id)
-      {| select count(*) from prover_res where prover=?;|} prover
-  and bad =
-    get1_int ~ctx:"get bad results" db
-      ~ty:Db.Ty.(p1 text, p1 int, id)
-      {| select count(*) from prover_res where prover=?
-              and res in ('sat','unsat')
-              and res != file_expect
-              and file_expect in ('sat','unsat'); |}
-      prover
-  and bad_full =
-    if not full then
-      []
-    else
-      Db.exec db
-        {| select file, res, file_expect, rtime from prover_res
-            where prover=? and res != file_expect and res in ('sat','unsat')
-            and file_expect in ('sat','unsat'); |}
-        prover
-        ~ty:
-          Db.Ty.(
-            ( [ text ],
-              [ text; text; text; float ],
-              fun file res expected t ->
-                ( Problem.make file (Res.of_string ~tags expected),
-                  Res.of_string ~tags res,
-                  t ) ))
-        ~f:Db.Cursor.to_list_rev
-      |> Misc.unwrap_db (fun () -> "reading full list of bad results")
-  and errors =
-    get1_int ~ctx:"get errors results" db
-      ~ty:Db.Ty.(p1 text, p1 int, id)
-      {| select count(*) from prover_res where prover=?
-              and res = 'error' ; |}
-      prover
-  and errors_full =
-    if not full then
-      []
-    else
-      Db.exec db
-        ~ty:
-          Db.Ty.(
-            ( [ text ],
-              [ text; text; text; float ],
-              fun file res expected t ->
-                ( Problem.make file (Res.of_string ~tags expected),
-                  Res.of_string ~tags res,
-                  t ) ))
-        {| select file, res, file_expect, rtime from prover_res where prover=?
-              and res = 'error' ; |}
-        prover ~f:Db.Cursor.to_list_rev
-      |> Misc.unwrap_db (fun () -> "reading full list of erroneous results")
-  and valid_proof =
-    match
-      Db.exec db
-        {| select count(*) from proof_check_res where prover = ? and res = 'valid'; |}
-        prover
-        ~ty:Db.Ty.([ text ], [ int ], fun i -> i)
-        ~f:Db.Cursor.next
-    with
-    | Ok (Some i) -> i
-    | Ok None -> Error.failf "expected a result"
-    | Error db ->
-      Log.err (fun k ->
-          k "cannot list valid proofs: %a" Error.pp (Misc.err_of_db db));
-      0
-    | exception e ->
-      Log.err (fun k ->
-          k "cannot list invalid-proofs: %s" (Printexc.to_string e));
-      0
-  and invalid_proof_full =
-    match
-      Db.exec db
-        {| select r.file, r.file_expect, p.rtime, p.res
-                from prover_res r, proof_check_res p
-                where p.prover=? and r.prover = p.prover and r.file = p.file
-                  and p.res = 'invalid';
-             |}
-        prover
-        ~ty:
-          Db.Ty.(
-            ( [ text ],
-              [ text; text; float; text ],
-              fun file expected rtime pres ->
-                ( Problem.make file (Res.of_string ~tags expected),
-                  Proof_check_res.of_string pres,
-                  rtime ) ))
-        ~f:Db.Cursor.to_list_rev
-    with
-    | Ok l -> l
-    | Error db ->
-      Log.err (fun k ->
-          k "cannot list invalid-proofs: %a" Error.pp (Misc.err_of_db db));
-      []
-    | exception e ->
-      Log.err (fun k ->
-          k "cannot list invalid-proofs: %s" (Printexc.to_string e));
-      []
-  in
-  let invalid_proof = List.length invalid_proof_full in
-  {
-    ok;
-    disappoint;
-    improved;
-    bad;
-    bad_full;
-    invalid_proof;
-    invalid_proof_full;
-    valid_proof;
-    errors;
-    errors_full;
-    total;
-  }
-
-(* TODO: create a function for "better"
-      Sqlite3.create_fun2
-*)
-
-let of_db ?(full = false) db : _ list =
-  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "test.analyze" in
-  Error.guard (Error.wrap "reading top-res from DB") @@ fun () ->
-  let provers = Test.list_provers db in
-  CCList.map (fun p -> p, of_db_for ~full db ~prover:p) provers
-
 let of_db_n_bad (db : Db.t) : int =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "test.analyze.n-bad" in
   Error.guard (Error.wrap "computing n-bad from DB") @@ fun () ->
@@ -280,6 +127,108 @@ let of_db_dirs (db : Db.t) : string list =
 *)
 
 (* build statistics and list of mismatch from raw results *)
+
+let is_solved = function
+  | Res.Sat | Res.Unsat -> true
+  | _ -> false
+
+let of_events_for ~(prover : Prover.name) (events : Run_event.t list) : t =
+  let ok = ref 0 and bad = ref 0 and improved = ref 0 and disappoint = ref 0 in
+  let errors = ref 0 in
+  let bad_full = ref [] and errors_full = ref [] in
+  let valid_proof = ref 0 and invalid_proof = ref 0 in
+  let invalid_proof_full = ref [] in
+  List.iter
+    (function
+      | Run_event.Prover_run r when r.Run_result.program = prover ->
+        let res = r.Run_result.res in
+        let expected = r.Run_result.problem.Problem.expected in
+        let rtime = r.Run_result.raw.Run_proc_result.rtime in
+        let pb = r.Run_result.problem in
+        if res = expected then
+          incr ok
+        else if res = Res.Error then (
+          incr errors;
+          errors_full := (pb, res, rtime) :: !errors_full
+        ) else if is_solved res && is_solved expected && res <> expected then (
+          incr bad;
+          bad_full := (pb, res, rtime) :: !bad_full
+        ) else if is_solved res && not (is_solved expected) then
+          incr improved
+        else if (not (is_solved res)) && is_solved expected then
+          incr disappoint
+      | Run_event.Checker_run r when fst r.Run_result.program = prover ->
+        let rtime = r.Run_result.raw.Run_proc_result.rtime in
+        let pb = r.Run_result.problem in
+        (match r.Run_result.res with
+        | Proof_check_res.Valid -> incr valid_proof
+        | Proof_check_res.Invalid ->
+          incr invalid_proof;
+          invalid_proof_full :=
+            (pb, r.Run_result.res, rtime) :: !invalid_proof_full
+        | Proof_check_res.Unknown _ -> ())
+      | _ -> ())
+    events;
+  let total = !ok + !bad + !improved + !disappoint + !errors in
+  {
+    ok = !ok;
+    bad = !bad;
+    improved = !improved;
+    disappoint = !disappoint;
+    bad_full = !bad_full;
+    errors = !errors;
+    errors_full = !errors_full;
+    valid_proof = !valid_proof;
+    invalid_proof = !invalid_proof;
+    invalid_proof_full = !invalid_proof_full;
+    total;
+  }
+
+let of_events ?(full = false) (events : Run_event.t list) :
+    (Prover.name * t) list =
+  let provers =
+    List.filter_map
+      (function
+        | Run_event.Prover_run r -> Some r.Run_result.program
+        | _ -> None)
+      events
+    |> List.sort_uniq String.compare
+  in
+  let results = List.map (fun p -> p, of_events_for ~prover:p events) provers in
+  if full then
+    results
+  else
+    List.map
+      (fun (p, r) ->
+        p, { r with bad_full = []; errors_full = []; invalid_proof_full = [] })
+      results
+
+let of_events_n_bad (events : Run_event.t list) : int =
+  List.fold_left
+    (fun acc -> function
+      | Run_event.Prover_run r ->
+        let res = r.Run_result.res in
+        let expected = r.Run_result.problem.Problem.expected in
+        if is_solved res && is_solved expected && res <> expected then
+          acc + 1
+        else
+          acc
+      | _ -> acc)
+    0 events
+
+let of_events_dirs (events : Run_event.t list) : string list =
+  let paths =
+    List.filter_map
+      (function
+        | Run_event.Prover_run r ->
+          Some (Filename.dirname r.Run_result.problem.Problem.name)
+        | _ -> None)
+      events
+    |> List.sort_uniq String.compare
+  in
+  match paths with
+  | [] -> []
+  | _ -> paths
 
 let is_ok r = r.bad = 0
 let num_bad r = r.bad

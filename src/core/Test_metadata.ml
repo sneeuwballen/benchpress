@@ -58,34 +58,12 @@ let to_printbox ?link:(mk_link = default_linker) self : PB.t =
          ];
        ]
 
-let db_prepare (db : Db.t) : _ =
-  Db.exec0 db
-    {|
-      create table if not exists
-      meta(
-        key text not null unique,
-        value blob
-        );
-      create index if not exists meta_k on meta(key);
-      |}
-  |> Misc.unwrap_db (fun () -> "metadata.db-prepare")
-
 let get_meta db k : _ =
   Db.exec db {|select value from meta where key=? ;|} k
     ~ty:Db.Ty.(p1 text, p1 (nullable any_str), id)
     ~f:Db.Cursor.next
   |> Misc.unwrap_db (fun () -> spf "did not find metadata '%s'" k)
   |> Error.unwrap_opt' (fun () -> spf "expected a result for '%s'" k)
-
-let to_db (db : Db.t) (self : t) : unit =
-  Db.exec_no_cursor db
-    "insert or replace into meta values\n\
-    \    ('timestamp', ?), ('total-wall-time', ?), ('uuid', ?);"
-    ~ty:Db.Ty.(p3 (nullable blob) (nullable blob) text)
-    (CCOpt.map string_of_float self.timestamp)
-    (CCOpt.map string_of_float self.total_wall_time)
-    (Uuidm.to_string self.uuid)
-  |> Misc.unwrap_db (fun () -> Fmt.asprintf "inserting metadata '%a'" pp self)
 
 let of_db db : t =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "metadata.of-db" in
