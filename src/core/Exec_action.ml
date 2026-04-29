@@ -3,6 +3,27 @@
 open Common
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.runexec-action"))
 
+let has_zst_suffix s =
+  Filename.check_suffix s ".sqlite.zst"
+  || Filename.check_suffix s ".sqlite.zstd"
+
+let strip_zst_suffix s =
+  if Filename.check_suffix s ".sqlite.zst" then
+    Filename.chop_suffix s ".zst"
+  else
+    Filename.chop_suffix s ".zstd"
+
+let compress_sqlite_to_zst ~src ~dst =
+  let rc =
+    Sys.command
+      (Printf.sprintf "zstd -q %s -o %s" (Filename.quote src)
+         (Filename.quote dst))
+  in
+  if rc = 0 then (
+    try Sys.remove src with _ -> ()
+  ) else
+    Logs.warn (fun k -> k "zstd compression of '%s' failed (exit %d)" src rc)
+
 module Exec_run_provers : sig
   type t = Action.run_provers
   type jobs = Bounded of int | Cpus of int list
@@ -42,6 +63,7 @@ module Exec_run_provers : sig
     ?interrupted:(unit -> bool) ->
     ?output:string ->
     ?update:bool ->
+    ?compress:bool ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
@@ -67,6 +89,7 @@ module Exec_run_provers : sig
     ntasks:int ->
     ?output:string ->
     ?update:bool ->
+    ?compress:bool ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
@@ -241,12 +264,31 @@ end = struct
 
   let run ?(timestamp = Misc.now_s ()) ?(on_start = _nop) ?(on_solve = _nop)
       ?(on_start_proof_check = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
-      ?(interrupted = fun _ -> false) ?output ?(update = false) ~uuid ~save
-      ~wal_mode (self : expanded) : _ * _ =
+      ?(interrupted = fun _ -> false) ?output ?(update = false)
+      ?(compress = false) ~uuid ~save ~wal_mode (self : expanded) : _ * _ =
     let start = Misc.now_s () in
+    (* resolve output: strip .zst/.zstd if present, or add .zst if --compress *)
+    let effective_output, compress_to =
+      match output with
+      | Some f when has_zst_suffix f -> Some (strip_zst_suffix f), Some f
+      | Some f when compress -> Some f, Some (f ^ ".zst")
+      | Some f -> Some f, None
+      | None when compress && save ->
+        let auto = Misc.file_for_uuid "res" ~timestamp uuid "sqlite" in
+        Some auto, Some (auto ^ ".zst")
+      | None -> None, None
+    in
+    (match compress_to with
+    | Some t when Sys.file_exists t ->
+      if update then
+        Sys.remove t
+      else
+        Error.failf "The file %s exists" t
+    | _ -> ());
     (* prepare DB *)
     let db =
-      prepare_db ~wal_mode ?output ~update timestamp uuid save self.provers
+      prepare_db ~wal_mode ?output:effective_output ~update timestamp uuid save
+        self.provers
     in
     on_start self;
 
@@ -383,13 +425,16 @@ end = struct
     on_done r;
     Logs.debug (fun k -> k "closing db…");
     ignore (Sqlite3.db_close db : bool);
+    (match compress_to, effective_output with
+    | Some dst, Some src -> compress_sqlite_to_zst ~src ~dst
+    | _ -> ());
     top_res, r
 
   let run_sbatch_job ?(timestamp = Misc.now_s ()) ?(on_start = _nop)
       ?(on_solve = _nop) ?(on_start_proof_check = _nop) ?(on_proof_check = _nop)
       ?(on_done = _nop) ?(interrupted = fun _ -> false) ?partition ~nodes ~addr
-      ~port ~ntasks ?output ?(update = false) ~uuid ~save ~wal_mode
-      (self : expanded) : _ * _ =
+      ~port ~ntasks ?output ?(update = false) ?(compress = false) ~uuid ~save
+      ~wal_mode (self : expanded) : _ * _ =
     ignore on_start_proof_check;
     let j =
       match self.j with
@@ -399,8 +444,26 @@ end = struct
         List.length cpus
     in
     let start = Misc.now_s () in
+    let effective_output, compress_to =
+      match output with
+      | Some f when has_zst_suffix f -> Some (strip_zst_suffix f), Some f
+      | Some f when compress -> Some f, Some (f ^ ".zst")
+      | Some f -> Some f, None
+      | None when compress && save ->
+        let auto = Misc.file_for_uuid "res" ~timestamp uuid "sqlite" in
+        Some auto, Some (auto ^ ".zst")
+      | None -> None, None
+    in
+    (match compress_to with
+    | Some t when Sys.file_exists t ->
+      if update then
+        Sys.remove t
+      else
+        Error.failf "The file %s exists" t
+    | _ -> ());
     let db =
-      prepare_db ~wal_mode ?output ~update timestamp uuid save self.provers
+      prepare_db ~wal_mode ?output:effective_output ~update timestamp uuid save
+        self.provers
     in
     on_start self;
     let jobs =
@@ -649,6 +712,9 @@ end = struct
     on_done r;
     Logs.debug (fun k -> k "closing db…");
     ignore (Sqlite3.db_close db : bool);
+    (match compress_to, effective_output with
+    | Some dst, Some src -> compress_sqlite_to_zst ~src ~dst
+    | _ -> ());
     top_res, r
 end
 

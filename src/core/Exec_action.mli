@@ -45,6 +45,7 @@ module Exec_run_provers : sig
     ?interrupted:(unit -> bool) ->
     ?output:string ->
     ?update:bool ->
+    ?compress:bool ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
@@ -70,6 +71,7 @@ module Exec_run_provers : sig
     ntasks:int ->
     ?output:string ->
     ?update:bool ->
+    ?compress:bool ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
