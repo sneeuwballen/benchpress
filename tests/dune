@@ -45,3 +45,26 @@
  (package benchpress)
  (action
   (diff fake.expected fake.out)))
+
+(rule
+ (targets fake_lua.out)
+ (deps
+  (source_tree .))
+ (action
+  (with-stdout-to
+   %{targets}
+   (run
+    ../src/bin/benchpress_bin.exe
+    run
+    --save=false
+    -q
+    -c
+    conf_prover1.lua
+    --task
+    runall))))
+
+(rule
+ (alias runtest)
+ (package benchpress)
+ (action
+  (diff fake_lua.expected fake_lua.out)))
