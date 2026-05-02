@@ -236,6 +236,13 @@ module List_files = struct
       (Cmdliner.Cmd.info ~doc "list-files")
       Cmdliner.Term.(
         const (fun p -> main ~abs:p.abs ()) $ params_cmdliner_term ())
+
+  let cmd_list =
+    let doc = "list benchmark result files (alias for list-files)" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list")
+      Cmdliner.Term.(
+        const (fun p -> main ~abs:p.abs ()) $ params_cmdliner_term ())
 end
 
 module Show = struct
@@ -369,10 +376,23 @@ module Check_config = struct
       else
         p.files
     in
-    let l = Stanza.parse_files f in
-    Format.printf "@[<v>%a@]@." Stanza.pp_l l;
+    let sexp_files, lua_files =
+      List.partition
+        (fun p ->
+          Filename.check_suffix p ".sexp"
+          || not (Filename.check_suffix p ".lua"))
+        f
+    in
+    let l = Stanza.parse_files sexp_files in
+    if sexp_files <> [] then Format.printf "@[<v>%a@]@." Stanza.pp_l l;
+    List.iter
+      (fun path ->
+        let engine = Lua_engine.create () in
+        Lua_engine.load_file engine path;
+        let defs = Lua_engine.to_definitions engine in
+        Format.printf "@[<v>lua config %s:@ %a@]@." path Definitions.pp defs)
+      lua_files;
     let _defs = Definitions.of_stanza_l l in
-    (* some checks are delayed *)
     ()
 
   let cmd =
@@ -483,6 +503,32 @@ module Sql_convert = struct
         const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
+(** {2 New config} *)
+
+module New_config = struct
+  type params = {
+    output: string; [@default "config.lua"] [@names [ "o"; "output" ]]
+        (** output file ("-" for stdout) *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
+    Misc.setup_logs debug;
+    let@ () = catch_err in
+    if p.output = "-" then
+      print_string Lua_api.config_template
+    else (
+      CCIO.with_out p.output (fun oc ->
+          output_string oc Lua_api.config_template);
+      Format.printf "wrote %s@." p.output)
+
+  let cmd =
+    let doc = "create a new annotated Lua config file" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "new-config")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
+end
+
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -509,8 +555,10 @@ let parse_opt () =
       Run.cmd;
       Sample.cmd;
       List_files.cmd;
+      List_files.cmd_list;
       Show.cmd;
       Check_config.cmd;
+      New_config.cmd;
       Prover_show.cmd;
       Prover_list.cmd;
       Sql_convert.cmd;

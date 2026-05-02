@@ -59,7 +59,9 @@
   (printbox
    (>= 0.6))
   (printbox-text
-   (>= 0.6))))
+   (>= 0.6))
+  ezlua
+  ocaml-lua))
 
 (package
  (name benchpress-lsp)

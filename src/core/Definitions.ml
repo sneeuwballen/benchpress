@@ -101,6 +101,8 @@ let all_tasks self : _ list =
        | _ -> None)
   |> Iter.to_rev_list
 
+let all_dirs self : Dir.t list = self.dirs
+
 (* compute a version for the prover *)
 let get_version ?(binary = "") (v : Stanza.version_field) : Prover.version =
   match v with
@@ -459,6 +461,7 @@ let add_stanza_ (st : Stanza.t) self : t =
       {
         Prover.name;
         cmd;
+        cmd_fn = None;
         sat;
         unsat;
         timeout;
@@ -469,6 +472,8 @@ let add_stanza_ (st : Stanza.t) self : t =
         binary_deps = [];
         version = get_version ~binary version;
         custom;
+        static_labels = [];
+        analyze_fn = None;
         defined_in = self.config_file;
         inherits;
         produces_proof;

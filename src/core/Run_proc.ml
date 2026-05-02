@@ -25,6 +25,54 @@ let child_env () : string array =
               strip_from_child_env))
   |> Array.of_seq
 
+let run_argv (argv : string array) : Run_proc_result.t =
+  let start = Ptime_clock.now () in
+  let proc_mgr =
+    match Eio.Fiber.get k_proc_mgr with
+    | Some m -> m
+    | None ->
+      Error.fail "Run_proc.run_argv: no process manager in fiber context"
+  in
+  let env = child_env () in
+  let stdout, stderr, errcode =
+    try
+      Eio.Switch.run @@ fun sw ->
+      let stdin_r, stdin_w = Eio_unix.pipe sw in
+      let stdout_r, stdout_w = Eio_unix.pipe sw in
+      let stderr_r, stderr_w = Eio_unix.pipe sw in
+      Eio.Resource.close stdin_w;
+      let child =
+        Eio.Process.spawn ~sw proc_mgr ~env
+          ~stdin:(stdin_r :> Eio.Flow.source_ty Eio.Resource.t)
+          ~stdout:(stdout_w :> Eio.Flow.sink_ty Eio.Resource.t)
+          ~stderr:(stderr_w :> Eio.Flow.sink_ty Eio.Resource.t)
+          (Array.to_list argv)
+      in
+      Eio.Resource.close stdin_r;
+      Eio.Resource.close stdout_w;
+      Eio.Resource.close stderr_w;
+      let buf_out = Buffer.create 256 and buf_err = Buffer.create 64 in
+      Eio.Fiber.any
+        [
+          (fun () ->
+            Eio.Fiber.both
+              (fun () -> Eio.Flow.copy stdout_r (Eio.Flow.buffer_sink buf_out))
+              (fun () -> Eio.Flow.copy stderr_r (Eio.Flow.buffer_sink buf_err)));
+          (fun () ->
+            Eio.Fiber.yield ();
+            ignore (Eio.Process.await child));
+        ];
+      let status = Eio.Process.await child in
+      let errcode =
+        match status with
+        | `Exited n | `Signaled n -> n
+      in
+      Buffer.contents buf_out, Buffer.contents buf_err, errcode
+    with e -> "", "process died: " ^ Printexc.to_string e, 1
+  in
+  let rtime = Ptime.diff (Ptime_clock.now ()) start |> Ptime.Span.to_float_s in
+  { Run_proc_result.stdout; stderr; errcode; rtime; utime = 0.; stime = 0. }
+
 let run cmd : Run_proc_result.t =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-proc.run" in
   Trace.add_data_to_span _sp [ "cmd", `String cmd ];

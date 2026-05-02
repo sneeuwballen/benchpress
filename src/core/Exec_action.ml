@@ -56,6 +56,7 @@ module Exec_run_provers : sig
     ?output:string ->
     ?update:bool ->
     ?compress:bool ->
+    ?hooks:Lua_hooks.t ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
@@ -64,7 +65,8 @@ module Exec_run_provers : sig
   (** Run the given prover(s) on the given problem set, obtaining results after
       all the problems have been dealt with.
       @param on_solve called whenever a single problem is solved
-      @param on_done called when the whole process is done *)
+      @param on_done called when the whole process is done
+      @param hooks optional Lua hook registry for lifecycle events *)
 
   val run_sbatch_job :
     ?timestamp:float ->
@@ -264,7 +266,8 @@ end = struct
   let run ?(timestamp = Misc.now_s ()) ?(on_start = _nop) ?(on_solve = _nop)
       ?(on_start_proof_check = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
       ?(interrupted = fun _ -> false) ?output ?(update = false)
-      ?(compress = false) ~uuid ~save ~wal_mode (self : expanded) : _ * _ =
+      ?(compress = false) ?hooks ~uuid ~save ~wal_mode (self : expanded) : _ * _
+      =
     let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "exec-action.run" in
     Trace.add_data_to_span _sp
       [
@@ -272,6 +275,11 @@ end = struct
         "n_provers", `Int (List.length self.provers);
         "n_problems", `Int (List.length self.problems);
       ];
+    let dispatch_hook ev encode =
+      match hooks with
+      | None -> ()
+      | Some h -> Lua_hooks.dispatch h ev encode
+    in
     let start = Misc.now_s () in
     (* resolve output: strip .zst/.zstd if present, or add .zst if --compress *)
     let effective_output, compress_to =
@@ -297,6 +305,12 @@ end = struct
         self.provers
     in
     on_start self;
+    dispatch_hook "run_start" (fun st ->
+        Ezlua.push_table st;
+        Ezlua.push_field st "uuid" Ezlua.Encode.string (Uuidm.to_string uuid);
+        Ezlua.push_field st "provers"
+          (Ezlua.Encode.list Ezlua.Encode.string)
+          (List.map Prover.name self.provers));
 
     CCOpt.iter Misc.mkdir_rec self.proof_dir;
 
@@ -372,6 +386,19 @@ end = struct
       in
 
       on_solve result;
+      dispatch_hook "prover_end" (fun st ->
+          Ezlua.push_table st;
+          Ezlua.push_field st "prover" Ezlua.Encode.string
+            result.Run_result.program;
+          Ezlua.push_field st "problem" Ezlua.Encode.string
+            result.Run_result.problem.Problem.name;
+          Ezlua.push_field st "res" Ezlua.Encode.string
+            (Res.to_string result.Run_result.res);
+          Ezlua.push_field st "labels"
+            (Ezlua.Encode.list Ezlua.Encode.string)
+            result.Run_result.labels;
+          Ezlua.push_field st "rtime" Ezlua.Encode.float
+            result.Run_result.raw.Run_proc_result.rtime);
 
       (* only now we can announce our "solve" result *)
       Run_event.mk_prover result :: ev_proof
@@ -429,6 +456,9 @@ end = struct
     in
     let r = Test_compact_result.of_db ~full:true db in
     on_done r;
+    dispatch_hook "run_end" (fun st ->
+        Ezlua.push_table st;
+        Ezlua.push_field st "uuid" Ezlua.Encode.string (Uuidm.to_string uuid));
     Logs.debug (fun k -> k "closing db…");
     ignore (Sqlite3.db_close db : bool);
     (match compress_to, effective_output with

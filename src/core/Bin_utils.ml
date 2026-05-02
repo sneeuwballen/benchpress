@@ -4,6 +4,42 @@ module Db = Misc.Db
 module MStr = Misc.Str_map
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.bin_utils"))
 
+let is_zst_file = Misc.is_zst_file
+let strip_zst_suffix = Misc.strip_zst_suffix
+
+(** Load a list of config files (.sexp or .lua) into a [Definitions.t]. *)
+let load_config_files (files : string list) : Definitions.t =
+  let sexp_files, lua_files =
+    List.partition
+      (fun f ->
+        Filename.check_suffix f ".sexp" || not (Filename.check_suffix f ".lua"))
+      files
+  in
+  let stanzas = Stanza.parse_files sexp_files in
+  let defs = Definitions.of_stanza_l stanzas in
+  List.fold_left
+    (fun acc path ->
+      let engine = Lua_engine.create () in
+      Lua_engine.load_file engine path;
+      let lua_defs = Lua_engine.to_definitions engine in
+      let with_provers =
+        List.fold_left
+          (fun d p -> Definitions.add_prover p d)
+          acc
+          (Definitions.all_provers lua_defs)
+      in
+      let with_dirs =
+        List.fold_left
+          (fun d dir -> Definitions.add_dir dir d)
+          with_provers
+          (Definitions.all_dirs lua_defs)
+      in
+      List.fold_left
+        (fun d t -> Definitions.add_task t d)
+        with_dirs
+        (Definitions.all_tasks lua_defs))
+    defs lua_files
+
 let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
   let open Cmdliner in
   let aux conf_files with_default logs_cmd =
@@ -21,8 +57,7 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
     Log.info (fun k ->
         k "parse config files %a" CCFormat.Dump.(list string) conf_files);
     try
-      let stanzas = Stanza.parse_files conf_files in
-      let defs = Definitions.add_stanza_l stanzas Definitions.empty in
+      let defs = load_config_files conf_files in
       `Ok (logs_cmd, defs)
     with Error.E err -> `Error (false, Error.show err)
   in
@@ -37,9 +72,6 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
       & info [ "d"; "default" ] ~doc:"combine with the default config file(s)")
   and debug = Logs_cli.level ~env:(Cmd.Env.info "LOG" ~doc:"log level") () in
   Term.(ret (const aux $ args $ with_default $ debug))
-
-let is_zst_file = Misc.is_zst_file
-let strip_zst_suffix = Misc.strip_zst_suffix
 
 let with_decompressed_zst (path : string) (f : string -> 'a) : 'a =
   let tmp = Filename.temp_file "benchpress_" ".sqlite" in
@@ -72,9 +104,7 @@ let get_definitions () : Definitions.t =
   let conf_files = List.map Xdg.interpolate_home conf_files in
   Log.info (fun k ->
       k "parse config files %a" CCFormat.Dump.(list string) conf_files);
-  let l = Stanza.parse_files conf_files in
-  (* combine configs *)
-  Definitions.of_stanza_l l
+  load_config_files conf_files
 
 (* CSV output *)
 (* Legacy: dump CSV to file if provided *)

@@ -46,6 +46,7 @@ module Exec_run_provers : sig
     ?output:string ->
     ?update:bool ->
     ?compress:bool ->
+    ?hooks:Lua_hooks.t ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
@@ -54,7 +55,8 @@ module Exec_run_provers : sig
   (** Run the given prover(s) on the given problem set, obtaining results after
       all the problems have been dealt with.
       @param on_solve called whenever a single problem is solved
-      @param on_done called when the whole process is done *)
+      @param on_done called when the whole process is done
+      @param hooks optional Lua hook registry for lifecycle events *)
 
   val run_sbatch_job :
     ?timestamp:float ->
