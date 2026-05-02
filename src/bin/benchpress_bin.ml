@@ -520,7 +520,8 @@ module New_config = struct
     else (
       CCIO.with_out p.output (fun oc ->
           output_string oc Lua_api.config_template);
-      Format.printf "wrote %s@." p.output)
+      Format.printf "wrote %s@." p.output
+    )
 
   let cmd =
     let doc = "create a new annotated Lua config file" in
