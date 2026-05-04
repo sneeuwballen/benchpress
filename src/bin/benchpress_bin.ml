@@ -91,6 +91,8 @@ module Run = struct
             what was expected) *)
     update: bool; [@names [ "update"; "u" ]]
         (** if the output file already exists, overwrite it with the new one. *)
+    compress: bool;
+        (** compress output database with zstd after the run is complete *)
   }
   [@@deriving subliner]
 
@@ -107,7 +109,7 @@ module Run = struct
     Run_main.main ~pp_results:p.progress ?dyn ~j:p.j ?cpus ?timeout:p.timeout
       ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
       ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
-      ?output:p.output ~save:p.save ~wal_mode:p.wal_mode
+      ?output:p.output ~save:p.save ~wal_mode:p.wal_mode ~compress:p.compress
       ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
       ~update:p.update defs p.paths ()
 
@@ -156,6 +158,8 @@ module Slurm = struct
             what was expected) *)
     update: bool; [@names [ "update"; "u" ]]
         (** if the output file already exists, overwrite it with the new one. *)
+    compress: bool;
+        (** compress output database with zstd after the run is complete *)
     partition: string option;
         (** partition to which the allocated nodes should belong *)
     nodes: int option; [@names [ "n"; "nodes" ]]
@@ -190,9 +194,10 @@ module Slurm = struct
       ?timeout:p.timeout ?memory:p.memory ?csv:p.csv ~provers:p.provers
       ~meta:p.meta ?task:p.task ?summary:p.summary ~dir_files:p.dir_files
       ?proof_dir:p.proof_dir ?output:p.output ~wal_mode:p.wal_mode
-      ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
-      ~update:p.update ~save:p.save ?partition:p.partition ?nodes:p.nodes ?addr
-      ?port:p.port ?ntasks:p.ntasks defs p.paths ()
+      ~compress:p.compress ~desktop_notification:p.desktop_notification
+      ~no_failure:p.no_failure ~update:p.update ~save:p.save
+      ?partition:p.partition ?nodes:p.nodes ?addr ?port:p.port ?ntasks:p.ntasks
+      defs p.paths ()
 
   let cmd =
     let doc =
@@ -520,6 +525,8 @@ let () =
   let@ () = Trace_tef.with_setup () in
   let@ env = Eio_posix.run in
   Trace_eio.setup ();
+
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   let proc_mgr = Eio.Stdenv.process_mgr env in
   Run_proc.with_proc_mgr proc_mgr @@ fun () ->
   match parse_opt () with

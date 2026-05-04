@@ -38,6 +38,28 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
   and debug = Logs_cli.level ~env:(Cmd.Env.info "LOG" ~doc:"log level") () in
   Term.(ret (const aux $ args $ with_default $ debug))
 
+let is_zst_file = Misc.is_zst_file
+let strip_zst_suffix = Misc.strip_zst_suffix
+
+let with_decompressed_zst (path : string) (f : string -> 'a) : 'a =
+  let tmp = Filename.temp_file "benchpress_" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> try Sys.remove tmp with _ -> ())
+    (fun () ->
+      let rc =
+        let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "zstd.decompress" in
+        let cmd =
+          Printf.sprintf "zstd -q -f -d %s -o %s" (Filename.quote path)
+            (Filename.quote tmp)
+        in
+        Trace.add_data_to_span _sp
+          [ "file", `String path; "tmp", `String tmp; "cmd", `String cmd ];
+        Sys.command cmd
+      in
+      if rc <> 0 then
+        Error.failf "zstd decompression of '%s' failed (exit %d)" path rc;
+      f tmp)
+
 let get_definitions () : Definitions.t =
   let conf_files =
     let default_conf = Misc.default_config () in
@@ -155,7 +177,9 @@ let list_entries ?(off = 0) ?(limit = max_int) data_dir :
        | `File, s
          when Filename.check_suffix s ".json.gz"
               || Filename.check_suffix s ".json"
-              || Filename.check_suffix s ".sqlite" ->
+              || Filename.check_suffix s ".sqlite"
+              || Filename.check_suffix s ".sqlite.zst"
+              || Filename.check_suffix s ".sqlite.zstd" ->
          let size = (Unix.stat s).Unix.st_size in
          Some (s, size)
        | _ -> None)
@@ -180,6 +204,8 @@ let mk_file_full (file : string) : string =
   ) else
     file
 
+let is_sqlite_file s = Filename.check_suffix s ".sqlite"
+
 let guess_uuid (f : string) =
   let f = Filename.chop_extension @@ Filename.basename f in
   try Scanf.sscanf f "res-%[^-%]-%s%!" (fun _ s -> Some s)
@@ -190,13 +216,19 @@ let guess_uuid (f : string) =
 (** Load file by name *)
 let load_file_full (file : string) : string * Test_top_result.t =
   let file = mk_file_full file in
-  if Filename.check_suffix file ".sqlite" then
-    Error.guard (Error.wrapf "load_file_full '%s'" file) @@ fun () ->
+  Error.guard (Error.wrapf "load_file_full '%s'" file) @@ fun () ->
+  if is_sqlite_file file then
     Db.with_db ~timeout:1500 ~mode:`NO_CREATE file (fun db ->
         let r = Test_top_result.of_db ~analyze_full:true db in
         file, r)
+  else if is_zst_file file then
+    with_decompressed_zst file (fun tmp ->
+        Db.with_db ~timeout:1500 ~mode:`NO_CREATE tmp (fun db ->
+            let r = Test_top_result.of_db ~analyze_full:true db in
+            file, r))
   else
-    Error.failf "invalid name %S, expected a .sqlite file" file
+    Error.failf "invalid name %S, expected a .sqlite or .sqlite.zst[d] file"
+      file
 
 let with_file_as_db ~map_err filename file : _ =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "with-file-as-db" in
@@ -205,7 +237,13 @@ let with_file_as_db ~map_err filename file : _ =
   Error.guard map_err @@ fun () ->
   Error.guard (Error.wrapf "processing DB '%s'" filename) @@ fun () ->
   let filename = mk_file_full filename in
-  try Db.with_db ~timeout:500 ~mode:`READONLY filename file with
+  try
+    if is_zst_file filename then
+      with_decompressed_zst filename (fun tmp ->
+          Db.with_db ~timeout:500 ~mode:`READONLY tmp file)
+    else
+      Db.with_db ~timeout:500 ~mode:`READONLY filename file
+  with
   | Error.E _ as e -> raise e
   | Db.RcError rc -> Error.raise (Misc.err_of_db rc)
   | e -> Error.raise (Error.of_exn e)
@@ -216,19 +254,32 @@ let load_file f = snd @@ load_file_full f
 let with_loaded_file ~map_err filename (process : Test_top_result.t -> 'a) : 'a
     =
   Error.guard map_err @@ fun () ->
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "with-loaded-file" in
+  Trace.add_data_to_span _sp [ "file", `String filename ];
   let filename = mk_file_full filename in
-  Db.with_db ~timeout:1500 ~mode:`READONLY filename (fun db ->
-      let r = Test_top_result.of_db ~analyze_full:true db in
-      process r)
+  if is_zst_file filename then
+    with_decompressed_zst filename (fun tmp ->
+        Db.with_db ~timeout:1500 ~mode:`READONLY tmp (fun db ->
+            let r = Test_top_result.of_db ~analyze_full:true db in
+            process r))
+  else
+    Db.with_db ~timeout:1500 ~mode:`READONLY filename (fun db ->
+        let r = Test_top_result.of_db ~analyze_full:true db in
+        process r)
 
 let load_file_summary ?(full = false) (file : string) :
     string * Test_compact_result.t =
-  if Filename.check_suffix file ".sqlite" then (
-    let file = mk_file_full file in
+  let file = mk_file_full file in
+  if is_sqlite_file file then
     Db.with_db ~timeout:500 ~mode:`READONLY file (fun db ->
         let cr = Test_compact_result.of_db ~full db in
         file, cr)
-  ) else (
+  else if is_zst_file file then
+    with_decompressed_zst file (fun tmp ->
+        Db.with_db ~timeout:500 ~mode:`READONLY tmp (fun db ->
+            let cr = Test_compact_result.of_db ~full db in
+            file, cr))
+  else (
     let file', res = load_file_full file in
     let cr = Test_top_result.to_compact_result res in
     file', cr

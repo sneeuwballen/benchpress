@@ -4,7 +4,7 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
-    ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update
+    ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update ?(compress = false)
     (defs : Definitions.t) (r : Action.run_provers) : _ * Test_compact_result.t
     =
   let@ () =
@@ -26,18 +26,18 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
     Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
     Exec_action.Exec_run_provers.run ~uuid ?timestamp
       ~interrupted:(fun () -> Atomic.get interrupted)
-      ~on_solve:progress#on_res ~save ~wal_mode
+      ~on_solve:progress#on_res ~save ~wal_mode ~compress ?output ~update
       ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
       ~on_proof_check:progress#on_proof_check_res
       ~on_done:(fun _ -> progress#on_done)
-      r ?output ~update
+      r
   in
   result
 
 let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
     ?output ~notify ~(uuid : Uuidm.t) ~(save : bool) ~wal_mode ~update
-    (defs : Definitions.t) (r : Action.run_provers_slurm_submission) :
-    _ * Test_compact_result.t =
+    ?(compress = false) (defs : Definitions.t)
+    (r : Action.run_provers_slurm_submission) : _ * Test_compact_result.t =
   let@ _sp =
     Error.guard
       (Error.wrapf "run provers with slurm action@ `@[%a@]`"
@@ -59,11 +59,12 @@ let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
     Exec_action.Exec_run_provers.run_sbatch_job ~uuid ?timestamp
       ~interrupted:(fun () -> Atomic.get interrupted)
       ?partition:r.partition ~nodes:r.nodes ~addr:r.addr ~port:r.port
-      ~ntasks:r.ntasks ~save ~wal_mode ~on_solve:progress#on_res
+      ~ntasks:r.ntasks ~save ~wal_mode ~compress ?output ~update
+      ~on_solve:progress#on_res
       ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
       ~on_proof_check:progress#on_proof_check_res
       ~on_done:(fun _ -> progress#on_done)
-      exp_r ?output ~update
+      exp_r
   in
   result
 
@@ -75,8 +76,8 @@ type top_task =
 
 let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     ?summary ?task ?(dir_files = []) ?proof_dir ?output ?(save = true)
-    ?(wal_mode = false) ~desktop_notification ~no_failure ~update
-    ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks
+    ?(wal_mode = false) ?(compress = false) ~desktop_notification ~no_failure
+    ~update ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks
     (defs : Definitions.t) paths () : unit =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   Log.info (fun k ->
@@ -195,8 +196,8 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
 
     let top_res, (results : Test_compact_result.t) =
       execute_run_prover_action ~uuid ?pp_results ?proof_dir ?dyn:progress
-        ~limits ?j ?cpus ?output ~notify ~timestamp ~save ~wal_mode ~update defs
-        run_provers_action
+        ~limits ?j ?cpus ?output ~notify ~timestamp ~save ~wal_mode ~update
+        ~compress defs run_provers_action
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in
@@ -227,8 +228,8 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
 
     let top_res, (results : Test_compact_result.t) =
       execute_submit_job_action ?pp_results ~uuid ?proof_dir ?dyn:progress
-        ~limits ?j ?output ~notify ~timestamp ~save ~wal_mode ~update defs
-        run_provers_action_sbatch
+        ~limits ?j ?output ~notify ~timestamp ~save ~wal_mode ~update ~compress
+        defs run_provers_action_sbatch
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in

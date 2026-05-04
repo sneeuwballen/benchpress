@@ -127,6 +127,16 @@ let file_for_uuid pref ?(dir = Xdg.data_dir) ~timestamp uuid ext =
   mkdir_rec data_dir;
   Filename.concat data_dir filename
 
+let is_zst_file s =
+  Filename.check_suffix s ".sqlite.zst"
+  || Filename.check_suffix s ".sqlite.zstd"
+
+let strip_zst_suffix s =
+  if Filename.check_suffix s ".sqlite.zst" then
+    Filename.chop_suffix s ".zst"
+  else
+    Filename.chop_suffix s ".zstd"
+
 (** Concatenate list into a path *)
 let rec filename_concat_l = function
   | [] -> "."
