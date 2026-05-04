@@ -41,6 +41,7 @@ val option_progress : t -> bool option
 val add_prover : Prover.t with_loc -> t -> t
 val add_dir : Dir.t -> t -> t
 val add_task : Task.t with_loc -> t -> t
+val add_proof_checker : Proof_checker.t with_loc -> t -> t
 val mk_subdir : t -> string -> Subdir.t
 val mk_paths : ?dir_files:string list -> string list -> string list
 

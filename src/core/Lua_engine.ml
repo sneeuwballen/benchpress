@@ -48,9 +48,15 @@ let to_definitions (t : t) : Definitions.t =
       with_provers
       (List.rev t.pending.Lua_api.dirs)
   in
+  let with_checkers =
+    List.fold_left
+      (fun defs c -> add_proof_checker c defs)
+      with_dirs
+      (List.rev t.pending.Lua_api.checkers)
+  in
   List.fold_left
     (fun defs task -> add_task task defs)
-    with_dirs
+    with_checkers
     (List.rev t.pending.Lua_api.tasks)
 
 let hooks (t : t) : Lua_hooks.t = t.pending.Lua_api.hooks

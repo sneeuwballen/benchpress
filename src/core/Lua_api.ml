@@ -80,9 +80,11 @@ type pending = {
   mutable dirs: Dir.t list;
   mutable tasks: Task.t With_loc.t list;
   mutable hooks: Lua_hooks.t;
+  mutable checkers: Proof_checker.t With_loc.t list;
 }
 
-let make_pending hooks = { provers = []; dirs = []; tasks = []; hooks }
+let make_pending hooks =
+  { provers = []; dirs = []; tasks = []; hooks; checkers = [] }
 
 (* ------------------------------------------------------------------ *)
 (* Lua function implementations *)
@@ -263,10 +265,90 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
        | Ok x -> x
        | _ -> None
      in
-     let proof_checker =
-       get_str_field_opt st 1 "proof_checker" |> function
-       | Ok x -> x
-       | _ -> None
+     (* get_checkers: "proof_checker" can be a string or a function.
+        String "c" is shorthand for a function returning [("c", None)] always.
+        A function receives {result, stdout, stderr, proof_file?} and returns a
+        list whose elements are either a checker-name string or a table
+        {checker=<name>, file=<path>}. *)
+     let decode_check_entry_at st idx : (string * string option) option =
+       if Lua.isstring st idx then (
+         let s = Lua.tostring st idx |> CCOpt.get_or ~default:"" in
+         Lua.pop st 1;
+         if s = "" then
+           None
+         else
+           Some (s, None)
+       ) else if Lua.istable st idx then (
+         ignore (Lua.getfield st idx "checker");
+         let cname = Lua.tostring st (-1) |> CCOpt.get_or ~default:"" in
+         Lua.pop st 1;
+         ignore (Lua.getfield st idx "file");
+         let fopt = Lua.tostring st (-1) in
+         Lua.pop st 1;
+         Lua.pop st 1;
+         if cname = "" then
+           None
+         else
+           Some (cname, fopt)
+       ) else (
+         Lua.pop st 1;
+         None
+       )
+     in
+     let call_get_checkers_fn st r ~stdout ~stderr ~res ~proof_file =
+       Lua_hooks.push_fn_ref st r;
+       Lua.newtable st;
+       Ezlua.push_field st "result" Ezlua.Encode.string (Res.to_string res);
+       Ezlua.push_field st "stdout" Ezlua.Encode.string stdout;
+       Ezlua.push_field st "stderr" Ezlua.Encode.string stderr;
+       CCOpt.iter
+         (fun pf -> Ezlua.push_field st "proof_file" Ezlua.Encode.string pf)
+         proof_file;
+       let status = Lua.pcall st 1 1 0 in
+       if status = Lua_api_lib.LUA_OK then
+         if Lua.isnoneornil st (-1) || not (Lua.istable st (-1)) then (
+           Lua.pop st 1;
+           []
+         ) else (
+           let n = Lua.objlen st (-1) in
+           let acc = ref [] in
+           for i = n downto 1 do
+             Lua.rawgeti st (-1) i;
+             CCOpt.iter
+               (fun e -> acc := e :: !acc)
+               (decode_check_entry_at st (-1))
+           done;
+           Lua.pop st 1;
+           !acc
+         )
+       else (
+         let msg = Lua.tostring st (-1) |> CCOpt.get_or ~default:"(no msg)" in
+         Lua.pop st 1;
+         Log.warn (fun k ->
+             k "prover %s: proof_checker function error: %s" name msg);
+         []
+       )
+     in
+     Lua.getfield st 1 "proof_checker";
+     let get_checkers =
+       if Lua.isstring st (-1) then (
+         let checker_name = Lua.tostring st (-1) |> CCOpt.get_or ~default:"" in
+         Lua.pop st 1;
+         if checker_name = "" then
+           None
+         else
+           Some
+             (fun ~stdout:_ ~stderr:_ ~res:_ ~proof_file:_ ->
+               [ checker_name, None ])
+       ) else if Lua.isfunction st (-1) then (
+         let r = Lua_hooks.save_fn_ref st in
+         Some
+           (fun ~stdout ~stderr ~res ~proof_file ->
+             call_get_checkers_fn st r ~stdout ~stderr ~res ~proof_file)
+       ) else (
+         Lua.pop st 1;
+         None
+       )
      in
      let binary_deps =
        get_str_list_field_opt st 1 "binary_deps" |> function
@@ -283,7 +365,7 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
          version = Prover.Tag "<lua>";
          produces_proof;
          proof_ext;
-         proof_checker;
+         get_checkers;
          ulimits = Ulimit.mk ~time:true ~memory:true ~stack:false;
          sat;
          unsat;
@@ -547,6 +629,22 @@ let bp_on (pending : pending) (st : Lua_api_lib.state) : int =
      Ezlua.signal_error st msg);
   0
 
+(* benchpress.proof_checker { name, cmd, valid, invalid } *)
+let bp_proof_checker (pending : pending) (st : Lua_api_lib.state) : int =
+  (try
+     if not (Lua.istable st 1) then
+       Error.fail "benchpress.proof_checker: expected a table argument";
+     let name = unwrap_field "name" (get_str_field st 1 "name") in
+     let cmd = unwrap_field "cmd" (get_str_field st 1 "cmd") in
+     let valid = unwrap_field "valid" (get_str_field st 1 "valid") in
+     let invalid = unwrap_field "invalid" (get_str_field st 1 "invalid") in
+     let checker : Proof_checker.t = { name; cmd; valid; invalid } in
+     pending.checkers <- With_loc.make ~loc:Loc.none checker :: pending.checkers
+   with Error.E e ->
+     let msg = Error.show e in
+     Ezlua.signal_error st msg);
+  0
+
 (* ------------------------------------------------------------------ *)
 (* Table construction *)
 
@@ -557,6 +655,7 @@ let register_benchpress_global (st : Lua_api_lib.state) (pending : pending) :
     Ezlua.add_function st ("_bp_" ^ name) fn
   in
   mk "prover" bp_prover;
+  mk "proof_checker" bp_proof_checker;
   mk "dir" bp_dir;
   mk "run_provers" bp_run_provers;
   mk "seq" bp_seq;
@@ -568,13 +667,14 @@ let register_benchpress_global (st : Lua_api_lib.state) (pending : pending) :
   Ezlua.run st
     {|
 benchpress = {
-  prover      = _bp_prover,
-  dir         = _bp_dir,
-  run_provers = _bp_run_provers,
-  seq         = _bp_seq,
-  run_cmd     = _bp_run_cmd,
-  task        = _bp_task,
-  on          = _bp_on,
+  prover        = _bp_prover,
+  proof_checker = _bp_proof_checker,
+  dir           = _bp_dir,
+  run_provers   = _bp_run_provers,
+  seq           = _bp_seq,
+  run_cmd       = _bp_run_cmd,
+  task          = _bp_task,
+  on            = _bp_on,
 }
 |}
   |> function
@@ -602,8 +702,14 @@ let config_template =
 ---@field parse? fun(stdout:string, stderr:string):{res:string,labels?:table<string,boolean>}|nil  # custom result parser
 ---@field produces_proof? boolean        # whether the prover emits proof files
 ---@field proof_ext? string              # file extension for proof files (e.g. "proof")
----@field proof_checker? string          # name of prover used to check proofs
+---@field proof_checker? string|fun(r:{result:string,stdout:string,stderr:string,proof_file:string?}):(string|{checker:string,file:string})[]  # checker(s) to run on proof files
 ---@field binary_deps? string[]          # extra required binaries
+
+---@class BP.ProofCheckerParams
+---@field name string      # checker identifier
+---@field cmd string       # command template using $proof_file and $file
+---@field valid string     # Perl regex matching a valid-proof line in output
+---@field invalid string   # Perl regex matching an invalid-proof line in output
 
 ---@class BP.DirParams
 ---@field path string                    # directory path (supports $cur_dir)
@@ -625,11 +731,12 @@ let config_template =
 ---@field synopsis? string               # short description shown in listings
 
 ---@class BP
----@field prover fun(p:BP.ProverParams)             # register a prover definition
----@field dir fun(p:BP.DirParams)                   # register a problem directory
----@field run_provers fun(p:BP.RunProversParams):any # build a run-provers action
----@field seq fun(...):any                           # sequence several actions
----@field run_cmd fun(cmd:string):any               # build a shell-command action
+---@field prover fun(p:BP.ProverParams)                    # register a prover definition
+---@field proof_checker fun(p:BP.ProofCheckerParams)       # register a proof checker
+---@field dir fun(p:BP.DirParams)                          # register a problem directory
+---@field run_provers fun(p:BP.RunProversParams):any        # build a run-provers action
+---@field seq fun(...):any                                  # sequence several actions
+---@field run_cmd fun(cmd:string):any                       # build a shell-command action
 ---@field task fun(p:BP.TaskParams)                 # register a named task
 ---@field on fun(event:string, fn:function)         # register an event hook
 ---@field cur_dir string                            # directory of this config file (read-only)

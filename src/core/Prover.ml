@@ -39,7 +39,18 @@ type t = {
       (** Lua-defined cmd function; takes priority over [cmd] when set. *)
   produces_proof: bool;
   proof_ext: string option;  (** file extension for proofs *)
-  proof_checker: string option;  (** proof checker for its proofs *)
+  get_checkers:
+    (stdout:string ->
+    stderr:string ->
+    res:Res.t ->
+    proof_file:string option ->
+    (string * string option) list)
+    option;
+      (** Given the prover result, return a list of
+          [(checker_name, proof_file_override)] pairs. When
+          [proof_file_override] is [None] the auto-generated proof file is used;
+          when [Some path] that path is used instead (useful when the prover
+          writes the proof to a dynamically-chosen location). *)
   (* whether some limits should be enforced/set by ulimit *)
   ulimits: Ulimit.conf;
   (* Result analysis *)
@@ -132,16 +143,16 @@ let pp out self =
     custom;
     static_labels;
     analyze_fn = _;
+    get_checkers = _;
     produces_proof;
     proof_ext;
     inherits;
-    proof_checker;
     binary_deps = _;
     defined_in;
   } =
     self
   in
-  Fmt.fprintf out "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
+  Fmt.fprintf out "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
     (pp_f "name" pp_str) name
     (pp_f "version" Version.pp)
     version (pp_f "cmd" pp_str) cmd (pp_f "binary" pp_str) binary
@@ -155,10 +166,8 @@ let pp out self =
     defined_in
     (pp_f "produces_proof" Fmt.bool)
     produces_proof
-    (pp_opt "produces_proof" pp_str)
-    proof_ext
-    (pp_opt "proof_checker" pp_str)
-    proof_checker (pp_opt "inherits" pp_str) inherits
+    (pp_opt "proof_ext" pp_str)
+    proof_ext (pp_opt "inherits" pp_str) inherits
     (pp_l1 (pp_pair pp_str pp_regex))
     custom (pp_l1 pp_str) static_labels
 
@@ -369,7 +378,8 @@ let to_db db (self : t) : unit =
     (self.ulimits.memory |> string_of_bool)
     (self.ulimits.stack |> string_of_bool)
     (self.produces_proof |> string_of_bool)
-    (self.proof_checker |> str_or)
+    ""
+    (* proof_checker column kept for schema compat; runtime uses get_checkers *)
     (self.proof_ext |> str_or)
     (self.inherits |> CCOpt.get_or ~default:"")
   |> Misc.unwrap_db (fun () -> "prover.to-db");
@@ -439,21 +449,20 @@ let of_db db name : t =
           k "prover.of_db: not ulimit_* fields, assuming defaults");
       { time = true; memory = true; stack = false }
   in
-  let produces_proof, proof_ext, proof_checker, inherits =
+  let produces_proof, proof_ext, inherits =
     (* parse separately, for migration purposes (old DBs don't have this) *)
     try
       Db.exec_exn db
-        {|select produces_proof, proof_ext, proof_checker, inherits from prover where name=?|}
+        {|select produces_proof, proof_ext, inherits from prover where name=?|}
         ~f:Db.Cursor.next
         ~ty:
           Db.Ty.(
             ( [ text ],
-              [ nullable text; nullable text; nullable text; nullable text ],
-              fun a b c d ->
-                CCOpt.map_or ~default:false bool_of_string a, b, c, d ))
+              [ nullable text; nullable text; nullable text ],
+              fun a b c -> CCOpt.map_or ~default:false bool_of_string a, b, c ))
         name
-      |> CCOpt.get_or ~default:(false, None, None, None)
-    with _ -> false, None, None, None
+      |> CCOpt.get_or ~default:(false, None, None)
+    with _ -> false, None, None
   in
   Db.exec db
     {|select
@@ -481,10 +490,10 @@ let of_db db name : t =
               custom;
               static_labels = [];
               analyze_fn = None;
+              get_checkers = None;
               inherits;
               produces_proof;
               proof_ext;
-              proof_checker;
               version;
               binary;
               ulimits;

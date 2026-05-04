@@ -9,12 +9,6 @@ let copy_problem ~proof_dir ~prover (file : string) : unit =
   CCIO.with_out new_path @@ fun oc ->
   CCIO.with_in file @@ fun ic -> CCIO.copy_into ~bufsize:(64 * 1024) ic oc
 
-let with_proof_file_opt ~proof_file ~keep f =
-  match proof_file with
-  | Some file when not keep ->
-    CCFun.finally ~h:(fun () -> try Sys.remove file with _ -> ()) ~f
-  | _ -> f ()
-
 let run_prover_pb ?proof_dir ~limits ~prover ~pb provers checkers =
   let prover =
     try With_loc.view (Misc.Str_map.find prover provers)
@@ -42,31 +36,53 @@ let run_prover_pb ?proof_dir ~limits ~prover ~pb provers checkers =
     ) else
       None, false
   in
-  with_proof_file_opt ~proof_file ~keep @@ fun () ->
   let result = Run_prover_problem.run ~limits ~proof_file prover pb in
-  let ev_proof =
-    match result.res, proof_file with
-    | Res.Unsat, Some pfile when prover.Prover.produces_proof ->
-      Log.debug (fun k ->
-          k "proof-file size: %d"
-            (try Unix.((stat pfile).st_size) with _ -> 0));
-      let checker =
-        match prover.Prover.proof_checker with
-        | None -> Error.failf "cannot check proofs for '%s'" prover.name
-        | Some c ->
-          (try With_loc.view (Misc.Str_map.find c checkers)
-           with Not_found -> Error.failf "cannot find proof checker '%s'" c)
-      in
-      let res =
-        let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
-        Run_prover_problem.run_proof_check ~limits ~proof_file:pfile prover
-          checker pb
-      in
-      let ev_checker = Run_event.mk_checker res in
-      [ ev_checker ]
-    | _ -> []
+  (* Determine check requests via get_checkers. *)
+  let check_reqs =
+    match prover.Prover.get_checkers with
+    | None -> []
+    | Some get_checkers ->
+      get_checkers ~stdout:result.raw.Run_proc_result.stdout
+        ~stderr:result.raw.Run_proc_result.stderr ~res:result.res ~proof_file
+      |> CCList.filter_map (fun (checker_name, pf_override) ->
+             let actual_pf =
+               match pf_override with
+               | Some p -> p
+               | None ->
+                 (match proof_file with
+                 | Some p -> p
+                 | None ->
+                   Error.failf
+                     "prover %s: get_checkers returned checker %s but no proof \
+                      file available"
+                     prover.Prover.name checker_name)
+             in
+             match Misc.Str_map.find_opt checker_name checkers with
+             | None ->
+               Log.warn (fun k -> k "worker: unknown checker '%s'" checker_name);
+               None
+             | Some checker -> Some (With_loc.view checker, actual_pf))
   in
-  Run_event.mk_prover result :: ev_proof
+  (* Inline proof checking (worker does not have a dynamic queue). *)
+  let ev_proofs =
+    List.map
+      (fun (checker, pfile) ->
+        Log.debug (fun k ->
+            k "proof-file size: %d"
+              (try Unix.((stat pfile).st_size) with _ -> 0));
+        let res =
+          let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
+          Run_prover_problem.run_proof_check ~limits ~proof_file:pfile prover
+            checker pb
+        in
+        Run_event.mk_checker res)
+      check_reqs
+  in
+  (* Clean up proof file if not kept and we ran all checks inline. *)
+  (match proof_file with
+  | Some file when not keep -> (try Sys.remove file with _ -> ())
+  | _ -> ());
+  Run_event.mk_prover result :: ev_proofs
 
 let run_worker ?timeout ?memory (defs : Definitions.t) id socket_addr
     socket_port j =

@@ -39,7 +39,17 @@ type t = {
       (** Lua-defined cmd function; takes priority over [cmd] when set. *)
   produces_proof: bool;
   proof_ext: string option;  (** file extension for proofs *)
-  proof_checker: string option;  (** proof checker for its proofs *)
+  get_checkers:
+    (stdout:string ->
+    stderr:string ->
+    res:Res.t ->
+    proof_file:string option ->
+    (string * string option) list)
+    option;
+      (** Given the result of running the prover, return a list of
+          [(checker_name, proof_file_override)] pairs to schedule.
+          [proof_file_override = None] uses the auto-generated proof file;
+          [Some path] uses [path] instead. *)
   (* whether some limits should be enforced/set by ulimit *)
   ulimits: Ulimit.conf;
   (* Result analysis *)
