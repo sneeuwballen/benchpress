@@ -496,21 +496,19 @@ end
 
 module New_config = struct
   type params = {
-    output: string; [@default "config.lua"] [@names [ "o"; "output" ]]
-        (** output file ("-" for stdout) *)
+    output: string option; [@names [ "o"; "output" ]]
+        (** output file (default: stdout) *)
   }
   [@@deriving subliner]
 
   let run (p : params) debug =
     Misc.setup_logs debug;
     let@ () = catch_err in
-    if p.output = "-" then
-      print_string Lua_api.config_template
-    else (
-      CCIO.with_out p.output (fun oc ->
-          output_string oc Lua_api.config_template);
-      Format.printf "wrote %s@." p.output
-    )
+    match p.output with
+    | None -> print_string Lua_api.config_template
+    | Some path ->
+      CCIO.with_out path (fun oc -> output_string oc Lua_api.config_template);
+      Format.printf "wrote %s@." path
 
   let cmd =
     let doc = "create a new annotated Lua config file" in

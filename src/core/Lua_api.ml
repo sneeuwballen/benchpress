@@ -552,8 +552,6 @@ let bp_on (pending : pending) (st : Lua_api_lib.state) : int =
 
 let register_benchpress_global (st : Lua_api_lib.state) (pending : pending) :
     unit =
-  (* init_error_callbacks first: add_function depends on _ez_check being present *)
-  Ezlua.init_error_callbacks st;
   let mk name impl =
     let fn st = impl pending st in
     Ezlua.add_function st ("_bp_" ^ name) fn
