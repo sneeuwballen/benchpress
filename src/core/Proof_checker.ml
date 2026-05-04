@@ -41,6 +41,13 @@ let make_cmd ?env ~problem ~proof_file (self : t) : string =
          self.name s
 
 let run ?(limits = Limit.All.default) ~problem ~proof_file (self : t) =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "proof-checker.run" in
+  Trace.add_data_to_span _sp
+    [
+      "checker", `String self.name;
+      "problem", `String problem;
+      "proof_file", `String proof_file;
+    ];
   let cmd = make_cmd ~problem ~proof_file self in
   let ulimit = Ulimit.mk ~time:true ~memory:true ~stack:true in
   let cmd =

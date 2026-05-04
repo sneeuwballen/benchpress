@@ -305,6 +305,12 @@ let of_db_ ~analyze_full ~meta ~provers ~events db : t =
   { db; events; meta; provers; stats; analyze }
 
 let make ~analyze_full ~meta ~provers (events : Run_event.t list) : t =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "test-top-res.make" in
+  Trace.add_data_to_span _sp
+    [
+      "n_events", `Int (List.length events);
+      "n_provers", `Int (List.length provers);
+    ];
   Error.guard (Error.wrap "reading top_res from events") @@ fun () ->
   (* create a temporary in-memory DB *)
   let db = Sqlite3.db_open ":memory:" in
@@ -322,6 +328,8 @@ let make ~analyze_full ~meta ~provers (events : Run_event.t list) : t =
   of_db_ ~analyze_full db ~meta ~provers ~events
 
 let of_db ~analyze_full (db : Db.t) : t =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "test-top-res.of-db" in
+  Trace.add_data_to_span _sp [ "analyze_full", `Bool analyze_full ];
   Error.guard (Error.wrapf "reading top_res from DB") @@ fun () ->
   Log.debug (fun k -> k "loading metadata from DB");
   let meta = Test_metadata.of_db db in

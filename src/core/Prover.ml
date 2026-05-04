@@ -198,6 +198,17 @@ module Map = CCMap.Make (As_key)
 module Set = CCSet.Make (As_key)
 
 let run ?env ?proof_file ~limits ~file (self : t) : Run_proc_result.t =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "prover.run" in
+  Trace.add_data_to_span _sp
+    [
+      "prover", `String self.name;
+      "file", `String file;
+      ( "timeout",
+        `Int
+          (CCOpt.map_or ~default:0
+             (fun t -> Limit.Time.as_int Seconds t)
+             limits.Limit.All.time) );
+    ];
   Log.debug (fun k -> k "(@[Prover.run %s %a@])" self.name Limit.All.pp limits);
   let cmd = make_command ?env ?proof_file ~limits self ~file in
   (* Give one more second to the ulimit timeout to account for the startup
@@ -333,6 +344,8 @@ let tags_of_db db : _ list =
   )
 
 let of_db db name : t =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "prover.of-db" in
+  Trace.add_data_to_span _sp [ "name", `String name ];
   Error.guard (Error.wrapf "reading prover data for '%s'" name) @@ fun () ->
   let nonnull s =
     if s = "" then

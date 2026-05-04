@@ -1,3 +1,4 @@
+open Common
 module Log = (val Logs.src_log (Logs.Src.create "run-proc"))
 
 (** Fiber-local key holding the Eio process manager. Must be bound (via
@@ -25,6 +26,8 @@ let child_env () : string array =
   |> Array.of_seq
 
 let run cmd : Run_proc_result.t =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-proc.run" in
+  Trace.add_data_to_span _sp [ "cmd", `String cmd ];
   let start = Ptime_clock.now () in
 
   let proc_mgr =

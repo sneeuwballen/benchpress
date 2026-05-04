@@ -205,6 +205,13 @@ end = struct
     | _ -> f ()
 
   let prepare_db ~wal_mode ?output ~update timestamp uuid save provers =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "exec-action.prepare-db" in
+    Trace.add_data_to_span _sp
+      [
+        "uuid", `String (Uuidm.to_string uuid);
+        "save", `Bool save;
+        "wal_mode", `Bool wal_mode;
+      ];
     let db =
       if save then (
         let db_file =
@@ -258,6 +265,13 @@ end = struct
       ?(on_start_proof_check = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
       ?(interrupted = fun _ -> false) ?output ?(update = false)
       ?(compress = false) ~uuid ~save ~wal_mode (self : expanded) : _ * _ =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "exec-action.run" in
+    Trace.add_data_to_span _sp
+      [
+        "uuid", `String (Uuidm.to_string uuid);
+        "n_provers", `Int (List.length self.provers);
+        "n_problems", `Int (List.length self.problems);
+      ];
     let start = Misc.now_s () in
     (* resolve output: strip .zst/.zstd if present, or add .zst if --compress *)
     let effective_output, compress_to =
@@ -427,6 +441,18 @@ end = struct
       ?(on_done = _nop) ?(interrupted = fun _ -> false) ?partition ~nodes ~addr
       ~port ~ntasks ?output ?(update = false) ?(compress = false) ~uuid ~save
       ~wal_mode (self : expanded) : _ * _ =
+    let@ _sp =
+      Trace.with_span ~__FILE__ ~__LINE__ "exec-action.run-sbatch-job"
+    in
+    Trace.add_data_to_span _sp
+      [
+        "uuid", `String (Uuidm.to_string uuid);
+        "n_provers", `Int (List.length self.provers);
+        "n_problems", `Int (List.length self.problems);
+        "nodes", `Int nodes;
+        "ntasks", `Int ntasks;
+        "port", `Int port;
+      ];
     ignore on_start_proof_check;
     let j =
       match self.j with

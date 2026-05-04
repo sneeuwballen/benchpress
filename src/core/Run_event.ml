@@ -171,6 +171,9 @@ let of_db_checker_map db ~f : _ list =
   )
 
 let of_db_l db : t list =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-event.of-db-l" in
   let l1 = of_db_provers_map db ~f:(fun x -> Prover_run x) in
   let l2 = of_db_checker_map db ~f:(fun x -> Checker_run x) in
-  List.rev_append l1 l2
+  let result = List.rev_append l1 l2 in
+  Trace.add_data_to_span _sp [ "n_events", `Int (List.length result) ];
+  result
