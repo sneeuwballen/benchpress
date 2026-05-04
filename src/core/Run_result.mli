@@ -4,6 +4,7 @@ type (+'a, 'res) t = private {
   program: 'a;
   problem: Problem.t;
   res: 'res;
+  labels: string list;
   timeout: Limit.Time.t;
   raw: Run_proc_result.t;
 }

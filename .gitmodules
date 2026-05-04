@@ -1,3 +1,6 @@
 [submodule "vendor/trace"]
 	path = vendor/trace
 	url = https://github.com/ocaml-tracing/ocaml-trace.git
+[submodule "vendor/ezlua"]
+	path = vendor/ezlua
+	url = https://github.com/c-cube/ezlua.git

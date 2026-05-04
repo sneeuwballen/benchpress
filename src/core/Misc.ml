@@ -143,7 +143,30 @@ let rec filename_concat_l = function
   | [ s ] -> s
   | s :: tl -> Filename.concat s @@ filename_concat_l tl
 
-let mk_uuid () : Uuidm.t = Uuidm.v4_gen (Random.State.make_self_init ()) ()
+let mk_uuid () : Uuidm.t =
+  (* UUID v7: 48-bit ms timestamp + version 7 + 74 random bits *)
+  let now_ms = Int64.of_float (Unix.gettimeofday () *. 1000.0) in
+  let b = Bytes.create 16 in
+  (* bytes 0-5: 48-bit big-endian millisecond timestamp *)
+  for i = 0 to 5 do
+    Bytes.set b i
+      (Char.chr
+         (Int64.to_int
+            (Int64.logand
+               (Int64.shift_right_logical now_ms (40 - (i * 8)))
+               0xffL)))
+  done;
+  (* bytes 6-15: random *)
+  let rng = Random.State.make_self_init () in
+  for i = 6 to 15 do
+    Bytes.set b i (Char.chr (Random.State.bits rng land 0xff))
+  done;
+  (* version 7: set high nibble of byte 6 to 0x7 *)
+  Bytes.set b 6 (Char.chr (Char.code (Bytes.get b 6) land 0x0f lor 0x70));
+  (* variant: set high bits of byte 8 to 10xxxxxx *)
+  Bytes.set b 8 (Char.chr (Char.code (Bytes.get b 8) land 0x3f lor 0x80));
+  Uuidm.of_bytes (Bytes.to_string b)
+  |> CCOpt.get_exn_or "mk_uuid: invalid uuid bytes"
 
 (** Modify filename of a lexing buffer, for future locations *)
 let set_lexbuf_filename buf filename =

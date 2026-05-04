@@ -32,6 +32,8 @@ depends: [
   "trace-tef"
   "printbox" {>= "0.6"}
   "printbox-text" {>= "0.6"}
+  "ezlua"
+  "ocaml-lua"
   "odoc" {with-doc}
 ]
 build: [

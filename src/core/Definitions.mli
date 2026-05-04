@@ -25,6 +25,7 @@ val to_iter : t -> (string * def) Iter.t
 val all_provers : t -> Prover.t with_loc list
 val all_checkers : t -> Proof_checker.t with_loc list
 val all_tasks : t -> Task.t with_loc list
+val all_dirs : t -> Dir.t list
 val custom_tags : t -> string list
 
 module Def : sig
@@ -37,9 +38,9 @@ end
 
 val option_j : t -> int option
 val option_progress : t -> bool option
-val add_stanza : ?reify_errors:bool -> Stanza.t -> t -> t
-val add_stanza_l : ?reify_errors:bool -> Stanza.t list -> t -> t
-val of_stanza_l : ?reify_errors:bool -> Stanza.t list -> t
+val add_prover : Prover.t with_loc -> t -> t
+val add_dir : Dir.t -> t -> t
+val add_task : Task.t with_loc -> t -> t
 val mk_subdir : t -> string -> Subdir.t
 val mk_paths : ?dir_files:string list -> string list -> string list
 
@@ -47,7 +48,6 @@ val mk_run_provers :
   ?j:int ->
   ?timeout:int ->
   ?memory:int ->
-  ?stack:Stanza.stack_limit ->
   ?pattern:string ->
   paths:path list ->
   provers:string list ->
@@ -63,7 +63,6 @@ val mk_run_provers_slurm_submission :
   paths:path list ->
   ?timeout:int ->
   ?memory:int ->
-  ?stack:Stanza.stack_limit ->
   ?pattern:path ->
   provers:path list ->
   ?loc:Loc.t ->
