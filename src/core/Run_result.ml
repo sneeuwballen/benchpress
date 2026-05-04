@@ -47,12 +47,12 @@ let make_from_checker (p : Prover.t) (checker : Proof_checker.t) ~timeout
     match Proof_checker.analyze_res checker raw with
     | Some r -> r
     | None ->
-      if raw.errcode = 0 then
-        Res.Unknown "errcode <> 0"
-      else if raw.rtime > float_timeout timeout then
+      if raw.rtime > float_timeout timeout then
         Res.Unknown "timeout"
+      else if raw.errcode <> 0 then
+        Res.Unknown (Printf.sprintf "errcode=%d" raw.errcode)
       else
-        Res.Unknown "?"
+        Res.Unknown "no-match"
   in
   { program = p.name, checker.name; problem; res; labels = []; timeout; raw }
 
