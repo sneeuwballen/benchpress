@@ -85,17 +85,6 @@ type pending = {
 let make_pending hooks = { provers = []; dirs = []; tasks = []; hooks }
 
 (* ------------------------------------------------------------------ *)
-(* Error signalling that avoids calling lua_error from OCaml.
-   In OCaml 5 calling lua_error (C longjmp) from inside OCaml code skips
-   OCaml activation records and crashes the runtime.  Instead, OCaml
-   callbacks store the error in _bp_pending_error and return; the Lua
-   wrapper then calls Lua's error() from pure Lua with no OCaml frames. *)
-
-let signal_error (st : Lua_api_lib.state) (msg : string) : unit =
-  Lua.pushstring st msg;
-  Lua.setglobal st "_bp_pending_error"
-
-(* ------------------------------------------------------------------ *)
 (* Lua function implementations *)
 
 (* benchpress.prover { name, binary, cmd, static_labels, parse, ... } *)
@@ -311,7 +300,7 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
      pending.provers <- With_loc.make ~loc:Loc.none prover :: pending.provers
    with Error.E e ->
      let msg = Error.show e in
-     signal_error st msg);
+     Ezlua.signal_error st msg);
   0
 
 (* benchpress.dir { path, pattern, expect } *)
@@ -356,7 +345,7 @@ let bp_dir (pending : pending) (st : Lua_api_lib.state) : int =
      pending.dirs <- dir :: pending.dirs
    with Error.E e ->
      let msg = Error.show e in
-     signal_error st msg);
+     Ezlua.signal_error st msg);
   0
 
 (* ------------------------------------------------------------------ *)
@@ -470,7 +459,7 @@ let bp_run_provers (pending : pending) (st : Lua_api_lib.state) : int =
      push_action st action
    with Error.E e ->
      let msg = Error.show e in
-     signal_error st msg);
+     Ezlua.signal_error st msg);
   1
 
 (* benchpress.seq(a1, a2, ...) *)
@@ -491,7 +480,7 @@ let bp_seq (_pending : pending) (st : Lua_api_lib.state) : int =
      push_action st (Action.Act_progn actions)
    with Error.E e ->
      let msg = Error.show e in
-     signal_error st msg);
+     Ezlua.signal_error st msg);
   1
 
 (* benchpress.run_cmd(s) *)
@@ -505,7 +494,7 @@ let bp_run_cmd (_pending : pending) (st : Lua_api_lib.state) : int =
      push_action st (Action.Act_run_cmd { cmd; loc = Loc.none })
    with Error.E e ->
      let msg = Error.show e in
-     signal_error st msg);
+     Ezlua.signal_error st msg);
   1
 
 (* benchpress.task { name, action, synopsis } *)
@@ -535,7 +524,7 @@ let bp_task (pending : pending) (st : Lua_api_lib.state) : int =
      pending.tasks <- With_loc.make ~loc:Loc.none task :: pending.tasks
    with Error.E e ->
      let msg = Error.show e in
-     signal_error st msg);
+     Ezlua.signal_error st msg);
   0
 
 (* benchpress.on(event_name, fn) *)
@@ -555,7 +544,7 @@ let bp_on (pending : pending) (st : Lua_api_lib.state) : int =
      Lua_hooks.register pending.hooks event r
    with Error.E e ->
      let msg = Error.show e in
-     signal_error st msg);
+     Ezlua.signal_error st msg);
   0
 
 (* ------------------------------------------------------------------ *)
@@ -563,10 +552,11 @@ let bp_on (pending : pending) (st : Lua_api_lib.state) : int =
 
 let register_benchpress_global (st : Lua_api_lib.state) (pending : pending) :
     unit =
-  (* Register all OCaml functions as _bp_* globals, then assemble the table *)
+  (* init_error_callbacks first: add_function depends on _ez_check being present *)
+  Ezlua.init_error_callbacks st;
   let mk name impl =
     let fn st = impl pending st in
-    Lua.register st ("_bp_" ^ name) fn
+    Ezlua.add_function st ("_bp_" ^ name) fn
   in
   mk "prover" bp_prover;
   mk "dir" bp_dir;
@@ -575,44 +565,18 @@ let register_benchpress_global (st : Lua_api_lib.state) (pending : pending) :
   mk "run_cmd" bp_run_cmd;
   mk "task" bp_task;
   mk "on" bp_on;
-  (* Assemble the benchpress table.  Each entry is a Lua wrapper that calls
-     the raw _bp_* function then checks _bp_pending_error and re-raises via
-     Lua's own error() — ensuring lua_error is called from pure Lua/C code
-     with no OCaml activation frames present. *)
+  (* Assemble the benchpress table from the auto-wrapped _bp_* functions.
+     add_function already installed _ez_check wrappers, so no manual glue needed. *)
   Ezlua.run st
     {|
-_bp_pending_error = nil
-
-local function _bp_check()
-  if _bp_pending_error ~= nil then
-    local e = _bp_pending_error
-    _bp_pending_error = nil
-    error(e, 3)
-  end
-end
-
 benchpress = {
-  prover = function(t)
-    _bp_prover(t) ; _bp_check()
-  end,
-  dir = function(t)
-    _bp_dir(t) ; _bp_check()
-  end,
-  run_provers = function(t)
-    local r = _bp_run_provers(t) ; _bp_check() ; return r
-  end,
-  seq = function(...)
-    local r = _bp_seq(...) ; _bp_check() ; return r
-  end,
-  run_cmd = function(s)
-    local r = _bp_run_cmd(s) ; _bp_check() ; return r
-  end,
-  task = function(t)
-    _bp_task(t) ; _bp_check()
-  end,
-  on = function(event, fn)
-    _bp_on(event, fn) ; _bp_check()
-  end,
+  prover      = _bp_prover,
+  dir         = _bp_dir,
+  run_provers = _bp_run_provers,
+  seq         = _bp_seq,
+  run_cmd     = _bp_run_cmd,
+  task        = _bp_task,
+  on          = _bp_on,
 }
 |}
   |> function

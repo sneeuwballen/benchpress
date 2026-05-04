@@ -12,6 +12,9 @@ let create () : t =
   let hooks = Lua_hooks.create state in
   let pending = Lua_api.make_pending hooks in
   Lua_api.register_benchpress_global state pending;
+  (match Ezlua.run state Builtin_config.config with
+  | Ok () -> ()
+  | Error (`Msg e) -> Error.failf "loading builtin config: %s" e);
   { state; pending }
 
 let load_file (t : t) (path : string) : unit =

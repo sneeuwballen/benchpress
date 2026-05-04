@@ -34,11 +34,11 @@
 
 (rule
  (targets builtin_config.ml)
- (deps builtin_config.sexp)
+ (deps builtin_config.lua)
  (action
   (with-stdout-to
    %{targets}
    (progn
-    (echo "let config = {sexp|")
+    (echo "let config = {lua|")
     (cat %{deps})
-    (echo "|sexp} ;;")))))
+    (echo "|lua} ;;")))))

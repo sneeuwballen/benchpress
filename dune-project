@@ -64,22 +64,6 @@
   ocaml-lua))
 
 (package
- (name benchpress-lsp)
- (synopsis "LSP server for benchpress' config files")
- (depends
-  dune
-  (containers
-   (and
-    (>= 3.0)
-    (< 4.0)))
-  (eio (>= 1.0))
-  (eio_posix (>= 1.0))
-  (benchpress
-   (= :version))
-  (linol (>= 0.11))
-  (linol-eio (>= 0.11))))
-
-(package
  (name benchpress-server)
  (synopsis "Server and web UI for benchpress")
  (depends

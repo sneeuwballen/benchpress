@@ -41,9 +41,6 @@ val option_progress : t -> bool option
 val add_prover : Prover.t with_loc -> t -> t
 val add_dir : Dir.t -> t -> t
 val add_task : Task.t with_loc -> t -> t
-val add_stanza : ?reify_errors:bool -> Stanza.t -> t -> t
-val add_stanza_l : ?reify_errors:bool -> Stanza.t list -> t -> t
-val of_stanza_l : ?reify_errors:bool -> Stanza.t list -> t
 val mk_subdir : t -> string -> Subdir.t
 val mk_paths : ?dir_files:string list -> string list -> string list
 
@@ -51,7 +48,6 @@ val mk_run_provers :
   ?j:int ->
   ?timeout:int ->
   ?memory:int ->
-  ?stack:Stanza.stack_limit ->
   ?pattern:string ->
   paths:path list ->
   provers:string list ->
@@ -67,7 +63,6 @@ val mk_run_provers_slurm_submission :
   paths:path list ->
   ?timeout:int ->
   ?memory:int ->
-  ?stack:Stanza.stack_limit ->
   ?pattern:path ->
   provers:path list ->
   ?loc:Loc.t ->

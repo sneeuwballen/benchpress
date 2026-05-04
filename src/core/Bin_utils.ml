@@ -7,38 +7,11 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.bin_utils"))
 let is_zst_file = Misc.is_zst_file
 let strip_zst_suffix = Misc.strip_zst_suffix
 
-(** Load a list of config files (.sexp or .lua) into a [Definitions.t]. *)
+(** Load a list of Lua config files into a [Definitions.t]. *)
 let load_config_files (files : string list) : Definitions.t =
-  let sexp_files, lua_files =
-    List.partition
-      (fun f ->
-        Filename.check_suffix f ".sexp" || not (Filename.check_suffix f ".lua"))
-      files
-  in
-  let stanzas = Stanza.parse_files sexp_files in
-  let defs = Definitions.of_stanza_l stanzas in
-  List.fold_left
-    (fun acc path ->
-      let engine = Lua_engine.create () in
-      Lua_engine.load_file engine path;
-      let lua_defs = Lua_engine.to_definitions engine in
-      let with_provers =
-        List.fold_left
-          (fun d p -> Definitions.add_prover p d)
-          acc
-          (Definitions.all_provers lua_defs)
-      in
-      let with_dirs =
-        List.fold_left
-          (fun d dir -> Definitions.add_dir dir d)
-          with_provers
-          (Definitions.all_dirs lua_defs)
-      in
-      List.fold_left
-        (fun d t -> Definitions.add_task t d)
-        with_dirs
-        (Definitions.all_tasks lua_defs))
-    defs lua_files
+  let engine = Lua_engine.create () in
+  List.iter (Lua_engine.load_file engine) files;
+  Lua_engine.to_definitions engine
 
 let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
   let open Cmdliner in
@@ -65,7 +38,7 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
     Arg.(
       value
       & opt_all (list ~sep:',' string) []
-      & info [ "c"; "config" ] ~doc:"configuration file (sexp)")
+      & info [ "c"; "config" ] ~doc:"configuration file (lua)")
   and with_default =
     Arg.(
       value & opt bool false
@@ -107,7 +80,6 @@ let get_definitions () : Definitions.t =
   load_config_files conf_files
 
 (* CSV output *)
-(* Legacy: dump CSV to file if provided *)
 let dump_csv ~csv results : unit =
   match csv with
   | None -> ()
@@ -117,7 +89,6 @@ let dump_csv ~csv results : unit =
     (try ignore (Sys.command (Printf.sprintf "gzip -f '%s'" file) : int)
      with _ -> ())
 
-(* New: dump CSV to stdout if flag is true *)
 let dump_csv_stdout ~csv results : unit =
   if csv then (
     Log.app (fun k -> k "write results in CSV to stdout");

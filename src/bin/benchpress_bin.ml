@@ -376,24 +376,13 @@ module Check_config = struct
       else
         p.files
     in
-    let sexp_files, lua_files =
-      List.partition
-        (fun p ->
-          Filename.check_suffix p ".sexp"
-          || not (Filename.check_suffix p ".lua"))
-        f
-    in
-    let l = Stanza.parse_files sexp_files in
-    if sexp_files <> [] then Format.printf "@[<v>%a@]@." Stanza.pp_l l;
     List.iter
       (fun path ->
         let engine = Lua_engine.create () in
         Lua_engine.load_file engine path;
         let defs = Lua_engine.to_definitions engine in
-        Format.printf "@[<v>lua config %s:@ %a@]@." path Definitions.pp defs)
-      lua_files;
-    let _defs = Definitions.of_stanza_l l in
-    ()
+        Format.printf "@[<v>config %s:@ %a@]@." path Definitions.pp defs)
+      f
 
   let cmd =
     let doc = "parse and print configuration file(s)" in
@@ -530,6 +519,37 @@ module New_config = struct
       Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
+(** {2 Convert sexp config to Lua} *)
+
+module Convert_config = struct
+  type params = {
+    input: string; [@pos 0] [@docv "FILE"]  (** sexp config file to convert *)
+    output: string; [@default "-"] [@names [ "o"; "output" ]]
+        (** output file ("-" for stdout) *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
+    Misc.setup_logs debug;
+    let@ () = catch_err in
+    let src = CCIO.with_in p.input CCIO.read_all in
+    match Sexp_to_lua.sexp_str_to_lua_str src ~filename:p.input with
+    | Error e -> Error.fail e
+    | Ok lua ->
+      if p.output = "-" then
+        print_string lua
+      else (
+        CCIO.with_out p.output (fun oc -> output_string oc lua);
+        Format.printf "wrote %s@." p.output
+      )
+
+  let cmd =
+    let doc = "convert a .sexp config file to Lua" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "convert-config")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
+end
+
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -560,6 +580,7 @@ let parse_opt () =
       Show.cmd;
       Check_config.cmd;
       New_config.cmd;
+      Convert_config.cmd;
       Prover_show.cmd;
       Prover_list.cmd;
       Sql_convert.cmd;
