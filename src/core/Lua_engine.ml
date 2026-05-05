@@ -36,27 +36,14 @@ let load_file (t : t) (path : string) : unit =
 
 let to_definitions (t : t) : Definitions.t =
   let open Definitions in
-  let with_provers =
-    List.fold_left
-      (fun defs p -> add_prover p defs)
-      empty
-      (List.rev t.pending.Lua_api.provers)
+  let p = t.pending in
+  let fold add xs defs =
+    List.fold_left (fun defs x -> add x defs) defs (List.rev xs)
   in
-  let with_dirs =
-    List.fold_left
-      (fun defs d -> add_dir d defs)
-      with_provers
-      (List.rev t.pending.Lua_api.dirs)
-  in
-  let with_checkers =
-    List.fold_left
-      (fun defs c -> add_proof_checker c defs)
-      with_dirs
-      (List.rev t.pending.Lua_api.checkers)
-  in
-  List.fold_left
-    (fun defs task -> add_task task defs)
-    with_checkers
-    (List.rev t.pending.Lua_api.tasks)
+  empty
+  |> fold add_prover p.Lua_api.provers
+  |> fold add_dir p.Lua_api.dirs
+  |> fold add_proof_checker p.Lua_api.checkers
+  |> fold add_task p.Lua_api.tasks
 
 let hooks (t : t) : Lua_hooks.t = t.pending.Lua_api.hooks

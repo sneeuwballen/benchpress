@@ -192,7 +192,6 @@ end = struct
 
   let _nop _ = ()
 
-  (* A pending proof-check request spawned by a solve task. *)
   type check_request = {
     cr_checker: Proof_checker.t;
     cr_prover: Prover.t;
@@ -201,7 +200,6 @@ end = struct
     cr_keep: bool;
   }
 
-  (* Tasks in the dynamic work queue. *)
   type run_task =
     | Solve of { prover: Prover.t; pb: Problem.t }
     | Check of check_request
@@ -322,12 +320,9 @@ end = struct
 
     CCOpt.iter Misc.mkdir_rec self.proof_dir;
 
-    let db_pair = db, Eio.Mutex.create () in
-    let raw_db, db_mu = db_pair in
+    let raw_db, db_mu = db, Eio.Mutex.create () in
     let with_db f = Eio.Mutex.use_ro db_mu (fun () -> f raw_db) in
 
-    (* Run one prover/problem pair.  Returns the prover event plus a list of
-       check requests to schedule as follow-up tasks. *)
     let run_prover_pb ~prover ~pb () : Run_event.t * check_request list =
       if interrupted () then Error.fail "run.interrupted";
       Error.guard
@@ -400,7 +395,7 @@ end = struct
       (* If no check tasks will use the proof file, clean it up now. *)
       if check_reqs = [] then (
         match proof_file with
-        | Some file when not keep -> (try Sys.remove file with _ -> ())
+        | Some file when not keep -> Misc.remove_file_opt file
         | _ -> ()
       );
 
@@ -422,7 +417,6 @@ end = struct
       ev_prover, check_reqs
     in
 
-    (* Run one proof-check request.  Returns the checker event. *)
     let run_check_req (cr : check_request) : Run_event.t =
       if interrupted () then Error.fail "run.interrupted";
       Error.guard
@@ -441,11 +435,9 @@ end = struct
       let ev = Run_event.mk_checker res in
       on_proof_check res;
       with_db (fun db -> Run_event.to_db db ev);
-      (* Best-effort proof file cleanup: the first checker to finish removes it;
-         others silently fail (POSIX unlink semantics keep the fd valid). *)
-      if not cr.cr_keep then (
-        try Sys.remove cr.cr_proof_file with _ -> ()
-      );
+      (* On POSIX, concurrent checkers sharing the same proof file can each
+         call unlink safely — only the first succeeds, the rest are no-ops. *)
+      if not cr.cr_keep then Misc.remove_file_opt cr.cr_proof_file;
       ev
     in
 

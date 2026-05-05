@@ -78,9 +78,8 @@ let run_prover_pb ?proof_dir ~limits ~prover ~pb provers checkers =
         Run_event.mk_checker res)
       check_reqs
   in
-  (* Clean up proof file if not kept and we ran all checks inline. *)
   (match proof_file with
-  | Some file when not keep -> (try Sys.remove file with _ -> ())
+  | Some file when not keep -> Misc.remove_file_opt file
   | _ -> ());
   Run_event.mk_prover result :: ev_proofs
 

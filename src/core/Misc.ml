@@ -182,3 +182,6 @@ let default_config () = config_dir () // "conf.sexp"
 let now_s () = Ptime_clock.now () |> Ptime.to_float_s
 
 let reset_line = "\x1b[2K\r"
+
+let remove_file_opt (path : string) : unit =
+  try Sys.remove path with _ -> ()
