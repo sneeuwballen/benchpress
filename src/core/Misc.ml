@@ -165,8 +165,8 @@ let mk_uuid () : Uuidm.t =
   Bytes.set b 6 (Char.chr (Char.code (Bytes.get b 6) land 0x0f lor 0x70));
   (* variant: set high bits of byte 8 to 10xxxxxx *)
   Bytes.set b 8 (Char.chr (Char.code (Bytes.get b 8) land 0x3f lor 0x80));
-  Uuidm.of_bytes (Bytes.to_string b)
-  |> CCOpt.get_exn_or "mk_uuid: invalid uuid bytes"
+  Uuidm.of_binary_string (Bytes.to_string b)
+  |> CCOption.get_exn_or "mk_uuid: invalid uuid bytes"
 
 (** Modify filename of a lexing buffer, for future locations *)
 let set_lexbuf_filename buf filename =
