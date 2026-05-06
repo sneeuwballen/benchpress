@@ -56,6 +56,7 @@ module Exec_run_provers : sig
     ?output:string ->
     ?update:bool ->
     ?compress:bool ->
+    ?hooks:Lua_hooks.t ->
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
@@ -64,7 +65,8 @@ module Exec_run_provers : sig
   (** Run the given prover(s) on the given problem set, obtaining results after
       all the problems have been dealt with.
       @param on_solve called whenever a single problem is solved
-      @param on_done called when the whole process is done *)
+      @param on_done called when the whole process is done
+      @param hooks optional Lua hook registry for lifecycle events *)
 
   val run_sbatch_job :
     ?timestamp:float ->
@@ -190,19 +192,25 @@ end = struct
 
   let _nop _ = ()
 
+  type check_request = {
+    cr_checker: Proof_checker.t;
+    cr_prover: Prover.t;
+    cr_pb: Problem.t;
+    cr_proof_file: string;
+    cr_keep: bool;
+  }
+
+  type run_task =
+    | Solve of { prover: Prover.t; pb: Problem.t }
+    | Check of check_request
+    | Stop
+
   let copy_problem ~proof_dir ~prover (file : string) : unit =
     let basename = spf "pb-%s-%s" prover.Prover.name (Filename.basename file) in
     let new_path = Filename.concat proof_dir basename in
     Log.debug (fun k -> k "(@[copy-problem@ :from %S@ :to %S@])" file new_path);
     CCIO.with_out new_path @@ fun oc ->
     CCIO.with_in file @@ fun ic -> CCIO.copy_into ~bufsize:(64 * 1024) ic oc
-
-  (* run [f], ensuring [proof_file] is cleaned up afterwards if it exists *)
-  let with_proof_file_opt ~proof_file ~keep f =
-    match proof_file with
-    | Some file when not keep ->
-      CCFun.finally ~h:(fun () -> try Sys.remove file with _ -> ()) ~f
-    | _ -> f ()
 
   let prepare_db ~wal_mode ?output ~update timestamp uuid save provers =
     let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "exec-action.prepare-db" in
@@ -264,7 +272,8 @@ end = struct
   let run ?(timestamp = Misc.now_s ()) ?(on_start = _nop) ?(on_solve = _nop)
       ?(on_start_proof_check = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
       ?(interrupted = fun _ -> false) ?output ?(update = false)
-      ?(compress = false) ~uuid ~save ~wal_mode (self : expanded) : _ * _ =
+      ?(compress = false) ?hooks ~uuid ~save ~wal_mode (self : expanded) : _ * _
+      =
     let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "exec-action.run" in
     Trace.add_data_to_span _sp
       [
@@ -272,6 +281,11 @@ end = struct
         "n_provers", `Int (List.length self.provers);
         "n_problems", `Int (List.length self.problems);
       ];
+    let dispatch_hook ev encode =
+      match hooks with
+      | None -> ()
+      | Some h -> Lua_hooks.dispatch h ev encode
+    in
     let start = Misc.now_s () in
     (* resolve output: strip .zst/.zstd if present, or add .zst if --compress *)
     let effective_output, compress_to =
@@ -297,12 +311,19 @@ end = struct
         self.provers
     in
     on_start self;
+    dispatch_hook "run_start" (fun st ->
+        Ezlua.push_table st;
+        Ezlua.push_field st "uuid" Ezlua.Encode.string (Uuidm.to_string uuid);
+        Ezlua.push_field st "provers"
+          (Ezlua.Encode.list Ezlua.Encode.string)
+          (List.map Prover.name self.provers));
 
     CCOpt.iter Misc.mkdir_rec self.proof_dir;
 
-    let run_prover_pb ~prover ~pb ~(db : Sqlite3.db * Eio.Mutex.t) () : _ list =
-      let raw_db, db_mu = db in
-      let with_db f = Eio.Mutex.use_ro db_mu (fun () -> f raw_db) in
+    let raw_db, db_mu = db, Eio.Mutex.create () in
+    let with_db f = Eio.Mutex.use_ro db_mu (fun () -> f raw_db) in
+
+    let run_prover_pb ~prover ~pb () : Run_event.t * check_request list =
       if interrupted () then Error.fail "run.interrupted";
       Error.guard
         (Error.wrapf "(@[running :prover %a :on %a@])" Prover.pp_name prover
@@ -319,9 +340,7 @@ end = struct
             match self.proof_dir with
             | None -> Filename.concat (Filename.dirname pb) basename, false
             | Some dir ->
-              (* copy problem *)
               copy_problem ~proof_dir:dir ~prover pb;
-              (* user asked to keep proofs, in given directory. *)
               Filename.concat dir basename, true
           in
           Some filename, keep
@@ -329,77 +348,170 @@ end = struct
           None, false
       in
 
-      (* continue but ensure we cleanup the proof file *)
-      with_proof_file_opt ~proof_file ~keep @@ fun () ->
       let result =
         Run_prover_problem.run ~limits:self.limits ~proof_file prover pb
       in
-      (* insert into DB here *)
       let ev_prover = Run_event.mk_prover result in
       with_db (fun db -> Run_event.to_db db ev_prover);
 
-      let ev_proof =
-        match result.res, proof_file with
-        | Res.Unsat, Some pfile when prover.Prover.produces_proof ->
-          (* run proof checker *)
-          Log.debug (fun k ->
-              k "proof-file size: %d"
-                (try Unix.((stat pfile).st_size) with _ -> 0));
-
-          on_start_proof_check ();
-
-          let checker =
-            match prover.Prover.proof_checker with
-            | None -> Error.failf "cannot check proofs for '%s'" prover.name
-            | Some c ->
-              (try Misc.Str_map.find c self.checkers
-               with Not_found ->
-                 Error.failf "cannot find proof checker '%s'" c)
-          in
-
-          let res =
-            let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
-            Run_prover_problem.run_proof_check ~limits ~proof_file:pfile prover
-              checker pb
-          in
-          let ev_checker = Run_event.mk_checker res in
-          on_proof_check res;
-
-          (* insert into DB here *)
-          with_db (fun db -> Run_event.to_db db ev_checker);
-          [ ev_checker ]
-        | _ -> []
+      (* Determine check requests via get_checkers, if any. *)
+      let check_reqs =
+        match prover.Prover.get_checkers with
+        | None -> []
+        | Some get_checkers ->
+          get_checkers ~stdout:result.raw.Run_proc_result.stdout
+            ~stderr:result.raw.Run_proc_result.stderr ~res:result.res
+            ~proof_file
+          |> CCList.filter_map (fun (checker_name, pf_override) ->
+                 let actual_pf =
+                   match pf_override with
+                   | Some p -> p
+                   | None ->
+                     (match proof_file with
+                     | Some p -> p
+                     | None ->
+                       Error.failf
+                         "prover %s: get_checkers returned checker %s but no \
+                          proof file is available"
+                         prover.Prover.name checker_name)
+                 in
+                 match Misc.Str_map.find_opt checker_name self.checkers with
+                 | None ->
+                   Log.warn (fun k ->
+                       k "prover %s: unknown proof checker '%s'" prover.name
+                         checker_name);
+                   None
+                 | Some checker ->
+                   Some
+                     {
+                       cr_checker = checker;
+                       cr_prover = prover;
+                       cr_pb = pb;
+                       cr_proof_file = actual_pf;
+                       cr_keep = keep;
+                     })
       in
 
-      on_solve result;
+      (* If no check tasks will use the proof file, clean it up now. *)
+      if check_reqs = [] then (
+        match proof_file with
+        | Some file when not keep -> Misc.remove_file_opt file
+        | _ -> ()
+      );
 
-      (* only now we can announce our "solve" result *)
-      Run_event.mk_prover result :: ev_proof
+      on_solve result;
+      dispatch_hook "prover_end" (fun st ->
+          Ezlua.push_table st;
+          Ezlua.push_field st "prover" Ezlua.Encode.string
+            result.Run_result.program;
+          Ezlua.push_field st "problem" Ezlua.Encode.string
+            result.Run_result.problem.Problem.name;
+          Ezlua.push_field st "res" Ezlua.Encode.string
+            (Res.to_string result.Run_result.res);
+          Ezlua.push_field st "labels"
+            (Ezlua.Encode.list Ezlua.Encode.string)
+            result.Run_result.labels;
+          Ezlua.push_field st "rtime" Ezlua.Encode.float
+            result.Run_result.raw.Run_proc_result.rtime);
+
+      ev_prover, check_reqs
     in
 
-    (* build list of tasks *)
-    let jobs =
+    let run_check_req (cr : check_request) : Run_event.t =
+      if interrupted () then Error.fail "run.interrupted";
+      Error.guard
+        (Error.wrapf "(@[checking :prover %a :checker %s :on %a@])"
+           Prover.pp_name cr.cr_prover cr.cr_checker.Proof_checker.name
+           Problem.pp cr.cr_pb)
+      @@ fun () ->
+      Log.debug (fun k ->
+          k "proof-file size: %d"
+            (try Unix.((stat cr.cr_proof_file).st_size) with _ -> 0));
+      let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
+      let res =
+        Run_prover_problem.run_proof_check ~limits ~proof_file:cr.cr_proof_file
+          cr.cr_prover cr.cr_checker cr.cr_pb
+      in
+      let ev = Run_event.mk_checker res in
+      on_proof_check res;
+      with_db (fun db -> Run_event.to_db db ev);
+      (* On POSIX, concurrent checkers sharing the same proof file can each
+         call unlink safely — only the first succeeds, the rest are no-ops. *)
+      if not cr.cr_keep then Misc.remove_file_opt cr.cr_proof_file;
+      ev
+    in
+
+    (* Dynamic work queue: solve tasks are seeded upfront; each solve task may
+       push additional check tasks.  Workers run until all tasks are done. *)
+    let initial_jobs =
       CCList.flat_map
-        (fun pb -> CCList.map (fun prover -> prover, pb) self.provers)
+        (fun pb -> CCList.map (fun prover -> Solve { prover; pb }) self.provers)
         self.problems
     in
-    (* run provers *)
-    let res_l =
-      let db_pair = db, Eio.Mutex.create () in
-      match self.j with
-      | Bounded j ->
-        Misc.Par_map.map_p ~j
-          (fun (prover, pb) -> run_prover_pb ~prover ~pb ~db:db_pair ())
-          jobs
-        |> CCList.flatten
-      | Cpus cpus ->
-        Misc.Par_map.map_with_resource ~resources:cpus
-          (fun cpu (prover, pb) ->
-            Log.debug (fun m -> m "Running on cpu %d" cpu);
-            Misc.with_affinity cpu (run_prover_pb ~prover ~pb ~db:db_pair))
-          jobs
-        |> CCList.flatten
+    let n_initial = List.length initial_jobs in
+    let stream : run_task Eio.Stream.t = Eio.Stream.create max_int in
+    let remaining = Atomic.make n_initial in
+    List.iter (Eio.Stream.add stream) initial_jobs;
+
+    let push_check cr =
+      Atomic.incr remaining;
+      on_start_proof_check ();
+      Eio.Stream.add stream (Check cr)
     in
+
+    let task_done j =
+      if Atomic.fetch_and_add remaining (-1) = 1 then
+        for _ = 1 to j do
+          Eio.Stream.add stream Stop
+        done
+    in
+
+    let res_mu = Eio.Mutex.create () in
+    let res_l = ref [] in
+    let add_result ev =
+      Eio.Mutex.use_rw ~protect:false res_mu (fun () -> res_l := ev :: !res_l)
+    in
+
+    let worker ?cpu j () =
+      let rec loop () =
+        match Eio.Stream.take stream with
+        | Stop -> ()
+        | Solve { prover; pb } ->
+          let ev, crs =
+            Misc.Par_map.with_affinity_opt cpu (fun () ->
+                run_prover_pb ~prover ~pb ())
+          in
+          add_result ev;
+          List.iter push_check crs;
+          task_done j;
+          loop ()
+        | Check cr ->
+          let ev =
+            Misc.Par_map.with_affinity_opt cpu (fun () -> run_check_req cr)
+          in
+          add_result ev;
+          task_done j;
+          loop ()
+      in
+      loop ()
+    in
+
+    (* Handle the edge case of zero tasks gracefully. *)
+    (if n_initial = 0 then
+       ()
+     else
+       let@ sw = Eio.Switch.run ~name:"run-provers" in
+       match self.j with
+       | Bounded j ->
+         for _ = 1 to j do
+           Eio.Fiber.fork ~sw (worker j)
+         done
+       | Cpus cpus ->
+         List.iter
+           (fun cpu -> Eio.Fiber.fork ~sw (worker ~cpu (List.length cpus)))
+           cpus);
+
+    let res_l = !res_l in
 
     if interrupted () then Error.fail "run.interrupted";
     let total_wall_time = Misc.now_s () -. start in
@@ -424,11 +536,14 @@ end = struct
     Test_metadata.to_db db meta;
     let top_res =
       lazy
-        (let provers = CCList.map fst jobs in
-         Test_top_result.make ~analyze_full:true ~meta ~provers res_l)
+        (Test_top_result.make ~analyze_full:true ~meta ~provers:self.provers
+           res_l)
     in
     let r = Test_compact_result.of_db ~full:true db in
     on_done r;
+    dispatch_hook "run_end" (fun st ->
+        Ezlua.push_table st;
+        Ezlua.push_field st "uuid" Ezlua.Encode.string (Uuidm.to_string uuid));
     Logs.debug (fun k -> k "closing db…");
     ignore (Sqlite3.db_close db : bool);
     (match compress_to, effective_output with
@@ -490,20 +605,31 @@ end = struct
           CCList.map (fun prover -> prover.Prover.name, pb) self.provers)
         self.problems
     in
-    let config_file = Misc.file_for_uuid "config" ~timestamp uuid "sexp" in
-    let sexps =
-      Misc.Str_map.fold
-        (fun _ c acc ->
-          Stanza.proof_checker_wl_to_st (With_loc.make ~loc:Loc.none c) :: acc)
-        self.checkers
-        (List.fold_left
-           (fun acc p ->
-             Stanza.prover_wl_to_st (With_loc.make ~loc:Loc.none p) :: acc)
-           [] self.provers)
-    in
+    let config_file = Misc.file_for_uuid "config" ~timestamp uuid "lua" in
     CCIO.with_out config_file (fun oc ->
-        let ocf = Format.formatter_of_out_channel oc in
-        List.iter (Format.fprintf ocf "%a@." Stanza.pp) (List.rev sexps));
+        let pf fmt = Printf.fprintf oc fmt in
+        let opt f = function
+          | None -> ()
+          | Some v -> f v
+        in
+        List.iter
+          (fun (p : Prover.t) ->
+            pf "benchpress.prover {\n";
+            pf "  name = %S,\n" p.name;
+            pf "  binary = %S,\n" p.binary;
+            pf "  cmd = %S,\n" p.cmd;
+            opt (fun s -> pf "  sat = %S,\n" s) p.sat;
+            opt (fun s -> pf "  unsat = %S,\n" s) p.unsat;
+            opt (fun s -> pf "  unknown = %S,\n" s) p.unknown;
+            opt (fun s -> pf "  timeout = %S,\n" s) p.timeout;
+            opt (fun s -> pf "  memory = %S,\n" s) p.memory;
+            pf "}\n\n")
+          self.provers;
+        Misc.Str_map.iter
+          (fun _ (c : Proof_checker.t) ->
+            pf "-- proof checker: %s\n" c.name;
+            pf "-- cmd: %s\n\n" c.cmd)
+          self.checkers);
 
     let get_tasks =
       let jobs_ref = ref jobs in
@@ -968,6 +1094,7 @@ let rec run ?output ?(save = true) ?interrupted ?cb_progress
     let uuid = Misc.mk_uuid () in
     let res =
       Exec_run_provers.run ?interrupted ~on_solve:progress#on_res
+        ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
         ~on_proof_check:progress#on_proof_check_res
         ~on_done:(fun _ -> progress#on_done)
         ?output ~save ~wal_mode:false ~timestamp:(Misc.now_s ()) ~uuid
@@ -1004,7 +1131,9 @@ let rec run ?output ?(save = true) ?interrupted ?cb_progress
     let uuid = Misc.mk_uuid () in
     let res =
       Exec_run_provers.run_sbatch_job ~timestamp:(Misc.now_s ()) ?interrupted
-        ~on_solve:progress#on_res ~on_proof_check:progress#on_proof_check_res
+        ~on_solve:progress#on_res
+        ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
+        ~on_proof_check:progress#on_proof_check_res
         ~on_done:(fun _ -> progress#on_done)
         ?output ~save ~uuid ~wal_mode:false ?partition ~ntasks ~nodes ~addr
         ~port r_expanded

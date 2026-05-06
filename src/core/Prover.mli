@@ -14,6 +14,18 @@ type version =
 
 type name = string
 
+type cmd_ctx = {
+  binary: string;
+  file: string;
+  timeout: int;  (** timeout in seconds *)
+  memory: int;  (** memory limit in MB *)
+  proof_file: string option;  (** path where proof output should be written *)
+}
+
+type cmd_result =
+  | Shell of string  (** run via /bin/sh *)
+  | Exec of string array  (** execve directly, no shell *)
+
 type t = {
   (* Prover identification *)
   name: name;
@@ -24,9 +36,21 @@ type t = {
   cmd: string;
       (* the command line to run.
          possibly contains $binary, $file, $memory and $timeout *)
+  cmd_fn: (cmd_ctx -> cmd_result) option;
+      (** Lua-defined cmd function; takes priority over [cmd] when set. *)
   produces_proof: bool;
   proof_ext: string option;  (** file extension for proofs *)
-  proof_checker: string option;  (** proof checker for its proofs *)
+  get_checkers:
+    (stdout:string ->
+    stderr:string ->
+    res:Res.t ->
+    proof_file:string option ->
+    (string * string option) list)
+    option;
+      (** Given the result of running the prover, return a list of
+          [(checker_name, proof_file_override)] pairs to schedule.
+          [proof_file_override = None] uses the auto-generated proof file;
+          [Some path] uses [path] instead. *)
   (* whether some limits should be enforced/set by ulimit *)
   ulimits: Ulimit.conf;
   (* Result analysis *)
@@ -36,6 +60,12 @@ type t = {
   timeout: string option; (* regex for "timeout" *)
   memory: string option; (* regex for "out of memory" *)
   custom: (string * string) list; (* custom tags *)
+  static_labels: string list;
+      (** Labels always attached to every result from this prover *)
+  analyze_fn:
+    (stdout:string -> stderr:string -> (Res.t * string list) option) option;
+      (** Lua-defined parse function; takes priority over regex fields when set.
+      *)
   defined_in: string option;
   inherits: name option;  (** parent definition *)
 }
@@ -110,8 +140,9 @@ val run :
   t ->
   Run_proc_result.t
 
-val analyze_p_opt : t -> Run_proc_result.t -> Res.t option
-(** Analyze raw result to look for the result *)
+val analyze_p_opt : t -> Run_proc_result.t -> (Res.t * string list) option
+(** Analyze raw result to look for the result and any extra labels. Returns
+    [None] if no result pattern matched. *)
 
 module Map_name : CCMap.S with type key = t
 (** Map by name *)

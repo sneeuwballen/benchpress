@@ -59,23 +59,9 @@
   (printbox
    (>= 0.6))
   (printbox-text
-   (>= 0.6))))
-
-(package
- (name benchpress-lsp)
- (synopsis "LSP server for benchpress' config files")
- (depends
-  dune
-  (containers
-   (and
-    (>= 3.0)
-    (< 4.0)))
-  (eio (>= 1.0))
-  (eio_posix (>= 1.0))
-  (benchpress
-   (= :version))
-  (linol (>= 0.11))
-  (linol-eio (>= 0.11))))
+   (>= 0.6))
+  ezlua
+  ocaml-lua))
 
 (package
  (name benchpress-server)

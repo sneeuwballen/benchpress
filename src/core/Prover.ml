@@ -14,6 +14,18 @@ type version =
 
 type name = string
 
+type cmd_ctx = {
+  binary: string;
+  file: string;
+  timeout: int;  (** timeout in seconds *)
+  memory: int;  (** memory limit in MB *)
+  proof_file: string option;  (** path where proof output should be written *)
+}
+
+type cmd_result =
+  | Shell of string  (** run via /bin/sh *)
+  | Exec of string array  (** execve directly, no shell *)
+
 type t = {
   (* Prover identification *)
   name: name;
@@ -24,9 +36,22 @@ type t = {
       (* additional list of binaries this depends on *)
   cmd: string;
       (* the command line to run. Possibly contains $binary, $file, $memory and $timeout *)
+  cmd_fn: (cmd_ctx -> cmd_result) option;
+      (** Lua-defined cmd function; takes priority over [cmd] when set. *)
   produces_proof: bool;
   proof_ext: string option;  (** file extension for proofs *)
-  proof_checker: string option;  (** proof checker for its proofs *)
+  get_checkers:
+    (stdout:string ->
+    stderr:string ->
+    res:Res.t ->
+    proof_file:string option ->
+    (string * string option) list)
+    option;
+      (** Given the prover result, return a list of
+          [(checker_name, proof_file_override)] pairs. When
+          [proof_file_override] is [None] the auto-generated proof file is used;
+          when [Some path] that path is used instead (useful when the prover
+          writes the proof to a dynamically-chosen location). *)
   (* whether some limits should be enforced/set by ulimit *)
   ulimits: Ulimit.conf;
   (* Result analysis *)
@@ -36,6 +61,12 @@ type t = {
   timeout: string option; (* regex for "timeout" *)
   memory: string option; (* regex for "out of memory" *)
   custom: (string * string) list; (* custom tags *)
+  static_labels: string list;
+      (** Labels always attached to every result from this prover *)
+  analyze_fn:
+    (stdout:string -> stderr:string -> (Res.t * string list) option) option;
+      (** Lua-defined parse function; takes priority over regex fields when set.
+          Returns the result and any extra labels for this specific run. *)
   defined_in: string option;
   inherits: name option;  (** parent definition *)
 }
@@ -102,6 +133,7 @@ let pp out self =
     name;
     version;
     cmd;
+    cmd_fn = _;
     ulimits;
     unsat;
     sat;
@@ -110,10 +142,12 @@ let pp out self =
     memory;
     binary;
     custom;
+    static_labels;
+    analyze_fn = _;
+    get_checkers = _;
     produces_proof;
     proof_ext;
     inherits;
-    proof_checker;
     binary_deps = _;
     defined_in;
   } =
@@ -133,12 +167,10 @@ let pp out self =
     defined_in
     (pp_f "produces_proof" Fmt.bool)
     produces_proof
-    (pp_opt "produces_proof" pp_str)
-    proof_ext
-    (pp_opt "proof_checker" pp_str)
-    proof_checker (pp_opt "inherits" pp_str) inherits
+    (pp_opt "proof_ext" pp_str)
+    proof_ext (pp_opt "inherits" pp_str) inherits
     (pp_l1 (pp_pair pp_str pp_regex))
-    custom
+    custom (pp_l1 pp_str) static_labels
 
 exception Subst_not_found of string
 exception Missing_subst_value of string
@@ -210,45 +242,79 @@ let run ?env ?proof_file ~limits ~file (self : t) : Run_proc_result.t =
              limits.Limit.All.time) );
     ];
   Log.debug (fun k -> k "(@[Prover.run %s %a@])" self.name Limit.All.pp limits);
-  let cmd = make_command ?env ?proof_file ~limits self ~file in
-  (* Give one more second to the ulimit timeout to account for the startup
-     time and the time elasped between starting ulimit and starting the prover *)
-  let cmd =
-    Ulimit.prefix_cmd ~conf:self.ulimits
-      ~limits:
-        (Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits)
-      ~cmd
+  (* limits with +1s ulimit padding *)
+  let padded_limits =
+    Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits
   in
-  Run_proc.run cmd
+  match self.cmd_fn with
+  | Some fn ->
+    let ctx =
+      {
+        binary = self.binary;
+        file;
+        proof_file;
+        timeout =
+          (match limits.Limit.All.time with
+          | None -> 0
+          | Some t -> int_of_float (Limit.Time.as_float Seconds t));
+        memory =
+          (match limits.Limit.All.memory with
+          | None -> 0
+          | Some m -> int_of_float (Limit.Memory.as_float Megabytes m));
+      }
+    in
+    (match fn ctx with
+    | Shell cmd ->
+      let cmd =
+        Ulimit.prefix_cmd ~conf:self.ulimits ~limits:padded_limits ~cmd
+      in
+      Run_proc.run cmd
+    | Exec argv ->
+      (* Direct exec: no shell, no quoting. ulimit wrapping not applied
+         since it relies on shell syntax; limits must be set by the caller
+         via other means (e.g. cgroup or the cmd itself). *)
+      ignore env;
+      Run_proc.run_argv argv)
+  | None ->
+    let cmd = make_command ?env ?proof_file ~limits self ~file in
+    let cmd = Ulimit.prefix_cmd ~conf:self.ulimits ~limits:padded_limits ~cmd in
+    Run_proc.run cmd
 
-let analyze_p_opt (self : t) (r : Run_proc_result.t) : Res.t option =
-  (* find if [re: re option] is present in [stdout] *)
-  let find_ re =
-    let re = Re.Perl.compile_pat ~opts:[ `Multiline ] re in
-    Re.execp re r.stdout || Re.execp re r.stderr
-  in
-  let find_opt_ re =
-    match re with
-    | None -> false
-    | Some re -> find_ re
-  in
-  if find_opt_ self.sat then
-    Some Res.Sat
-  else if find_opt_ self.unsat then
-    Some Res.Unsat
-  else if find_opt_ self.timeout then
-    Some Res.Timeout
-  else if find_opt_ self.unknown then
-    Some Res.Unknown
-  else
-    (* look for custom tags *)
-    CCList.find_map
-      (fun (tag, re) ->
-        if find_ re then
-          Some (Res.Tag tag)
-        else
-          None)
-      self.custom
+let analyze_p_opt (self : t) (r : Run_proc_result.t) :
+    (Res.t * string list) option =
+  (* If a Lua parse function is set, use it *)
+  match self.analyze_fn with
+  | Some fn -> fn ~stdout:r.stdout ~stderr:r.stderr
+  | None ->
+    (* find if [re: re option] is present in [stdout] or [stderr] *)
+    let find_ re =
+      let re = Re.Perl.compile_pat ~opts:[ `Multiline ] re in
+      Re.execp re r.stdout || Re.execp re r.stderr
+    in
+    let find_opt_ re =
+      match re with
+      | None -> false
+      | Some re -> find_ re
+    in
+    let res_opt =
+      if find_opt_ self.sat then
+        Some Res.Sat
+      else if find_opt_ self.unsat then
+        Some Res.Unsat
+      else if find_opt_ self.timeout then
+        Some Res.Timeout
+      else if find_opt_ self.unknown then
+        Some Res.Unknown
+      else
+        CCList.find_map
+          (fun (tag, re) ->
+            if find_ re then
+              Some (Res.Tag tag)
+            else
+              None)
+          self.custom
+    in
+    CCOpt.map (fun res -> res, []) res_opt
 
 let db_prepare (db : Db.t) : unit =
   Db.exec0 db
@@ -314,7 +380,8 @@ let to_db db (self : t) : unit =
     (self.ulimits.memory |> string_of_bool)
     (self.ulimits.stack |> string_of_bool)
     (self.produces_proof |> string_of_bool)
-    (self.proof_checker |> str_or)
+    ""
+    (* proof_checker column kept for schema compat; runtime uses get_checkers *)
     (self.proof_ext |> str_or)
     (self.inherits |> CCOpt.get_or ~default:"")
   |> Misc.unwrap_db (fun () -> "prover.to-db");
@@ -384,21 +451,20 @@ let of_db db name : t =
           k "prover.of_db: not ulimit_* fields, assuming defaults");
       { time = true; memory = true; stack = false }
   in
-  let produces_proof, proof_ext, proof_checker, inherits =
+  let produces_proof, proof_ext, inherits =
     (* parse separately, for migration purposes (old DBs don't have this) *)
     try
       Db.exec_exn db
-        {|select produces_proof, proof_ext, proof_checker, inherits from prover where name=?|}
+        {|select produces_proof, proof_ext, inherits from prover where name=?|}
         ~f:Db.Cursor.next
         ~ty:
           Db.Ty.(
             ( [ text ],
-              [ nullable text; nullable text; nullable text; nullable text ],
-              fun a b c d ->
-                CCOpt.map_or ~default:false bool_of_string a, b, c, d ))
+              [ nullable text; nullable text; nullable text ],
+              fun a b c -> CCOpt.map_or ~default:false bool_of_string a, b, c ))
         name
-      |> CCOpt.get_or ~default:(false, None, None, None)
-    with _ -> false, None, None, None
+      |> CCOpt.get_or ~default:(false, None, None)
+    with _ -> false, None, None
   in
   Db.exec db
     {|select
@@ -420,13 +486,16 @@ let of_db db name : t =
             {
               name;
               cmd;
+              cmd_fn = None;
               binary_deps = [];
               defined_in = None;
               custom;
+              static_labels = [];
+              analyze_fn = None;
+              get_checkers = None;
               inherits;
               produces_proof;
               proof_ext;
-              proof_checker;
               version;
               binary;
               ulimits;

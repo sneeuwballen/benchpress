@@ -236,6 +236,13 @@ module List_files = struct
       (Cmdliner.Cmd.info ~doc "list-files")
       Cmdliner.Term.(
         const (fun p -> main ~abs:p.abs ()) $ params_cmdliner_term ())
+
+  let cmd_list =
+    let doc = "list benchmark result files (alias for list-files)" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list")
+      Cmdliner.Term.(
+        const (fun p -> main ~abs:p.abs ()) $ params_cmdliner_term ())
 end
 
 module Show = struct
@@ -369,11 +376,13 @@ module Check_config = struct
       else
         p.files
     in
-    let l = Stanza.parse_files f in
-    Format.printf "@[<v>%a@]@." Stanza.pp_l l;
-    let _defs = Definitions.of_stanza_l l in
-    (* some checks are delayed *)
-    ()
+    List.iter
+      (fun path ->
+        let engine = Lua_engine.create () in
+        Lua_engine.load_file engine path;
+        let defs = Lua_engine.to_definitions engine in
+        Format.printf "@[<v>config %s:@ %a@]@." path Definitions.pp defs)
+      f
 
   let cmd =
     let doc = "parse and print configuration file(s)" in
@@ -483,6 +492,62 @@ module Sql_convert = struct
         const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
+(** {2 New config} *)
+
+module New_config = struct
+  type params = {
+    output: string option; [@names [ "o"; "output" ]]
+        (** output file (default: stdout) *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
+    Misc.setup_logs debug;
+    let@ () = catch_err in
+    match p.output with
+    | None -> print_string Lua_api.config_template
+    | Some path ->
+      CCIO.with_out path (fun oc -> output_string oc Lua_api.config_template);
+      Format.printf "wrote %s@." path
+
+  let cmd =
+    let doc = "create a new annotated Lua config file" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "new-config")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
+end
+
+(** {2 Convert sexp config to Lua} *)
+
+module Convert_config = struct
+  type params = {
+    input: string; [@pos 0] [@docv "FILE"]  (** sexp config file to convert *)
+    output: string; [@default "-"] [@names [ "o"; "output" ]]
+        (** output file ("-" for stdout) *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) debug =
+    Misc.setup_logs debug;
+    let@ () = catch_err in
+    let src = CCIO.with_in p.input CCIO.read_all in
+    match Sexp_to_lua.sexp_str_to_lua_str src ~filename:p.input with
+    | Error e -> Error.fail e
+    | Ok lua ->
+      if p.output = "-" then
+        print_string lua
+      else (
+        CCIO.with_out p.output (fun oc -> output_string oc lua);
+        Format.printf "wrote %s@." p.output
+      )
+
+  let cmd =
+    let doc = "convert a .sexp config file to Lua" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "convert-config")
+      Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
+end
+
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -509,8 +574,11 @@ let parse_opt () =
       Run.cmd;
       Sample.cmd;
       List_files.cmd;
+      List_files.cmd_list;
       Show.cmd;
       Check_config.cmd;
+      New_config.cmd;
+      Convert_config.cmd;
       Prover_show.cmd;
       Prover_list.cmd;
       Sql_convert.cmd;

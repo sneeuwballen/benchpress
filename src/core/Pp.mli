@@ -49,7 +49,7 @@ val pp_l1 :
 (** Pretty-print a non-empty list *)
 
 val pp_str : Format.formatter -> string -> unit
-(** Pretty-print a string as a sexp atom *)
+(** Pretty-print a quoted string *)
 
 val pp_regex : Format.formatter -> string -> unit
 (** Pretty-print a regex pattern *)
