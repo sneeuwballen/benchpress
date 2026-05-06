@@ -19,6 +19,7 @@ type cmd_ctx = {
   file: string;
   timeout: int;  (** timeout in seconds *)
   memory: int;  (** memory limit in MB *)
+  proof_file: string option;  (** path where proof output should be written *)
 }
 
 type cmd_result =
@@ -251,6 +252,7 @@ let run ?env ?proof_file ~limits ~file (self : t) : Run_proc_result.t =
       {
         binary = self.binary;
         file;
+        proof_file;
         timeout =
           (match limits.Limit.All.time with
           | None -> 0

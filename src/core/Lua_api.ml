@@ -128,6 +128,10 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
              Ezlua.push_field st "file" Ezlua.Encode.string ctx.file;
              Ezlua.push_field st "timeout" Ezlua.Encode.int ctx.timeout;
              Ezlua.push_field st "memory" Ezlua.Encode.int ctx.memory;
+             CCOpt.iter
+               (fun pf ->
+                 Ezlua.push_field st "proof_file" Ezlua.Encode.string pf)
+               ctx.proof_file;
              let status = Lua.pcall st 1 1 0 in
              match status with
              | Lua_api_lib.LUA_OK ->
@@ -691,10 +695,17 @@ let config_template =
 -- Type annotations for LuaLS / lua-language-server (EmmyLua format).
 -- Delete this block if you do not use a Lua LSP.
 
+---@class BP.CmdCtx
+---@field binary string        # resolved binary path
+---@field file string          # problem file path
+---@field timeout integer      # timeout in seconds (0 = none)
+---@field memory integer       # memory limit in MB (0 = none)
+---@field proof_file? string   # path where proof output should be written (nil if not applicable)
+
 ---@class BP.ProverParams
 ---@field name string                    # prover identifier
 ---@field binary? string                 # binary path/name (default: same as name, looked up in $PATH)
----@field cmd string                     # command template, e.g. "$binary $file"
+---@field cmd string|fun(ctx:BP.CmdCtx):string|string[]  # command template or function returning shell command / argv
 ---@field sat? string                    # Perl regex matching SAT output
 ---@field unsat? string                  # Perl regex matching UNSAT output
 ---@field unknown? string                # Perl regex matching unknown output

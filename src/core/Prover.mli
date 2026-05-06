@@ -19,6 +19,7 @@ type cmd_ctx = {
   file: string;
   timeout: int;  (** timeout in seconds *)
   memory: int;  (** memory limit in MB *)
+  proof_file: string option;  (** path where proof output should be written *)
 }
 
 type cmd_result =
