@@ -17,7 +17,8 @@ type t = {
   invalid_proof: int;
   custom: (string * detail_stats) list;
   total: int;
-  total_time: float; (* for sat+unsat *)
+  total_time: float; (* sum of rtime for all results *)
+  total_time_solved: float; (* sum of rtime for sat+unsat *)
 }
 
 val to_printbox_l :
