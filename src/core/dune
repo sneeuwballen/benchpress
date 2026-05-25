@@ -29,7 +29,10 @@
   trace.core
   yojson
   ezlua
-  ocaml-lua)
+  ocaml-lua
+  ppx_ezlua)
+ (preprocess
+  (pps ppx_ezlua))
  (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 
 (rule

@@ -15,42 +15,36 @@ module LuaL = Lua_aux_lib
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.lua-api"))
 
 (* ------------------------------------------------------------------ *)
-(* Helpers for reading Lua table fields *)
+(* Decodable record types ([@deriving ezlua]) *)
 
-let get_str_field st idx name = Ezlua.get_field st idx name Ezlua.Decode.string
+type custom_tag = { name: string; regex: string } [@@deriving ezlua]
 
-(* Decode an optional field: returns [Ok None] when the field is nil/absent,
-   [Ok (Some x)] when present and decodable, [Error _] on type mismatch. *)
-let field_opt dec st idx name =
-  Lua.getfield st idx name;
-  let result =
-    if Lua.isnoneornil st (-1) then
-      Ok None
-    else (
-      match dec st (-1) with
-      | Ok x -> Ok (Some x)
-      | Error e -> Error e
-    )
-  in
-  Lua.pop st 1;
-  result
+type prover_opts = {
+  name: string;
+  binary: string option;
+  cmd: string option;
+  sat: string option;
+  unsat: string option;
+  unknown: string option;
+  timeout: string option;
+  memory: string option;
+  produces_proof: bool option;
+  proof_ext: string option;
+  version: string option;
+  binary_deps: string list option;
+  static_labels: string list option;
+  tags: custom_tag list option;
+  ulimit_time: bool option;
+  ulimit_memory: bool option;
+  ulimit_stack: bool option;
+}
+[@@deriving ezlua]
 
-let get_str_field_opt st idx name = field_opt Ezlua.Decode.string st idx name
+type set_options = { j: int option; progress: bool option } [@@deriving ezlua]
 
-let get_str_list_field st idx name =
-  Ezlua.get_field st idx name (Ezlua.Decode.list Ezlua.Decode.string)
+(* ------------------------------------------------------------------ *)
+(* Helpers *)
 
-let get_str_list_field_opt st idx name =
-  field_opt (Ezlua.Decode.list Ezlua.Decode.string) st idx name
-
-let get_int_field_opt st idx name = field_opt Ezlua.Decode.int st idx name
-let get_bool_field_opt st idx name = field_opt Ezlua.Decode.bool st idx name
-
-let unwrap_field name = function
-  | Ok x -> x
-  | Error (`Msg e) -> Error.failf "benchpress config: field %s: %s" name e
-
-(* Read benchpress.cur_dir from the Lua state; returns "" if not set. *)
 let get_cur_dir (st : Lua.state) : string =
   Lua.getglobal st "benchpress";
   if not (Lua.istable st (-1)) then (
@@ -67,13 +61,12 @@ let get_cur_dir (st : Lua.state) : string =
     v
   )
 
-(* Expand $cur_dir in a string using the current Lua state. *)
 let expand_cur_dir (st : Lua.state) (s : string) : string =
   let cur_dir = get_cur_dir st in
   Misc.str_replace [ "cur_dir", cur_dir ] s
 
 (* ------------------------------------------------------------------ *)
-(* Registration state (set before loading a file) *)
+(* Registration state *)
 
 type pending = {
   mutable provers: Prover.t With_loc.t list;
@@ -81,48 +74,55 @@ type pending = {
   mutable tasks: Task.t With_loc.t list;
   mutable hooks: Lua_hooks.t;
   mutable checkers: Proof_checker.t With_loc.t list;
+  mutable option_j: int option;
+  mutable option_progress: bool option;
 }
 
 let make_pending hooks =
-  { provers = []; dirs = []; tasks = []; hooks; checkers = [] }
+  {
+    provers = [];
+    dirs = [];
+    tasks = [];
+    hooks;
+    checkers = [];
+    option_j = None;
+    option_progress = None;
+  }
 
 (* ------------------------------------------------------------------ *)
 (* Lua function implementations *)
 
-(* benchpress.prover { name, binary, cmd, static_labels, parse, ... } *)
 let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
   (try
      if not (Lua.istable st 1) then
        Error.fail "benchpress.prover: expected a table argument";
-     let name = unwrap_field "name" (get_str_field st 1 "name") in
+     let opts =
+       match of_lua_prover_opts st 1 with
+       | Ok o -> o
+       | Error (`Msg e) -> Error.failf "benchpress.prover: %s" e
+     in
      let binary =
-       get_str_field st 1 "binary" |> function
-       | Ok s -> expand_cur_dir st s
-       | Error _ -> name
+       match opts.binary with
+       | Some s -> expand_cur_dir st s
+       | None -> opts.name
      in
      let cmd =
-       get_str_field st 1 "cmd" |> function
-       | Ok s -> expand_cur_dir st s
-       | Error _ -> ""
+       match opts.cmd with
+       | Some s -> expand_cur_dir st s
+       | None -> ""
      in
-     let static_labels =
-       get_str_list_field_opt st 1 "static_labels" |> function
-       | Ok (Some l) -> l
-       | _ -> []
-     in
+     let static_labels = CCOpt.get_or ~default:[] opts.static_labels in
      (* cmd_fn: check if "cmd" field is a function *)
      let cmd_fn =
        Lua.getfield st 1 "cmd";
        let is_fn = Lua.isfunction st (-1) in
        Lua.pop st 1;
        if is_fn then (
-         (* Save the function reference *)
          Lua.getfield st 1 "cmd";
          let r = Lua_hooks.save_fn_ref st in
          Some
            (fun (ctx : Prover.cmd_ctx) ->
              Lua_hooks.push_fn_ref st r;
-             (* Push context table *)
              Lua.newtable st;
              Ezlua.push_field st "binary" Ezlua.Encode.string ctx.binary;
              Ezlua.push_field st "file" Ezlua.Encode.string ctx.file;
@@ -135,7 +135,6 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
              let status = Lua.pcall st 1 1 0 in
              match status with
              | Lua_api_lib.LUA_OK ->
-               (* Result is either a string or a table of strings *)
                if Lua.isstring st (-1) then (
                  let s = Lua.tostring st (-1) |> CCOpt.get_or ~default:"" in
                  Lua.pop st 1;
@@ -152,15 +151,15 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
                  Error.failf
                    "benchpress.prover %s: cmd function must return a string or \
                     array"
-                   name
+                   opts.name
                )
              | _ ->
                let msg =
                  Lua.tostring st (-1) |> CCOpt.get_or ~default:"(no message)"
                in
                Lua.pop st 1;
-               Error.failf "benchpress.prover %s: cmd function error: %s" name
-                 msg)
+               Error.failf "benchpress.prover %s: cmd function error: %s"
+                 opts.name msg)
        ) else
          None
      in
@@ -187,7 +186,7 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
                  Lua.pop st 1;
                  Log.warn (fun k ->
                      k "prover %s: parse function must return a table or nil"
-                       name);
+                       opts.name);
                  None
                ) else (
                  let res_str =
@@ -228,54 +227,17 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
                in
                Lua.pop st 1;
                Log.warn (fun k ->
-                   k "prover %s: parse function error: %s" name msg);
+                   k "prover %s: parse function error: %s" opts.name msg);
                None)
        ) else
          None
      in
-     (* regex fields for backwards compatibility / sexp interop *)
-     let sat =
-       get_str_field_opt st 1 "sat" |> function
-       | Ok x -> x
-       | _ -> None
+     let custom =
+       match opts.tags with
+       | Some tags -> List.map (fun t -> t.name, t.regex) tags
+       | None -> []
      in
-     let unsat =
-       get_str_field_opt st 1 "unsat" |> function
-       | Ok x -> x
-       | _ -> None
-     in
-     let unknown =
-       get_str_field_opt st 1 "unknown" |> function
-       | Ok x -> x
-       | _ -> None
-     in
-     let timeout_re =
-       get_str_field_opt st 1 "timeout" |> function
-       | Ok x -> x
-       | _ -> None
-     in
-     let memory =
-       get_str_field_opt st 1 "memory" |> function
-       | Ok x -> x
-       | _ -> None
-     in
-     let produces_proof =
-       get_bool_field_opt st 1 "produces_proof" |> function
-       | Ok (Some b) -> b
-       | _ -> false
-     in
-     let proof_ext =
-       get_str_field_opt st 1 "proof_ext" |> function
-       | Ok x -> x
-       | _ -> None
-     in
-     (* get_checkers: "proof_checker" can be a string or a function.
-        String "c" is shorthand for a function returning [("c", None)] always.
-        A function receives {result, stdout, stderr, proof_file?} and returns a
-        list whose elements are either a checker-name string or a table
-        {checker=<name>, file=<path>}. *)
-     (* Decode one element from the proof_checker function's return list.
-        The element is at the top of the Lua stack (idx = -1) and is popped. *)
+     (* get_checkers: "proof_checker" can be a string or a function *)
      let decode_check_entry st : (string * string option) option =
        if Lua.isstring st (-1) then (
          let s = Lua.tostring st (-1) |> CCOpt.get_or ~default:"" in
@@ -285,17 +247,21 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
          else
            Some (s, None)
        ) else if Lua.istable st (-1) then (
-         Lua.getfield st (-1) "checker";
-         let cname = Lua.tostring st (-1) |> CCOpt.get_or ~default:"" in
+         let open Ezlua.Decode in
+         let r =
+           let open Ezlua.Decode in
+           let* checker = Ezlua.get_field st (-1) "checker" string in
+           let* file = Ezlua.get_field st (-1) "file" (option string) in
+           Ok (checker, file)
+         in
          Lua.pop st 1;
-         Lua.getfield st (-1) "file";
-         let fopt = Lua.tostring st (-1) in
-         Lua.pop st 1;
-         Lua.pop st 1;
-         if cname = "" then
-           None
-         else
-           Some (cname, fopt)
+         match r with
+         | Ok (cname, fopt) ->
+           if cname = "" then
+             None
+           else
+             Some (cname, fopt)
+         | Error _ -> None
        ) else (
          Lua.pop st 1;
          None
@@ -329,7 +295,7 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
          let msg = Lua.tostring st (-1) |> CCOpt.get_or ~default:"(no msg)" in
          Lua.pop st 1;
          Log.warn (fun k ->
-             k "prover %s: proof_checker function error: %s" name msg);
+             k "prover %s: proof_checker function error: %s" opts.name msg);
          []
        )
      in
@@ -354,29 +320,35 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
          None
        )
      in
-     let binary_deps =
-       get_str_list_field_opt st 1 "binary_deps" |> function
-       | Ok (Some l) -> l
-       | _ -> []
+     let version =
+       match opts.version with
+       | Some s -> Prover.Tag s
+       | None -> Prover.Tag "<unknown>"
+     in
+     let ulimits =
+       Ulimit.mk
+         ~time:(CCOpt.get_or ~default:true opts.ulimit_time)
+         ~memory:(CCOpt.get_or ~default:true opts.ulimit_memory)
+         ~stack:(CCOpt.get_or ~default:false opts.ulimit_stack)
      in
      let prover : Prover.t =
        {
-         name;
+         name = opts.name;
          binary;
          cmd;
          cmd_fn;
-         binary_deps;
-         version = Prover.Tag "<lua>";
-         produces_proof;
-         proof_ext;
+         binary_deps = CCOpt.get_or ~default:[] opts.binary_deps;
+         version;
+         produces_proof = CCOpt.get_or ~default:false opts.produces_proof;
+         proof_ext = opts.proof_ext;
          get_checkers;
-         ulimits = Ulimit.mk ~time:true ~memory:true ~stack:false;
-         sat;
-         unsat;
-         unknown;
-         timeout = timeout_re;
-         memory;
-         custom = [];
+         ulimits;
+         sat = opts.sat;
+         unsat = opts.unsat;
+         unknown = opts.unknown;
+         timeout = opts.timeout;
+         memory = opts.memory;
+         custom;
          static_labels;
          analyze_fn;
          defined_in = None;
@@ -395,18 +367,22 @@ let bp_dir (pending : pending) (st : Lua_api_lib.state) : int =
      if not (Lua.istable st 1) then
        Error.fail "benchpress.dir: expected a table argument";
      let path =
-       unwrap_field "path" (get_str_field st 1 "path")
+       (match Ezlua.get_field st 1 "path" Ezlua.Decode.string with
+       | Ok s -> s
+       | Error (`Msg e) -> Error.failf "benchpress.dir: field 'path': %s" e)
        |> expand_cur_dir st |> Misc.mk_abs_path
      in
      let pattern =
-       get_str_field_opt st 1 "pattern" |> function
+       Ezlua.get_field st 1 "pattern" (Ezlua.Decode.option Ezlua.Decode.string)
+       |> function
        | Ok x -> x
-       | _ -> None
+       | Error _ -> None
      in
      let expect_str =
-       get_str_field st 1 "expect" |> function
-       | Ok s -> s
-       | Error _ -> "comment"
+       Ezlua.get_field st 1 "expect" (Ezlua.Decode.option Ezlua.Decode.string)
+       |> function
+       | Ok (Some s) -> s
+       | _ -> "comment"
      in
      let expect =
        match expect_str with
@@ -423,9 +399,10 @@ let bp_dir (pending : pending) (st : Lua_api_lib.state) : int =
          Dir.E_comment
      in
      let name =
-       get_str_field_opt st 1 "name" |> function
+       Ezlua.get_field st 1 "name" (Ezlua.Decode.option Ezlua.Decode.string)
+       |> function
        | Ok x -> x
-       | _ -> None
+       | Error _ -> None
      in
      let dir : Dir.t = { name; path; expect; pattern; loc = Loc.none } in
      pending.dirs <- dir :: pending.dirs
@@ -435,11 +412,7 @@ let bp_dir (pending : pending) (st : Lua_api_lib.state) : int =
   0
 
 (* ------------------------------------------------------------------ *)
-(* Action builders: push an Action.t as a light userdata *)
-
-(* We box Action.t values in a ref so they survive GC as light userdata.
-   Light userdata in Lua 5.1 is just a pointer — using a heap-allocated
-   ref keeps the value alive as long as we hold it in OCaml. *)
+(* Action builders *)
 
 type action_box = Action.t ref
 
@@ -459,34 +432,43 @@ let bp_run_provers (pending : pending) (st : Lua_api_lib.state) : int =
      if not (Lua.istable st 1) then
        Error.fail "benchpress.run_provers: expected a table argument";
      let prover_names =
-       unwrap_field "provers" (get_str_list_field st 1 "provers")
+       match
+         Ezlua.get_field st 1 "provers" (Ezlua.Decode.list Ezlua.Decode.string)
+       with
+       | Ok l -> l
+       | Error (`Msg e) -> Error.failf "benchpress.run_provers: %s" e
      in
      let dir_paths =
-       get_str_list_field_opt st 1 "dirs" |> function
+       Ezlua.get_field st 1 "dirs"
+         (Ezlua.Decode.option (Ezlua.Decode.list Ezlua.Decode.string))
+       |> function
        | Ok (Some l) -> l
        | _ -> []
      in
      let timeout_s =
-       get_int_field_opt st 1 "timeout" |> function
+       Ezlua.get_field st 1 "timeout" (Ezlua.Decode.option Ezlua.Decode.int)
+       |> function
        | Ok x -> x
-       | _ -> None
+       | Error _ -> None
      in
      let memory_mb =
-       get_int_field_opt st 1 "memory" |> function
+       Ezlua.get_field st 1 "memory" (Ezlua.Decode.option Ezlua.Decode.int)
+       |> function
        | Ok x -> x
-       | _ -> None
+       | Error _ -> None
      in
      let j =
-       get_int_field_opt st 1 "j" |> function
+       Ezlua.get_field st 1 "j" (Ezlua.Decode.option Ezlua.Decode.int)
+       |> function
        | Ok x -> x
-       | _ -> None
+       | Error _ -> None
      in
      let pattern =
-       get_str_field_opt st 1 "pattern" |> function
+       Ezlua.get_field st 1 "pattern" (Ezlua.Decode.option Ezlua.Decode.string)
+       |> function
        | Ok x -> x
-       | _ -> None
+       | Error _ -> None
      in
-     (* Resolve provers from pending list *)
      let find_prover name =
        match
          List.find_opt
@@ -498,15 +480,11 @@ let bp_run_provers (pending : pending) (st : Lua_api_lib.state) : int =
          Error.failf "benchpress.run_provers: prover %S not defined" name
      in
      let provers = List.map find_prover prover_names in
-     (* Build subdirs: try to look up registered Dir.t by name or path prefix
-        so that pattern/expect settings from benchpress.dir are preserved. *)
      let find_registered_dir path =
        let path = Misc.mk_abs_path path in
-       (* exact path match first *)
        match List.find_opt (fun (d : Dir.t) -> d.path = path) pending.dirs with
        | Some d -> d
        | None ->
-         (* fall back: a registered dir whose path is a prefix of [path] *)
          (match
             List.find_opt
               (fun (d : Dir.t) ->
@@ -588,13 +566,17 @@ let bp_task (pending : pending) (st : Lua_api_lib.state) : int =
   (try
      if not (Lua.istable st 1) then
        Error.fail "benchpress.task: expected a table argument";
-     let name = unwrap_field "name" (get_str_field st 1 "name") in
-     let synopsis =
-       get_str_field_opt st 1 "synopsis" |> function
-       | Ok x -> x
-       | _ -> None
+     let name =
+       match Ezlua.get_field st 1 "name" Ezlua.Decode.string with
+       | Ok s -> s
+       | Error (`Msg e) -> Error.failf "benchpress.task: %s" e
      in
-     (* Get the action — it's stored as a light userdata in the "action" field *)
+     let synopsis =
+       Ezlua.get_field st 1 "synopsis" (Ezlua.Decode.option Ezlua.Decode.string)
+       |> function
+       | Ok x -> x
+       | Error _ -> None
+     in
      Lua.getfield st 1 "action";
      let action =
        match pop_action_opt st (-1) with
@@ -624,7 +606,6 @@ let bp_on (pending : pending) (st : Lua_api_lib.state) : int =
      in
      if not (Lua.isfunction st 2) then
        Error.failf "benchpress.on: second argument must be a function";
-     (* Push the function and save it *)
      Lua.pushvalue st 2;
      let r = Lua_hooks.save_fn_ref st in
      Lua_hooks.register pending.hooks event r
@@ -638,14 +619,50 @@ let bp_proof_checker (pending : pending) (st : Lua_api_lib.state) : int =
   (try
      if not (Lua.istable st 1) then
        Error.fail "benchpress.proof_checker: expected a table argument";
-     let name = unwrap_field "name" (get_str_field st 1 "name") in
-     let cmd =
-       unwrap_field "cmd" (get_str_field st 1 "cmd") |> expand_cur_dir st
+     let name =
+       match Ezlua.get_field st 1 "name" Ezlua.Decode.string with
+       | Ok s -> s
+       | Error (`Msg e) -> Error.failf "benchpress.proof_checker: %s" e
      in
-     let valid = unwrap_field "valid" (get_str_field st 1 "valid") in
-     let invalid = unwrap_field "invalid" (get_str_field st 1 "invalid") in
+     let cmd =
+       (match Ezlua.get_field st 1 "cmd" Ezlua.Decode.string with
+       | Ok s -> s
+       | Error (`Msg e) -> Error.failf "benchpress.proof_checker: %s" e)
+       |> expand_cur_dir st
+     in
+     let valid =
+       match Ezlua.get_field st 1 "valid" Ezlua.Decode.string with
+       | Ok s -> s
+       | Error (`Msg e) -> Error.failf "benchpress.proof_checker: %s" e
+     in
+     let invalid =
+       match Ezlua.get_field st 1 "invalid" Ezlua.Decode.string with
+       | Ok s -> s
+       | Error (`Msg e) -> Error.failf "benchpress.proof_checker: %s" e
+     in
      let checker : Proof_checker.t = { name; cmd; valid; invalid } in
      pending.checkers <- With_loc.make ~loc:Loc.none checker :: pending.checkers
+   with Error.E e ->
+     let msg = Error.show e in
+     Ezlua.signal_error st msg);
+  0
+
+(* benchpress.set_options { j, progress } *)
+let bp_set_options (pending : pending) (st : Lua_api_lib.state) : int =
+  (try
+     if not (Lua.istable st 1) then
+       Error.fail "benchpress.set_options: expected a table argument";
+     let opts =
+       match of_lua_set_options st 1 with
+       | Ok o -> o
+       | Error (`Msg e) -> Error.failf "benchpress.set_options: %s" e
+     in
+     (match opts.j with
+     | Some j -> pending.option_j <- Some j
+     | None -> ());
+     match opts.progress with
+     | Some b -> pending.option_progress <- Some b
+     | None -> ()
    with Error.E e ->
      let msg = Error.show e in
      Ezlua.signal_error st msg);
@@ -668,8 +685,7 @@ let register_benchpress_global (st : Lua_api_lib.state) (pending : pending) :
   mk "run_cmd" bp_run_cmd;
   mk "task" bp_task;
   mk "on" bp_on;
-  (* Assemble the benchpress table from the auto-wrapped _bp_* functions.
-     add_function already installed _ez_check wrappers, so no manual glue needed. *)
+  mk "set_options" bp_set_options;
   Ezlua.run st
     {|
 benchpress = {
@@ -681,6 +697,7 @@ benchpress = {
   run_cmd       = _bp_run_cmd,
   task          = _bp_task,
   on            = _bp_on,
+  set_options   = _bp_set_options,
 }
 |}
   |> function
@@ -702,6 +719,10 @@ let config_template =
 ---@field memory integer       # memory limit in MB (0 = none)
 ---@field proof_file? string   # path where proof output should be written (nil if not applicable)
 
+---@class BP.CustomTag
+---@field name string          # tag name
+---@field regex string         # Perl regex to match in prover output
+
 ---@class BP.ProverParams
 ---@field name string                    # prover identifier
 ---@field binary? string                 # binary path/name (default: same as name, looked up in $PATH)
@@ -717,6 +738,11 @@ let config_template =
 ---@field proof_ext? string              # file extension for proof files (e.g. "proof")
 ---@field proof_checker? string|fun(r:{result:string,stdout:string,stderr:string,proof_file:string?}):(string|{checker:string,file:string})[]  # checker(s) to run on proof files
 ---@field binary_deps? string[]          # extra required binaries
+---@field version? string                # prover version string
+---@field tags? BP.CustomTag[]           # custom result tags with regexes
+---@field ulimit_time? boolean           # set ulimit for time (default: true)
+---@field ulimit_memory? boolean         # set ulimit for memory (default: true)
+---@field ulimit_stack? boolean          # set ulimit for stack (default: false)
 
 ---@class BP.ProofCheckerParams
 ---@field name string      # checker identifier
@@ -743,6 +769,10 @@ let config_template =
 ---@field action any                     # result of run_provers / seq / run_cmd
 ---@field synopsis? string               # short description shown in listings
 
+---@class BP.SetOptionsParams
+---@field j? integer                     # default parallelism
+---@field progress? boolean              # show progress bar
+
 ---@class BP
 ---@field prover fun(p:BP.ProverParams)                    # register a prover definition
 ---@field proof_checker fun(p:BP.ProofCheckerParams)       # register a proof checker
@@ -752,6 +782,7 @@ let config_template =
 ---@field run_cmd fun(cmd:string):any                       # build a shell-command action
 ---@field task fun(p:BP.TaskParams)                 # register a named task
 ---@field on fun(event:string, fn:function)         # register an event hook
+---@field set_options fun(p:BP.SetOptionsParams)    # set global options
 ---@field cur_dir string                            # directory of this config file (read-only)
 
 ---@type BP

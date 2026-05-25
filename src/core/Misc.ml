@@ -176,7 +176,7 @@ let set_lexbuf_filename buf filename =
 let ( // ) = Filename.concat
 let data_dir () = Xdg.data_dir () // !Xdg.name_of_project
 let config_dir () = Xdg.config_dir () // !Xdg.name_of_project
-let default_config () = config_dir () // "conf.sexp"
+let default_config () = config_dir () // "conf.lua"
 
 (** Get current time in seconds since epoch *)
 let now_s () = Ptime_clock.now () |> Ptime.to_float_s
