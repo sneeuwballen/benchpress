@@ -388,10 +388,21 @@ let trace_middleware : H.Middleware.t =
       "http.method", `String (H.Meth.to_string req.meth);
     ];
   let resp (response : H.Response.t) =
-    Trace.add_data_to_span _span [ "http.response.code", `Int response.code ];
+    let size =
+      match response.body with
+      | `String s -> [ "body.size", `Int (String.length s) ]
+      | `Void -> [ "body.size", `Int 0 ]
+      | `Stream _ | `Writer _ -> []
+    in
+    Trace.add_data_to_span _span
+      (size @ [ "http.response.code", `Int response.code ]);
     resp response
   in
-  h req ~resp
+  try h req ~resp
+  with exn ->
+    let bt = Printexc.get_raw_backtrace () in
+    Opentelemetry_trace.record_exception _span exn bt;
+    Printexc.raise_with_backtrace exn bt
 
 (** user metadata: render the fragment (table + add form) *)
 let render_user_meta_html file entries =
