@@ -381,7 +381,7 @@ let add_errcode i err = err, i
 
 let trace_middleware : H.Middleware.t =
  fun h req ~resp ->
-  let@ _span = Trace.with_span ~__FILE__ ~__LINE__ "http.handle" in
+  let@ _span = Trace.with_span ~parent:None ~__FILE__ ~__LINE__ "http.handle" in
   Trace.add_data_to_span _span
     [
       "http.path", `String req.path;
