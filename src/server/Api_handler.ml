@@ -223,6 +223,32 @@ let handle_cancel_job state http_req (req : Api.cancel_job_request) =
   let _was_running : bool = Task_queue.interrupt state.task_q ~uuid:job_id in
   ()
 
+let handle_list_jobs state http_req (_req : Api.list_jobs_request) =
+  let user_id = current_user_exn http_req in
+  let jobs = Auth.list_user_jobs state.auth ~user_id in
+  let entries =
+    List.map
+      (fun (j : Auth.job_info) ->
+        let status, progress =
+          if j.cancelled then
+            Api.Cancelled, 0
+          else if j.completed then
+            Api.Completed, 100
+          else (
+            match Task_queue.job_live_status state.task_q ~uuid:j.job_id with
+            | Task_queue.Running pct -> Api.Running, pct
+            | Task_queue.Queued -> Api.Queued, 0
+            | Task_queue.Completed -> Api.Completed, 100
+            | Task_queue.Unknown -> Api.Queued, 0
+          )
+        in
+        Api.make_job_entry ~job_id:j.job_id ~status
+          ~progress_percent:(Int32.of_int progress) ~result_file:j.result_file
+          ())
+      jobs
+  in
+  Api.make_list_jobs_response ~jobs:entries ()
+
 let register ~auth ~task_q ~defs ~data_dir ~http_server =
   let state = { auth; task_q; defs; data_dir } in
   let service =
@@ -230,6 +256,7 @@ let register ~auth ~task_q ~defs ~data_dir ~http_server =
       ~newJob:(fun rpc -> mk_handler rpc (handle_new_job state))
       ~getJobStatus:(fun rpc -> mk_handler rpc (handle_get_job_status state))
       ~cancelJob:(fun rpc -> mk_handler rpc (handle_cancel_job state))
+      ~listJobs:(fun rpc -> mk_handler rpc (handle_list_jobs state))
       ()
   in
   Log.info (fun k -> k "registering API service");

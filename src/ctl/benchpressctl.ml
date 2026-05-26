@@ -97,7 +97,25 @@ let common_term =
         { client = { Curly_transport.api_key }; host; port })
     $ server_term $ api_key_term)
 
-(* ── Status display helper ──────────────────────────────────────────────── *)
+(* ── Status display helpers ──────────────────────────────────────────────── *)
+
+let json_of_list_jobs_resp r =
+  let module Api = Benchpress_api_proto.Benchpress_api in
+  Api.encode_json_list_jobs_response r |> Yojson.Basic.to_string
+
+let display_job_list ~json resp =
+  if json then
+    print_string (json_of_list_jobs_resp resp)
+  else
+    List.iter
+      (fun (e : Benchpress_api_proto.Benchpress_api.job_entry) ->
+        printf "%s  %s" e.job_id (str_of_status e.status);
+        (match e.status with
+        | Running -> printf " (%ld%%)" e.progress_percent
+        | Completed -> printf "  %s" e.result_file
+        | _ -> ());
+        printf "\n")
+      resp.jobs
 
 let display_status ~json resp =
   if json then
@@ -180,19 +198,26 @@ end
 (* ── status subcommand ──────────────────────────────────────────────────── *)
 
 module Cmd_status = struct
-  type params = { job_id: string; [@pos 0] [@docv "JOB_ID"] json: bool }
+  type params = { job_id: string option; [@pos 0] [@docv "JOB_ID"] json: bool }
   [@@deriving subliner]
 
   let run cfg p =
-    let r =
-      call_rpc cfg BenchpressApi.Client.getJobStatus
-        (make_get_job_status_request ~job_id:p.job_id ())
-    in
-    display_status ~json:p.json r
+    match p.job_id with
+    | Some job_id ->
+      let r =
+        call_rpc cfg BenchpressApi.Client.getJobStatus
+          (make_get_job_status_request ~job_id ())
+      in
+      display_status ~json:p.json r
+    | None ->
+      let r = call_rpc cfg BenchpressApi.Client.listJobs () in
+      display_job_list ~json:p.json r
 
   let cmd =
     let open Cmdliner in
-    let info = Cmd.info "status" ~doc:"Query job status" in
+    let info =
+      Cmd.info "status" ~doc:"Query job status (list all if no JOB_ID given)"
+    in
     Cmd.v info Term.(const run $ common_term $ params_cmdliner_term ())
 end
 
