@@ -12,10 +12,14 @@ module Curly_transport = struct
     let ( let* ) x f = f x
   end
 
-  type client = { api_key: string }
+  type client = { api_key: string option }
 
   let http_post ~headers ~url ~body (c : client) () =
-    let headers = ("authorization", "Bearer " ^ c.api_key) :: headers in
+    let headers =
+      match c.api_key with
+      | Some key -> ("authorization", "Bearer " ^ key) :: headers
+      | None -> headers
+    in
     let req = Curly.Request.make ~meth:`POST ~url ~headers ~body () in
     match Curly.run req with
     | Ok r ->
@@ -75,7 +79,7 @@ let server_term =
   let open Cmdliner in
   Arg.(
     value
-    & opt string "localhost:8080"
+    & opt string "localhost:8889"
     & info [ "server" ]
         ~env:(Cmd.Env.info "BENCHPRESS_SERVER")
         ~doc:"Server address as HOST:PORT" ~docv:"HOST:PORT")
@@ -83,7 +87,7 @@ let server_term =
 let api_key_term =
   let open Cmdliner in
   Arg.(
-    required
+    value
     & opt (some string) None
     & info [ "api-key" ]
         ~env:(Cmd.Env.info "BENCHPRESS_API_KEY")
