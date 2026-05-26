@@ -505,9 +505,9 @@ module New_config = struct
     Misc.setup_logs debug;
     let@ () = catch_err in
     match p.output with
-    | None -> print_string Lua_api.config_template
+    | None -> print_string Lua_config.config_template
     | Some path ->
-      CCIO.with_out path (fun oc -> output_string oc Lua_api.config_template);
+      CCIO.with_out path (fun oc -> output_string oc Lua_config.config_template);
       Format.printf "wrote %s@." path
 
   let cmd =

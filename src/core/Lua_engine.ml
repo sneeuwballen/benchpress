@@ -5,13 +5,13 @@
 open Common
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.lua-engine"))
 
-type t = { state: Lua_api_lib.state; pending: Lua_api.pending }
+type t = { state: Lua_api_lib.state; pending: Lua_config.pending }
 
 let create () : t =
   let state = Ezlua.create ~stdlib:true () in
   let hooks = Lua_hooks.create state in
-  let pending = Lua_api.make_pending hooks in
-  Lua_api.register_benchpress_global state pending;
+  let pending = Lua_config.make_pending hooks in
+  Lua_config.register_benchpress_global state pending;
   (match Ezlua.run state Builtin_config.config with
   | Ok () -> ()
   | Error (`Msg e) -> Error.failf "loading builtin config: %s" e);
@@ -41,9 +41,9 @@ let to_definitions (t : t) : Definitions.t =
     List.fold_left (fun defs x -> add x defs) defs (List.rev xs)
   in
   empty
-  |> fold add_prover p.Lua_api.provers
-  |> fold add_dir p.Lua_api.dirs
-  |> fold add_proof_checker p.Lua_api.checkers
-  |> fold add_task p.Lua_api.tasks
+  |> fold add_prover p.Lua_config.provers
+  |> fold add_dir p.Lua_config.dirs
+  |> fold add_proof_checker p.Lua_config.checkers
+  |> fold add_task p.Lua_config.tasks
 
-let hooks (t : t) : Lua_hooks.t = t.pending.Lua_api.hooks
+let hooks (t : t) : Lua_hooks.t = t.pending.Lua_config.hooks

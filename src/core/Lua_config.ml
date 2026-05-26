@@ -97,7 +97,7 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
      if not (Lua.istable st 1) then
        Error.fail "benchpress.prover: expected a table argument";
      let opts =
-       match of_lua_prover_opts st 1 with
+       match prover_opts_of_lua st 1 with
        | Ok o -> o
        | Error (`Msg e) -> Error.failf "benchpress.prover: %s" e
      in
@@ -234,7 +234,7 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
      in
      let custom =
        match opts.tags with
-       | Some tags -> List.map (fun t -> t.name, t.regex) tags
+       | Some tags -> List.map (fun (t : custom_tag) -> t.name, t.regex) tags
        | None -> []
      in
      (* get_checkers: "proof_checker" can be a string or a function *)
@@ -249,10 +249,12 @@ let bp_prover (pending : pending) (st : Lua_api_lib.state) : int =
        ) else if Lua.istable st (-1) then (
          let open Ezlua.Decode in
          let r =
-           let open Ezlua.Decode in
-           let* checker = Ezlua.get_field st (-1) "checker" string in
-           let* file = Ezlua.get_field st (-1) "file" (option string) in
-           Ok (checker, file)
+           match Ezlua.get_field st (-1) "checker" string with
+           | Error e -> Error e
+           | Ok checker ->
+             (match Ezlua.get_field st (-1) "file" (option string) with
+             | Error e -> Error e
+             | Ok file -> Ok (checker, file))
          in
          Lua.pop st 1;
          match r with
@@ -653,7 +655,7 @@ let bp_set_options (pending : pending) (st : Lua_api_lib.state) : int =
      if not (Lua.istable st 1) then
        Error.fail "benchpress.set_options: expected a table argument";
      let opts =
-       match of_lua_set_options st 1 with
+       match set_options_of_lua st 1 with
        | Ok o -> o
        | Error (`Msg e) -> Error.failf "benchpress.set_options: %s" e
      in
