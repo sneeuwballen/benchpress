@@ -48,6 +48,20 @@ type cancel_job_request = private {
 
 type cancel_job_response = unit
 
+type list_jobs_request = unit
+
+type job_entry = private {
+  mutable _presence: Pbrt.Bitfield.t; (** presence for 4 fields *)
+  mutable job_id : string;
+  mutable status : job_status;
+  mutable progress_percent : int32;
+  mutable result_file : string;
+}
+
+type list_jobs_response = private {
+  mutable jobs : job_entry list;
+}
+
 
 (** {2 Basic values} *)
 
@@ -71,6 +85,15 @@ val default_cancel_job_request : unit -> cancel_job_request
 
 val default_cancel_job_response : unit
 (** [default_cancel_job_response] is the default value for type [cancel_job_response] *)
+
+val default_list_jobs_request : unit
+(** [default_list_jobs_request] is the default value for type [list_jobs_request] *)
+
+val default_job_entry : unit -> job_entry 
+(** [default_job_entry ()] is a new empty value for type [job_entry] *)
+
+val default_list_jobs_response : unit -> list_jobs_response 
+(** [default_list_jobs_response ()] is a new empty value for type [list_jobs_response] *)
 
 
 (** {2 Make functions} *)
@@ -188,6 +211,52 @@ val cancel_job_request_has_job_id : cancel_job_request -> bool
 val cancel_job_request_set_job_id : cancel_job_request -> string -> unit
   (** set field job_id in cancel_job_request *)
 
+val make_job_entry : 
+  ?job_id:string ->
+  ?status:job_status ->
+  ?progress_percent:int32 ->
+  ?result_file:string ->
+  unit ->
+  job_entry
+(** [make_job_entry … ()] is a builder for type [job_entry] *)
+
+val copy_job_entry : job_entry -> job_entry
+
+val job_entry_has_job_id : job_entry -> bool
+  (** presence of field "job_id" in [job_entry] *)
+
+val job_entry_set_job_id : job_entry -> string -> unit
+  (** set field job_id in job_entry *)
+
+val job_entry_has_status : job_entry -> bool
+  (** presence of field "status" in [job_entry] *)
+
+val job_entry_set_status : job_entry -> job_status -> unit
+  (** set field status in job_entry *)
+
+val job_entry_has_progress_percent : job_entry -> bool
+  (** presence of field "progress_percent" in [job_entry] *)
+
+val job_entry_set_progress_percent : job_entry -> int32 -> unit
+  (** set field progress_percent in job_entry *)
+
+val job_entry_has_result_file : job_entry -> bool
+  (** presence of field "result_file" in [job_entry] *)
+
+val job_entry_set_result_file : job_entry -> string -> unit
+  (** set field result_file in job_entry *)
+
+val make_list_jobs_response : 
+  ?jobs:job_entry list ->
+  unit ->
+  list_jobs_response
+(** [make_list_jobs_response … ()] is a builder for type [list_jobs_response] *)
+
+val copy_list_jobs_response : list_jobs_response -> list_jobs_response
+
+val list_jobs_response_set_jobs : list_jobs_response -> job_entry list -> unit
+  (** set field jobs in list_jobs_response *)
+
 
 (** {2 Formatters} *)
 
@@ -211,6 +280,15 @@ val pp_cancel_job_request : Format.formatter -> cancel_job_request -> unit
 
 val pp_cancel_job_response : Format.formatter -> cancel_job_response -> unit 
 (** [pp_cancel_job_response v] formats v *)
+
+val pp_list_jobs_request : Format.formatter -> list_jobs_request -> unit 
+(** [pp_list_jobs_request v] formats v *)
+
+val pp_job_entry : Format.formatter -> job_entry -> unit 
+(** [pp_job_entry v] formats v *)
+
+val pp_list_jobs_response : Format.formatter -> list_jobs_response -> unit 
+(** [pp_list_jobs_response v] formats v *)
 
 
 (** {2 Protobuf Encoding} *)
@@ -236,6 +314,15 @@ val encode_pb_cancel_job_request : cancel_job_request -> Pbrt.Encoder.t -> unit
 val encode_pb_cancel_job_response : cancel_job_response -> Pbrt.Encoder.t -> unit
 (** [encode_pb_cancel_job_response v encoder] encodes [v] with the given [encoder] *)
 
+val encode_pb_list_jobs_request : list_jobs_request -> Pbrt.Encoder.t -> unit
+(** [encode_pb_list_jobs_request v encoder] encodes [v] with the given [encoder] *)
+
+val encode_pb_job_entry : job_entry -> Pbrt.Encoder.t -> unit
+(** [encode_pb_job_entry v encoder] encodes [v] with the given [encoder] *)
+
+val encode_pb_list_jobs_response : list_jobs_response -> Pbrt.Encoder.t -> unit
+(** [encode_pb_list_jobs_response v encoder] encodes [v] with the given [encoder] *)
+
 
 (** {2 Protobuf Decoding} *)
 
@@ -259,6 +346,15 @@ val decode_pb_cancel_job_request : Pbrt.Decoder.t -> cancel_job_request
 
 val decode_pb_cancel_job_response : Pbrt.Decoder.t -> cancel_job_response
 (** [decode_pb_cancel_job_response decoder] decodes a [cancel_job_response] binary value from [decoder] *)
+
+val decode_pb_list_jobs_request : Pbrt.Decoder.t -> list_jobs_request
+(** [decode_pb_list_jobs_request decoder] decodes a [list_jobs_request] binary value from [decoder] *)
+
+val decode_pb_job_entry : Pbrt.Decoder.t -> job_entry
+(** [decode_pb_job_entry decoder] decodes a [job_entry] binary value from [decoder] *)
+
+val decode_pb_list_jobs_response : Pbrt.Decoder.t -> list_jobs_response
+(** [decode_pb_list_jobs_response decoder] decodes a [list_jobs_response] binary value from [decoder] *)
 
 
 (** {2 Protobuf YoJson Encoding} *)
@@ -284,6 +380,15 @@ val encode_json_cancel_job_request : cancel_job_request -> Yojson.Basic.t
 val encode_json_cancel_job_response : cancel_job_response -> Yojson.Basic.t
 (** [encode_json_cancel_job_response v encoder] encodes [v] to to json *)
 
+val encode_json_list_jobs_request : list_jobs_request -> Yojson.Basic.t
+(** [encode_json_list_jobs_request v encoder] encodes [v] to to json *)
+
+val encode_json_job_entry : job_entry -> Yojson.Basic.t
+(** [encode_json_job_entry v encoder] encodes [v] to to json *)
+
+val encode_json_list_jobs_response : list_jobs_response -> Yojson.Basic.t
+(** [encode_json_list_jobs_response v encoder] encodes [v] to to json *)
+
 
 (** {2 JSON Decoding} *)
 
@@ -308,6 +413,15 @@ val decode_json_cancel_job_request : Yojson.Basic.t -> cancel_job_request
 val decode_json_cancel_job_response : Yojson.Basic.t -> cancel_job_response
 (** [decode_json_cancel_job_response decoder] decodes a [cancel_job_response] value from [decoder] *)
 
+val decode_json_list_jobs_request : Yojson.Basic.t -> list_jobs_request
+(** [decode_json_list_jobs_request decoder] decodes a [list_jobs_request] value from [decoder] *)
+
+val decode_json_job_entry : Yojson.Basic.t -> job_entry
+(** [decode_json_job_entry decoder] decodes a [job_entry] value from [decoder] *)
+
+val decode_json_list_jobs_response : Yojson.Basic.t -> list_jobs_response
+(** [decode_json_list_jobs_response decoder] decodes a [list_jobs_response] value from [decoder] *)
+
 
 (** {2 Services} *)
 
@@ -323,6 +437,8 @@ module BenchpressApi : sig
     val getJobStatus : (get_job_status_request, unary, get_job_status_response, unary) Client.rpc
     
     val cancelJob : (cancel_job_request, unary, cancel_job_response, unary) Client.rpc
+    
+    val listJobs : (list_jobs_request, unary, list_jobs_response, unary) Client.rpc
   end
   
   module Server : sig
@@ -331,6 +447,7 @@ module BenchpressApi : sig
       newJob:((new_job_request, unary, new_job_response, unary) Server.rpc -> 'handler) ->
       getJobStatus:((get_job_status_request, unary, get_job_status_response, unary) Server.rpc -> 'handler) ->
       cancelJob:((cancel_job_request, unary, cancel_job_response, unary) Server.rpc -> 'handler) ->
+      listJobs:((list_jobs_request, unary, list_jobs_response, unary) Server.rpc -> 'handler) ->
       unit -> 'handler Pbrt_services.Server.t
     
     (** The individual server stubs are only exposed for advanced users. Casual users should prefer accessing them through {!make}. *)
@@ -340,5 +457,7 @@ module BenchpressApi : sig
     val getJobStatus : (get_job_status_request,unary,get_job_status_response,unary) Server.rpc
     
     val cancelJob : (cancel_job_request,unary,cancel_job_response,unary) Server.rpc
+    
+    val listJobs : (list_jobs_request,unary,list_jobs_response,unary) Server.rpc
   end
 end

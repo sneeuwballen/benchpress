@@ -41,6 +41,20 @@ type cancel_job_request = {
 
 type cancel_job_response = unit
 
+type list_jobs_request = unit
+
+type job_entry = {
+  mutable _presence: Pbrt.Bitfield.t; (** presence for 4 fields *)
+  mutable job_id : string;
+  mutable status : job_status;
+  mutable progress_percent : int32;
+  mutable result_file : string;
+}
+
+type list_jobs_response = {
+  mutable jobs : job_entry list;
+}
+
 let default_new_job_request (): new_job_request =
 {
   _presence=Pbrt.Bitfield.empty;
@@ -81,6 +95,22 @@ let default_cancel_job_request (): cancel_job_request =
 }
 
 let default_cancel_job_response : cancel_job_response = ()
+
+let default_list_jobs_request : list_jobs_request = ()
+
+let default_job_entry (): job_entry =
+{
+  _presence=Pbrt.Bitfield.empty;
+  job_id="";
+  status=default_job_status ();
+  progress_percent=0l;
+  result_file="";
+}
+
+let default_list_jobs_response (): list_jobs_response =
+{
+  jobs=[];
+}
 
 
 (** {2 Make functions} *)
@@ -213,6 +243,58 @@ let make_cancel_job_request
   | Some v -> cancel_job_request_set_job_id _res v);
   _res
 
+let[@inline] job_entry_has_job_id (self:job_entry) : bool = (Pbrt.Bitfield.get self._presence 0)
+let[@inline] job_entry_has_status (self:job_entry) : bool = (Pbrt.Bitfield.get self._presence 1)
+let[@inline] job_entry_has_progress_percent (self:job_entry) : bool = (Pbrt.Bitfield.get self._presence 2)
+let[@inline] job_entry_has_result_file (self:job_entry) : bool = (Pbrt.Bitfield.get self._presence 3)
+
+let[@inline] job_entry_set_job_id (self:job_entry) (x:string) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 0); self.job_id <- x
+let[@inline] job_entry_set_status (self:job_entry) (x:job_status) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 1); self.status <- x
+let[@inline] job_entry_set_progress_percent (self:job_entry) (x:int32) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 2); self.progress_percent <- x
+let[@inline] job_entry_set_result_file (self:job_entry) (x:string) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 3); self.result_file <- x
+
+let copy_job_entry (self:job_entry) : job_entry =
+  { self with job_id = self.job_id }
+
+let make_job_entry 
+  ?(job_id:string option)
+  ?(status:job_status option)
+  ?(progress_percent:int32 option)
+  ?(result_file:string option)
+  () : job_entry  =
+  let _res = default_job_entry () in
+  (match job_id with
+  | None -> ()
+  | Some v -> job_entry_set_job_id _res v);
+  (match status with
+  | None -> ()
+  | Some v -> job_entry_set_status _res v);
+  (match progress_percent with
+  | None -> ()
+  | Some v -> job_entry_set_progress_percent _res v);
+  (match result_file with
+  | None -> ()
+  | Some v -> job_entry_set_result_file _res v);
+  _res
+
+
+let[@inline] list_jobs_response_set_jobs (self:list_jobs_response) (x:job_entry list) : unit =
+  self.jobs <- x
+
+let copy_list_jobs_response (self:list_jobs_response) : list_jobs_response =
+  { self with jobs = self.jobs }
+
+let make_list_jobs_response 
+  ?(jobs=[])
+  () : list_jobs_response  =
+  let _res = default_list_jobs_response () in
+  list_jobs_response_set_jobs _res jobs;
+  _res
+
 [@@@ocaml.warning "-23-27-30-39"]
 
 (** {2 Formatters} *)
@@ -265,6 +347,27 @@ let rec pp_cancel_job_request fmt (v:cancel_job_request) =
 let rec pp_cancel_job_response fmt (v:cancel_job_response) = 
   let pp_i fmt () =
     Pbrt.Pp.pp_unit fmt ()
+  in
+  Pbrt.Pp.pp_brk pp_i fmt ()
+
+let rec pp_list_jobs_request fmt (v:list_jobs_request) = 
+  let pp_i fmt () =
+    Pbrt.Pp.pp_unit fmt ()
+  in
+  Pbrt.Pp.pp_brk pp_i fmt ()
+
+let rec pp_job_entry fmt (v:job_entry) = 
+  let pp_i fmt () =
+    Pbrt.Pp.pp_record_field ~absent:(not (job_entry_has_job_id v)) ~first:true "job_id" Pbrt.Pp.pp_string fmt v.job_id;
+    Pbrt.Pp.pp_record_field ~absent:(not (job_entry_has_status v)) ~first:false "status" pp_job_status fmt v.status;
+    Pbrt.Pp.pp_record_field ~absent:(not (job_entry_has_progress_percent v)) ~first:false "progress_percent" Pbrt.Pp.pp_int32 fmt v.progress_percent;
+    Pbrt.Pp.pp_record_field ~absent:(not (job_entry_has_result_file v)) ~first:false "result_file" Pbrt.Pp.pp_string fmt v.result_file;
+  in
+  Pbrt.Pp.pp_brk pp_i fmt ()
+
+let rec pp_list_jobs_response fmt (v:list_jobs_response) = 
+  let pp_i fmt () =
+    Pbrt.Pp.pp_record_field ~first:true "jobs" (Pbrt.Pp.pp_list pp_job_entry) fmt v.jobs;
   in
   Pbrt.Pp.pp_brk pp_i fmt ()
 
@@ -345,6 +448,35 @@ let rec encode_pb_cancel_job_request (v:cancel_job_request) encoder =
 
 let rec encode_pb_cancel_job_response (v:cancel_job_response) encoder = 
 ()
+
+let rec encode_pb_list_jobs_request (v:list_jobs_request) encoder = 
+()
+
+let rec encode_pb_job_entry (v:job_entry) encoder = 
+  if job_entry_has_job_id v then (
+    Pbrt.Encoder.string v.job_id encoder;
+    Pbrt.Encoder.key 1 Pbrt.Bytes encoder; 
+  );
+  if job_entry_has_status v then (
+    encode_pb_job_status v.status encoder;
+    Pbrt.Encoder.key 2 Pbrt.Varint encoder; 
+  );
+  if job_entry_has_progress_percent v then (
+    Pbrt.Encoder.int32_as_varint v.progress_percent encoder;
+    Pbrt.Encoder.key 3 Pbrt.Varint encoder; 
+  );
+  if job_entry_has_result_file v then (
+    Pbrt.Encoder.string v.result_file encoder;
+    Pbrt.Encoder.key 4 Pbrt.Bytes encoder; 
+  );
+  ()
+
+let rec encode_pb_list_jobs_response (v:list_jobs_response) encoder = 
+  Pbrt.List_util.rev_iter_with (fun x encoder ->
+    Pbrt.Encoder.nested encode_pb_job_entry x encoder;
+    Pbrt.Encoder.key 1 Pbrt.Bytes encoder; 
+  ) v.jobs encoder;
+  ()
 
 [@@@ocaml.warning "-23-27-30-39"]
 
@@ -483,6 +615,61 @@ let rec decode_pb_cancel_job_response d =
   | Some (_, pk) -> 
     Pbrt.Decoder.unexpected_payload "Unexpected fields in empty message(cancel_job_response)" pk
 
+let rec decode_pb_list_jobs_request d =
+  match Pbrt.Decoder.key d with
+  | None -> ();
+  | Some (_, pk) -> 
+    Pbrt.Decoder.unexpected_payload "Unexpected fields in empty message(list_jobs_request)" pk
+
+let rec decode_pb_job_entry d =
+  let v = default_job_entry () in
+  let continue__= ref true in
+  while !continue__ do
+    match Pbrt.Decoder.key d with
+    | None -> (
+    ); continue__ := false
+    | Some (1, Pbrt.Bytes) -> begin
+      job_entry_set_job_id v (Pbrt.Decoder.string d);
+    end
+    | Some (1, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "job_entry" 1 pk
+    | Some (2, Pbrt.Varint) -> begin
+      job_entry_set_status v (decode_pb_job_status d);
+    end
+    | Some (2, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "job_entry" 2 pk
+    | Some (3, Pbrt.Varint) -> begin
+      job_entry_set_progress_percent v (Pbrt.Decoder.int32_as_varint d);
+    end
+    | Some (3, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "job_entry" 3 pk
+    | Some (4, Pbrt.Bytes) -> begin
+      job_entry_set_result_file v (Pbrt.Decoder.string d);
+    end
+    | Some (4, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "job_entry" 4 pk
+    | Some (_, payload_kind) -> Pbrt.Decoder.skip d payload_kind
+  done;
+  (v : job_entry)
+
+let rec decode_pb_list_jobs_response d =
+  let v = default_list_jobs_response () in
+  let continue__= ref true in
+  while !continue__ do
+    match Pbrt.Decoder.key d with
+    | None -> (
+      (* put lists in the correct order *)
+      list_jobs_response_set_jobs v (List.rev v.jobs);
+    ); continue__ := false
+    | Some (1, Pbrt.Bytes) -> begin
+      list_jobs_response_set_jobs v ((decode_pb_job_entry (Pbrt.Decoder.nested d)) :: v.jobs);
+    end
+    | Some (1, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "list_jobs_response" 1 pk
+    | Some (_, payload_kind) -> Pbrt.Decoder.skip d payload_kind
+  done;
+  (v : list_jobs_response)
+
 [@@@ocaml.warning "-23-27-30-39"]
 
 (** {2 Protobuf YoJson Encoding} *)
@@ -555,6 +742,33 @@ let rec encode_json_cancel_job_request (v:cancel_job_request) =
 
 let rec encode_json_cancel_job_response (v:cancel_job_response) = 
 Pbrt_yojson.make_unit v
+
+let rec encode_json_list_jobs_request (v:list_jobs_request) = 
+Pbrt_yojson.make_unit v
+
+let rec encode_json_job_entry (v:job_entry) = 
+  let assoc = ref [] in
+  if job_entry_has_job_id v then (
+    assoc := ("jobId", Pbrt_yojson.make_string v.job_id) :: !assoc;
+  );
+  if job_entry_has_status v then (
+    assoc := ("status", encode_json_job_status v.status) :: !assoc;
+  );
+  if job_entry_has_progress_percent v then (
+    assoc := ("progressPercent", Pbrt_yojson.make_int (Int32.to_int v.progress_percent)) :: !assoc;
+  );
+  if job_entry_has_result_file v then (
+    assoc := ("resultFile", Pbrt_yojson.make_string v.result_file) :: !assoc;
+  );
+  `Assoc !assoc
+
+let rec encode_json_list_jobs_response (v:list_jobs_response) = 
+  let assoc = ref [] in
+  assoc := (
+    let l = v.jobs |> List.map encode_json_job_entry in
+    ("jobs", `List l) :: !assoc 
+  );
+  `Assoc !assoc
 
 [@@@ocaml.warning "-23-27-30-39"]
 
@@ -684,6 +898,54 @@ let rec decode_json_cancel_job_request d =
 let rec decode_json_cancel_job_response d =
 Pbrt_yojson.unit d "cancel_job_response" "empty record"
 
+let rec decode_json_list_jobs_request d =
+Pbrt_yojson.unit d "list_jobs_request" "empty record"
+
+let rec decode_json_job_entry d =
+  let v = default_job_entry () in
+  let assoc = match d with
+    | `Assoc assoc -> assoc
+    | _ -> assert(false)
+  in
+  List.iter (function 
+    | ("jobId", json_value) -> 
+      job_entry_set_job_id v (Pbrt_yojson.string json_value "job_entry" "job_id")
+    | ("status", json_value) -> 
+      job_entry_set_status v ((decode_json_job_status json_value))
+    | ("progressPercent", json_value) -> 
+      job_entry_set_progress_percent v (Pbrt_yojson.int32 json_value "job_entry" "progress_percent")
+    | ("resultFile", json_value) -> 
+      job_entry_set_result_file v (Pbrt_yojson.string json_value "job_entry" "result_file")
+    
+    | (_, _) -> () (*Unknown fields are ignored*)
+  ) assoc;
+  ({
+    _presence = v._presence;
+    job_id = v.job_id;
+    status = v.status;
+    progress_percent = v.progress_percent;
+    result_file = v.result_file;
+  } : job_entry)
+
+let rec decode_json_list_jobs_response d =
+  let v = default_list_jobs_response () in
+  let assoc = match d with
+    | `Assoc assoc -> assoc
+    | _ -> assert(false)
+  in
+  List.iter (function 
+    | ("jobs", `List l) -> begin
+      list_jobs_response_set_jobs v @@ List.map (function
+        | json_value -> (decode_json_job_entry json_value)
+      ) l;
+    end
+    
+    | (_, _) -> () (*Unknown fields are ignored*)
+  ) assoc;
+  ({
+    jobs = v.jobs;
+  } : list_jobs_response)
+
 module BenchpressApi = struct
   open Pbrt_services.Value_mode
   module Client = struct
@@ -726,6 +988,19 @@ module BenchpressApi = struct
         ~decode_json_res:decode_json_cancel_job_response
         ~decode_pb_res:decode_pb_cancel_job_response
         () : (cancel_job_request, unary, cancel_job_response, unary) Client.rpc)
+    open Pbrt_services
+    
+    let listJobs : (list_jobs_request, unary, list_jobs_response, unary) Client.rpc =
+      (Client.mk_rpc 
+        ~package:["benchpress_api"]
+        ~service_name:"BenchpressApi" ~rpc_name:"ListJobs"
+        ~req_mode:Client.Unary
+        ~res_mode:Client.Unary
+        ~encode_json_req:encode_json_list_jobs_request
+        ~encode_pb_req:encode_pb_list_jobs_request
+        ~decode_json_res:decode_json_list_jobs_response
+        ~decode_pb_res:decode_pb_list_jobs_response
+        () : (list_jobs_request, unary, list_jobs_response, unary) Client.rpc)
   end
   
   module Server = struct
@@ -761,10 +1036,21 @@ module BenchpressApi = struct
         ~decode_pb_req:decode_pb_cancel_job_request
         () : _ Server.rpc)
     
+    let listJobs : (list_jobs_request,unary,list_jobs_response,unary) Server.rpc = 
+      (Server.mk_rpc ~name:"ListJobs"
+        ~req_mode:Server.Unary
+        ~res_mode:Server.Unary
+        ~encode_json_res:encode_json_list_jobs_response
+        ~encode_pb_res:encode_pb_list_jobs_response
+        ~decode_json_req:decode_json_list_jobs_request
+        ~decode_pb_req:decode_pb_list_jobs_request
+        () : _ Server.rpc)
+    
     let make
       ~newJob:__handler__newJob
       ~getJobStatus:__handler__getJobStatus
       ~cancelJob:__handler__cancelJob
+      ~listJobs:__handler__listJobs
       () : _ Server.t =
       { Server.
         service_name="BenchpressApi";
@@ -773,6 +1059,7 @@ module BenchpressApi = struct
            (__handler__newJob newJob);
            (__handler__getJobStatus getJobStatus);
            (__handler__cancelJob cancelJob);
+           (__handler__listJobs listJobs);
         ];
       }
   end

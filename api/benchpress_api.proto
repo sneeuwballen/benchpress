@@ -39,8 +39,22 @@ message CancelJobRequest {
 
 message CancelJobResponse {}
 
+message ListJobsRequest {}
+
+message JobEntry {
+  string job_id = 1;
+  JobStatus status = 2;
+  int32 progress_percent = 3;
+  string result_file = 4;
+}
+
+message ListJobsResponse {
+  repeated JobEntry jobs = 1;
+}
+
 service BenchpressApi {
   rpc NewJob(NewJobRequest) returns (NewJobResponse);
   rpc GetJobStatus(GetJobStatusRequest) returns (GetJobStatusResponse);
   rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
 }
