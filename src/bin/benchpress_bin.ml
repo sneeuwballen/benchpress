@@ -93,6 +93,8 @@ module Run = struct
         (** if the output file already exists, overwrite it with the new one. *)
     compress: bool;
         (** compress output database with zstd after the run is complete *)
+    server: string option; [@names [ "server" ]]
+        (** report progress to benchpress server (HOST:PORT) *)
   }
   [@@deriving subliner]
 
@@ -111,7 +113,7 @@ module Run = struct
       ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
       ?output:p.output ~save:p.save ~wal_mode:p.wal_mode ~compress:p.compress
       ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
-      ~update:p.update defs p.paths ()
+      ~update:p.update ?server:p.server defs p.paths ()
 
   let cmd =
     let doc =

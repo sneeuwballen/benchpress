@@ -52,6 +52,23 @@ message ListJobsResponse {
   repeated JobEntry jobs = 1;
 }
 
+// Progress report sent by benchpress CLI to the server.
+message ActiveItem {
+  string prover = 1;
+  string file = 2;
+  double running_time = 3;
+}
+
+message ProgressReport {
+  string uuid = 1;
+  double start_ts = 2;
+  int32 total_tasks = 3;
+  int32 done_tasks = 4;
+  repeated ActiveItem active = 5;
+  bool finished = 6;
+  string stats = 7;
+}
+
 service BenchpressApi {
   rpc NewJob(NewJobRequest) returns (NewJobResponse);
   rpc GetJobStatus(GetJobStatusRequest) returns (GetJobStatusResponse);

@@ -43,6 +43,59 @@ type expect_filter =
   | TD_expect_bad
   | TD_expect_error
 
+(** {2 External job tracking (for benchpress CLI progress reports)} *)
+
+module Ext_jobs = struct
+  module Log = (val Logs.src_log (Logs.Src.create "benchpress.ext-jobs"))
+  module Api = Benchpress_api_proto.Benchpress_api
+
+  type job = { report: Api.progress_report; mutable last_seen: float }
+  type t = (string, job) Hashtbl.t
+
+  let create () : t = Hashtbl.create 8
+
+  let apply_report t ~now (r : Api.progress_report) =
+    let uuid = r.Api.uuid in
+    let job =
+      match Hashtbl.find_opt t uuid with
+      | Some j -> j
+      | None ->
+        let j = { report = r; last_seen = now } in
+        Hashtbl.add t uuid j;
+        Log.info (fun k ->
+            k "external job registered: %s (%ld tasks)" uuid r.Api.total_tasks);
+        j
+    in
+    Api.progress_report_set_total_tasks job.report r.Api.total_tasks;
+    Api.progress_report_set_done_tasks job.report r.Api.done_tasks;
+    Api.progress_report_set_active job.report r.Api.active;
+    Api.progress_report_set_finished job.report r.Api.finished;
+    Api.progress_report_set_start_ts job.report r.Api.start_ts;
+    if r.Api.stats <> "" then
+      Api.progress_report_set_stats job.report r.Api.stats;
+    job.last_seen <- now
+
+  let expire t ~now =
+    let timeout = 600.0 in
+    let expired = ref [] in
+    Hashtbl.iter
+      (fun uuid job ->
+        if (not job.report.Api.finished) && now -. job.last_seen > timeout then
+          expired := uuid :: !expired)
+      t;
+    List.iter
+      (fun uuid ->
+        Log.info (fun k -> k "external job expired (timeout): %s" uuid);
+        Hashtbl.remove t uuid)
+      !expired
+
+  let all_active t : job list =
+    Hashtbl.fold (fun _ j acc -> j :: acc) t []
+    |> List.filter (fun j -> not j.report.Api.finished)
+    |> List.sort (fun a b ->
+           compare a.report.Api.start_ts b.report.Api.start_ts)
+end
+
 type t = {
   mutable defs: Definitions.t;
   server: H.t;
@@ -50,7 +103,9 @@ type t = {
   data_dir: string;
   meta_cache: Meta_cache.t;
   allow_delete: bool;
+  allow_localhost: bool;
   auth: Auth.t;
+  ext_jobs: Ext_jobs.t;
 }
 
 (** {2 printbox -> html} *)
@@ -1582,7 +1637,11 @@ let handle_delete self : unit =
     H.Response.make_string ~headers:default_html_headers (Ok "")
   in
   H.add_route_handler self.server ~meth:`DELETE
-    ~middlewares:[ Auth_middleware.middleware self.auth ]
+    ~middlewares:
+      [
+        Auth_middleware.middleware ~allow_localhost:self.allow_localhost
+          self.auth;
+      ]
     H.Route.(exact "delete1" @/ string_urlencoded @/ return)
     (fun file _req ->
       Log.debug (fun k -> k "/delete1: path is %s" file);
@@ -1662,7 +1721,11 @@ let handle_tasks (self : t) : unit =
 
 let handle_run (self : t) : unit =
   H.add_route_handler self.server ~meth:`POST
-    ~middlewares:[ Auth_middleware.middleware self.auth ]
+    ~middlewares:
+      [
+        Auth_middleware.middleware ~allow_localhost:self.allow_localhost
+          self.auth;
+      ]
     H.Route.(exact "run" @/ string_urlencoded @/ return)
   @@ fun name _r ->
   let@ _chrono = query_wrap (Error.wrapf "serving /run/%s" name) in
@@ -1681,7 +1744,11 @@ let handle_run (self : t) : unit =
 
 let handle_job_interrupt (self : t) : unit =
   H.add_route_handler self.server ~meth:`POST
-    ~middlewares:[ Auth_middleware.middleware self.auth ]
+    ~middlewares:
+      [
+        Auth_middleware.middleware ~allow_localhost:self.allow_localhost
+          self.auth;
+      ]
     H.Route.(exact "interrupt" @/ string @/ return)
   @@ fun uuid _r ->
   Log.debug (fun k -> k "interrupt current task");
@@ -1824,6 +1891,14 @@ let handle_root (self : t) : unit =
                    ];
                  ];
           ];
+        (* External jobs progress bar — polls every 4s, takes no space when empty *)
+        div
+          [
+            "hx-get", "/api/ext-jobs-status/";
+            "hx-trigger", "load, every 4s";
+            "hx-swap", "innerHTML";
+          ]
+          [];
         div
           [ A.class_ "container" ]
           [
@@ -1909,6 +1984,120 @@ let handle_assets self : unit =
   mk_path "favicon.png" "media/png" Web_data.favicon;
   ()
 
+(** {2 External progress reporting endpoint + HTMX status fragment} *)
+
+let handle_ext_progress (self : t) : unit =
+  H.add_route_handler self.server ~meth:`POST
+    H.Route.(exact "api" @/ exact "progress" @/ return)
+  @@ fun req ->
+  let body = H.Request.body req in
+  let json_headers = H.Headers.([] |> set "content-type" "application/json") in
+  let report =
+    try
+      Some
+        (Benchpress_api_proto.Benchpress_api.decode_json_progress_report
+           (Yojson.Basic.from_string body))
+    with _ -> None
+  in
+  match report with
+  | None ->
+    H.Response.make_string ~code:400 ~headers:json_headers
+      (Ok {|{"error":"invalid json"}|})
+  | Some r ->
+    let module Api = Benchpress_api_proto.Benchpress_api in
+    if r.Api.uuid = "" then
+      H.Response.make_string ~code:400 ~headers:json_headers
+        (Ok {|{"error":"missing uuid"}|})
+    else (
+      Ext_jobs.apply_report self.ext_jobs ~now:(Unix.gettimeofday ()) r;
+      H.Response.make_string ~code:200 ~headers:json_headers
+        (Ok {|{"ok":true}|})
+    )
+
+let handle_ext_jobs_status (self : t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "api" @/ exact "ext-jobs-status" @/ return)
+  @@ fun _req ->
+  let now = Unix.gettimeofday () in
+  Ext_jobs.expire self.ext_jobs ~now;
+  let jobs = Ext_jobs.all_active self.ext_jobs in
+  let open Html in
+  if jobs = [] then
+    div [ A.id "ext-jobs-status" ] [] |> to_string_elt |> fun html ->
+    H.Response.make_string ~headers:default_html_headers (Ok html)
+  else
+    let module Api = Benchpress_api_proto.Benchpress_api in
+    let bars =
+      List.map
+        (fun (j : Ext_jobs.job) ->
+          let r = j.report in
+          let total = Int32.to_int r.Api.total_tasks in
+          let done_ = Int32.to_int r.Api.done_tasks in
+          let pct =
+            if total > 0 then
+              done_ * 100 / total
+            else
+              0
+          in
+          let elapsed = now -. r.Api.start_ts in
+          let active_str =
+            if r.Api.active = [] then
+              ""
+            else
+              spf " — %s"
+                (String.concat ", "
+                   (List.map
+                      (fun a ->
+                        spf "%s on %s (%.0fs)" a.Api.prover
+                          (Filename.basename a.Api.file)
+                          a.Api.running_time)
+                      r.Api.active))
+          in
+          div
+            [ A.class_ "mb-1" ]
+            [
+              div
+                [ A.class_ "d-flex justify-content-between align-items-center" ]
+                [
+                  small
+                    [ A.class_ "text-muted" ]
+                    [
+                      txt
+                        (spf "Job %s…: %d/%d%s (%s)"
+                           (String.sub r.Api.uuid 0 8)
+                           done_ total active_str
+                           (Human.human_duration elapsed));
+                    ];
+                  small [ A.class_ "text-muted" ] [ txt (spf "%d%%" pct) ];
+                ];
+              div
+                [ A.class_ "progress"; A.style "height: 4px" ]
+                [
+                  div
+                    [
+                      A.class_
+                        "progress-bar progress-bar-striped \
+                         progress-bar-animated";
+                      A.style (spf "width:%d%%" pct);
+                    ]
+                    [];
+                ];
+            ])
+        jobs
+    in
+    div
+      [
+        A.id "ext-jobs-status";
+        "hx-get", "/api/ext-jobs-status/";
+        "hx-trigger", "every 4s";
+        "hx-swap", "outerHTML";
+        A.class_ "mb-2";
+      ]
+      bars
+    |> to_string_elt
+    |> fun html ->
+    H.Response.make_string ~headers:default_html_headers (Ok html)
+
 let handle_file self : unit =
   H.add_route_handler self.server ~meth:`GET
     H.Route.(exact "get-file" @/ string_urlencoded @/ return)
@@ -1934,7 +2123,7 @@ let handle_file self : unit =
 (** {2 Embedded web server} *)
 
 module Cmd = struct
-  let main ?(local_only = false) ?port ~allow_delete ~log_lvl
+  let main ?(local_only = false) ?port ~allow_delete ~allow_localhost ~log_lvl
       ~(stdenv : Eio_unix.Stdenv.base) (defs : Definitions.t) () =
     try
       Logger.setup log_lvl;
@@ -1969,7 +2158,9 @@ module Cmd = struct
           task_q = Task_queue.create ~defs ();
           meta_cache;
           allow_delete;
+          allow_localhost;
           auth;
+          ext_jobs = Ext_jobs.create ();
         }
       in
       (* fiber to execute tasks *)
@@ -2001,8 +2192,10 @@ module Cmd = struct
       handle_compare2 self;
       if allow_delete then handle_delete self;
       handle_file self;
-      Api_handler.register ~auth:self.auth ~task_q:self.task_q ~defs:self.defs
-        ~data_dir:self.data_dir ~http_server:self.server;
+      handle_ext_progress self;
+      handle_ext_jobs_status self;
+      Api_handler.register ~allow_localhost ~auth:self.auth ~task_q:self.task_q
+        ~defs:self.defs ~data_dir:self.data_dir ~http_server:self.server;
       H.run server |> CCResult.map_err Error.of_exn
     with e -> Error (Error.of_exn e)
 
@@ -2020,12 +2213,20 @@ module Cmd = struct
       Arg.(
         value & opt bool false
         & info [ "allow-delete" ] ~doc:"allow deletion of files")
+    and allow_localhost =
+      Arg.(
+        value & flag
+        & info [ "allow-localhost" ]
+            ~doc:"allow requests from localhost without API key")
     and defs = Bin_utils.definitions_term in
     let doc = "serve embedded web UI on given port" in
-    let aux (log_lvl, defs) port local_only allow_delete () =
-      main ?port ~local_only ~allow_delete ~stdenv defs ~log_lvl ()
+    let aux (log_lvl, defs) port local_only allow_delete allow_localhost () =
+      main ?port ~local_only ~allow_delete ~allow_localhost ~stdenv defs
+        ~log_lvl ()
     in
-    ( Term.(const aux $ defs $ port $ local_only $ allow_delete $ const ()),
+    ( Term.(
+        const aux $ defs $ port $ local_only $ allow_delete $ allow_localhost
+        $ const ()),
       Cmd.info ~doc "serve" )
 end
 

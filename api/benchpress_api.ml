@@ -55,6 +55,24 @@ type list_jobs_response = {
   mutable jobs : job_entry list;
 }
 
+type active_item = {
+  mutable _presence: Pbrt.Bitfield.t; (** presence for 3 fields *)
+  mutable prover : string;
+  mutable file : string;
+  mutable running_time : float;
+}
+
+type progress_report = {
+  mutable _presence: Pbrt.Bitfield.t; (** presence for 6 fields *)
+  mutable uuid : string;
+  mutable start_ts : float;
+  mutable total_tasks : int32;
+  mutable done_tasks : int32;
+  mutable active : active_item list;
+  mutable finished : bool;
+  mutable stats : string;
+}
+
 let default_new_job_request (): new_job_request =
 {
   _presence=Pbrt.Bitfield.empty;
@@ -110,6 +128,26 @@ let default_job_entry (): job_entry =
 let default_list_jobs_response (): list_jobs_response =
 {
   jobs=[];
+}
+
+let default_active_item (): active_item =
+{
+  _presence=Pbrt.Bitfield.empty;
+  prover="";
+  file="";
+  running_time=0.;
+}
+
+let default_progress_report (): progress_report =
+{
+  _presence=Pbrt.Bitfield.empty;
+  uuid="";
+  start_ts=0.;
+  total_tasks=0l;
+  done_tasks=0l;
+  active=[];
+  finished=false;
+  stats="";
 }
 
 
@@ -295,6 +333,93 @@ let make_list_jobs_response
   list_jobs_response_set_jobs _res jobs;
   _res
 
+let[@inline] active_item_has_prover (self:active_item) : bool = (Pbrt.Bitfield.get self._presence 0)
+let[@inline] active_item_has_file (self:active_item) : bool = (Pbrt.Bitfield.get self._presence 1)
+let[@inline] active_item_has_running_time (self:active_item) : bool = (Pbrt.Bitfield.get self._presence 2)
+
+let[@inline] active_item_set_prover (self:active_item) (x:string) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 0); self.prover <- x
+let[@inline] active_item_set_file (self:active_item) (x:string) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 1); self.file <- x
+let[@inline] active_item_set_running_time (self:active_item) (x:float) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 2); self.running_time <- x
+
+let copy_active_item (self:active_item) : active_item =
+  { self with prover = self.prover }
+
+let make_active_item 
+  ?(prover:string option)
+  ?(file:string option)
+  ?(running_time:float option)
+  () : active_item  =
+  let _res = default_active_item () in
+  (match prover with
+  | None -> ()
+  | Some v -> active_item_set_prover _res v);
+  (match file with
+  | None -> ()
+  | Some v -> active_item_set_file _res v);
+  (match running_time with
+  | None -> ()
+  | Some v -> active_item_set_running_time _res v);
+  _res
+
+let[@inline] progress_report_has_uuid (self:progress_report) : bool = (Pbrt.Bitfield.get self._presence 0)
+let[@inline] progress_report_has_start_ts (self:progress_report) : bool = (Pbrt.Bitfield.get self._presence 1)
+let[@inline] progress_report_has_total_tasks (self:progress_report) : bool = (Pbrt.Bitfield.get self._presence 2)
+let[@inline] progress_report_has_done_tasks (self:progress_report) : bool = (Pbrt.Bitfield.get self._presence 3)
+let[@inline] progress_report_has_finished (self:progress_report) : bool = (Pbrt.Bitfield.get self._presence 4)
+let[@inline] progress_report_has_stats (self:progress_report) : bool = (Pbrt.Bitfield.get self._presence 5)
+
+let[@inline] progress_report_set_uuid (self:progress_report) (x:string) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 0); self.uuid <- x
+let[@inline] progress_report_set_start_ts (self:progress_report) (x:float) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 1); self.start_ts <- x
+let[@inline] progress_report_set_total_tasks (self:progress_report) (x:int32) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 2); self.total_tasks <- x
+let[@inline] progress_report_set_done_tasks (self:progress_report) (x:int32) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 3); self.done_tasks <- x
+let[@inline] progress_report_set_active (self:progress_report) (x:active_item list) : unit =
+  self.active <- x
+let[@inline] progress_report_set_finished (self:progress_report) (x:bool) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 4); self.finished <- x
+let[@inline] progress_report_set_stats (self:progress_report) (x:string) : unit =
+  self._presence <- (Pbrt.Bitfield.set self._presence 5); self.stats <- x
+
+let copy_progress_report (self:progress_report) : progress_report =
+  { self with uuid = self.uuid }
+
+let make_progress_report 
+  ?(uuid:string option)
+  ?(start_ts:float option)
+  ?(total_tasks:int32 option)
+  ?(done_tasks:int32 option)
+  ?(active=[])
+  ?(finished:bool option)
+  ?(stats:string option)
+  () : progress_report  =
+  let _res = default_progress_report () in
+  (match uuid with
+  | None -> ()
+  | Some v -> progress_report_set_uuid _res v);
+  (match start_ts with
+  | None -> ()
+  | Some v -> progress_report_set_start_ts _res v);
+  (match total_tasks with
+  | None -> ()
+  | Some v -> progress_report_set_total_tasks _res v);
+  (match done_tasks with
+  | None -> ()
+  | Some v -> progress_report_set_done_tasks _res v);
+  progress_report_set_active _res active;
+  (match finished with
+  | None -> ()
+  | Some v -> progress_report_set_finished _res v);
+  (match stats with
+  | None -> ()
+  | Some v -> progress_report_set_stats _res v);
+  _res
+
 [@@@ocaml.warning "-23-27-30-39"]
 
 (** {2 Formatters} *)
@@ -368,6 +493,26 @@ let rec pp_job_entry fmt (v:job_entry) =
 let rec pp_list_jobs_response fmt (v:list_jobs_response) = 
   let pp_i fmt () =
     Pbrt.Pp.pp_record_field ~first:true "jobs" (Pbrt.Pp.pp_list pp_job_entry) fmt v.jobs;
+  in
+  Pbrt.Pp.pp_brk pp_i fmt ()
+
+let rec pp_active_item fmt (v:active_item) = 
+  let pp_i fmt () =
+    Pbrt.Pp.pp_record_field ~absent:(not (active_item_has_prover v)) ~first:true "prover" Pbrt.Pp.pp_string fmt v.prover;
+    Pbrt.Pp.pp_record_field ~absent:(not (active_item_has_file v)) ~first:false "file" Pbrt.Pp.pp_string fmt v.file;
+    Pbrt.Pp.pp_record_field ~absent:(not (active_item_has_running_time v)) ~first:false "running_time" Pbrt.Pp.pp_float fmt v.running_time;
+  in
+  Pbrt.Pp.pp_brk pp_i fmt ()
+
+let rec pp_progress_report fmt (v:progress_report) = 
+  let pp_i fmt () =
+    Pbrt.Pp.pp_record_field ~absent:(not (progress_report_has_uuid v)) ~first:true "uuid" Pbrt.Pp.pp_string fmt v.uuid;
+    Pbrt.Pp.pp_record_field ~absent:(not (progress_report_has_start_ts v)) ~first:false "start_ts" Pbrt.Pp.pp_float fmt v.start_ts;
+    Pbrt.Pp.pp_record_field ~absent:(not (progress_report_has_total_tasks v)) ~first:false "total_tasks" Pbrt.Pp.pp_int32 fmt v.total_tasks;
+    Pbrt.Pp.pp_record_field ~absent:(not (progress_report_has_done_tasks v)) ~first:false "done_tasks" Pbrt.Pp.pp_int32 fmt v.done_tasks;
+    Pbrt.Pp.pp_record_field ~first:false "active" (Pbrt.Pp.pp_list pp_active_item) fmt v.active;
+    Pbrt.Pp.pp_record_field ~absent:(not (progress_report_has_finished v)) ~first:false "finished" Pbrt.Pp.pp_bool fmt v.finished;
+    Pbrt.Pp.pp_record_field ~absent:(not (progress_report_has_stats v)) ~first:false "stats" Pbrt.Pp.pp_string fmt v.stats;
   in
   Pbrt.Pp.pp_brk pp_i fmt ()
 
@@ -476,6 +621,52 @@ let rec encode_pb_list_jobs_response (v:list_jobs_response) encoder =
     Pbrt.Encoder.nested encode_pb_job_entry x encoder;
     Pbrt.Encoder.key 1 Pbrt.Bytes encoder; 
   ) v.jobs encoder;
+  ()
+
+let rec encode_pb_active_item (v:active_item) encoder = 
+  if active_item_has_prover v then (
+    Pbrt.Encoder.string v.prover encoder;
+    Pbrt.Encoder.key 1 Pbrt.Bytes encoder; 
+  );
+  if active_item_has_file v then (
+    Pbrt.Encoder.string v.file encoder;
+    Pbrt.Encoder.key 2 Pbrt.Bytes encoder; 
+  );
+  if active_item_has_running_time v then (
+    Pbrt.Encoder.float_as_bits64 v.running_time encoder;
+    Pbrt.Encoder.key 3 Pbrt.Bits64 encoder; 
+  );
+  ()
+
+let rec encode_pb_progress_report (v:progress_report) encoder = 
+  if progress_report_has_uuid v then (
+    Pbrt.Encoder.string v.uuid encoder;
+    Pbrt.Encoder.key 1 Pbrt.Bytes encoder; 
+  );
+  if progress_report_has_start_ts v then (
+    Pbrt.Encoder.float_as_bits64 v.start_ts encoder;
+    Pbrt.Encoder.key 2 Pbrt.Bits64 encoder; 
+  );
+  if progress_report_has_total_tasks v then (
+    Pbrt.Encoder.int32_as_varint v.total_tasks encoder;
+    Pbrt.Encoder.key 3 Pbrt.Varint encoder; 
+  );
+  if progress_report_has_done_tasks v then (
+    Pbrt.Encoder.int32_as_varint v.done_tasks encoder;
+    Pbrt.Encoder.key 4 Pbrt.Varint encoder; 
+  );
+  Pbrt.List_util.rev_iter_with (fun x encoder ->
+    Pbrt.Encoder.nested encode_pb_active_item x encoder;
+    Pbrt.Encoder.key 5 Pbrt.Bytes encoder; 
+  ) v.active encoder;
+  if progress_report_has_finished v then (
+    Pbrt.Encoder.bool v.finished encoder;
+    Pbrt.Encoder.key 6 Pbrt.Varint encoder; 
+  );
+  if progress_report_has_stats v then (
+    Pbrt.Encoder.string v.stats encoder;
+    Pbrt.Encoder.key 7 Pbrt.Bytes encoder; 
+  );
   ()
 
 [@@@ocaml.warning "-23-27-30-39"]
@@ -670,6 +861,80 @@ let rec decode_pb_list_jobs_response d =
   done;
   (v : list_jobs_response)
 
+let rec decode_pb_active_item d =
+  let v = default_active_item () in
+  let continue__= ref true in
+  while !continue__ do
+    match Pbrt.Decoder.key d with
+    | None -> (
+    ); continue__ := false
+    | Some (1, Pbrt.Bytes) -> begin
+      active_item_set_prover v (Pbrt.Decoder.string d);
+    end
+    | Some (1, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "active_item" 1 pk
+    | Some (2, Pbrt.Bytes) -> begin
+      active_item_set_file v (Pbrt.Decoder.string d);
+    end
+    | Some (2, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "active_item" 2 pk
+    | Some (3, Pbrt.Bits64) -> begin
+      active_item_set_running_time v (Pbrt.Decoder.float_as_bits64 d);
+    end
+    | Some (3, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "active_item" 3 pk
+    | Some (_, payload_kind) -> Pbrt.Decoder.skip d payload_kind
+  done;
+  (v : active_item)
+
+let rec decode_pb_progress_report d =
+  let v = default_progress_report () in
+  let continue__= ref true in
+  while !continue__ do
+    match Pbrt.Decoder.key d with
+    | None -> (
+      (* put lists in the correct order *)
+      progress_report_set_active v (List.rev v.active);
+    ); continue__ := false
+    | Some (1, Pbrt.Bytes) -> begin
+      progress_report_set_uuid v (Pbrt.Decoder.string d);
+    end
+    | Some (1, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "progress_report" 1 pk
+    | Some (2, Pbrt.Bits64) -> begin
+      progress_report_set_start_ts v (Pbrt.Decoder.float_as_bits64 d);
+    end
+    | Some (2, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "progress_report" 2 pk
+    | Some (3, Pbrt.Varint) -> begin
+      progress_report_set_total_tasks v (Pbrt.Decoder.int32_as_varint d);
+    end
+    | Some (3, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "progress_report" 3 pk
+    | Some (4, Pbrt.Varint) -> begin
+      progress_report_set_done_tasks v (Pbrt.Decoder.int32_as_varint d);
+    end
+    | Some (4, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "progress_report" 4 pk
+    | Some (5, Pbrt.Bytes) -> begin
+      progress_report_set_active v ((decode_pb_active_item (Pbrt.Decoder.nested d)) :: v.active);
+    end
+    | Some (5, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "progress_report" 5 pk
+    | Some (6, Pbrt.Varint) -> begin
+      progress_report_set_finished v (Pbrt.Decoder.bool d);
+    end
+    | Some (6, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "progress_report" 6 pk
+    | Some (7, Pbrt.Bytes) -> begin
+      progress_report_set_stats v (Pbrt.Decoder.string d);
+    end
+    | Some (7, pk) -> 
+      Pbrt.Decoder.unexpected_payload_message "progress_report" 7 pk
+    | Some (_, payload_kind) -> Pbrt.Decoder.skip d payload_kind
+  done;
+  (v : progress_report)
+
 [@@@ocaml.warning "-23-27-30-39"]
 
 (** {2 Protobuf YoJson Encoding} *)
@@ -767,6 +1032,45 @@ let rec encode_json_list_jobs_response (v:list_jobs_response) =
   assoc := (
     let l = v.jobs |> List.map encode_json_job_entry in
     ("jobs", `List l) :: !assoc 
+  );
+  `Assoc !assoc
+
+let rec encode_json_active_item (v:active_item) = 
+  let assoc = ref [] in
+  if active_item_has_prover v then (
+    assoc := ("prover", Pbrt_yojson.make_string v.prover) :: !assoc;
+  );
+  if active_item_has_file v then (
+    assoc := ("file", Pbrt_yojson.make_string v.file) :: !assoc;
+  );
+  if active_item_has_running_time v then (
+    assoc := ("runningTime", Pbrt_yojson.make_string (string_of_float v.running_time)) :: !assoc;
+  );
+  `Assoc !assoc
+
+let rec encode_json_progress_report (v:progress_report) = 
+  let assoc = ref [] in
+  if progress_report_has_uuid v then (
+    assoc := ("uuid", Pbrt_yojson.make_string v.uuid) :: !assoc;
+  );
+  if progress_report_has_start_ts v then (
+    assoc := ("startTs", Pbrt_yojson.make_string (string_of_float v.start_ts)) :: !assoc;
+  );
+  if progress_report_has_total_tasks v then (
+    assoc := ("totalTasks", Pbrt_yojson.make_int (Int32.to_int v.total_tasks)) :: !assoc;
+  );
+  if progress_report_has_done_tasks v then (
+    assoc := ("doneTasks", Pbrt_yojson.make_int (Int32.to_int v.done_tasks)) :: !assoc;
+  );
+  assoc := (
+    let l = v.active |> List.map encode_json_active_item in
+    ("active", `List l) :: !assoc 
+  );
+  if progress_report_has_finished v then (
+    assoc := ("finished", Pbrt_yojson.make_bool v.finished) :: !assoc;
+  );
+  if progress_report_has_stats v then (
+    assoc := ("stats", Pbrt_yojson.make_string v.stats) :: !assoc;
   );
   `Assoc !assoc
 
@@ -945,6 +1249,67 @@ let rec decode_json_list_jobs_response d =
   ({
     jobs = v.jobs;
   } : list_jobs_response)
+
+let rec decode_json_active_item d =
+  let v = default_active_item () in
+  let assoc = match d with
+    | `Assoc assoc -> assoc
+    | _ -> assert(false)
+  in
+  List.iter (function 
+    | ("prover", json_value) -> 
+      active_item_set_prover v (Pbrt_yojson.string json_value "active_item" "prover")
+    | ("file", json_value) -> 
+      active_item_set_file v (Pbrt_yojson.string json_value "active_item" "file")
+    | ("runningTime", json_value) -> 
+      active_item_set_running_time v (Pbrt_yojson.float json_value "active_item" "running_time")
+    
+    | (_, _) -> () (*Unknown fields are ignored*)
+  ) assoc;
+  ({
+    _presence = v._presence;
+    prover = v.prover;
+    file = v.file;
+    running_time = v.running_time;
+  } : active_item)
+
+let rec decode_json_progress_report d =
+  let v = default_progress_report () in
+  let assoc = match d with
+    | `Assoc assoc -> assoc
+    | _ -> assert(false)
+  in
+  List.iter (function 
+    | ("uuid", json_value) -> 
+      progress_report_set_uuid v (Pbrt_yojson.string json_value "progress_report" "uuid")
+    | ("startTs", json_value) -> 
+      progress_report_set_start_ts v (Pbrt_yojson.float json_value "progress_report" "start_ts")
+    | ("totalTasks", json_value) -> 
+      progress_report_set_total_tasks v (Pbrt_yojson.int32 json_value "progress_report" "total_tasks")
+    | ("doneTasks", json_value) -> 
+      progress_report_set_done_tasks v (Pbrt_yojson.int32 json_value "progress_report" "done_tasks")
+    | ("active", `List l) -> begin
+      progress_report_set_active v @@ List.map (function
+        | json_value -> (decode_json_active_item json_value)
+      ) l;
+    end
+    | ("finished", json_value) -> 
+      progress_report_set_finished v (Pbrt_yojson.bool json_value "progress_report" "finished")
+    | ("stats", json_value) -> 
+      progress_report_set_stats v (Pbrt_yojson.string json_value "progress_report" "stats")
+    
+    | (_, _) -> () (*Unknown fields are ignored*)
+  ) assoc;
+  ({
+    _presence = v._presence;
+    uuid = v.uuid;
+    start_ts = v.start_ts;
+    total_tasks = v.total_tasks;
+    done_tasks = v.done_tasks;
+    active = v.active;
+    finished = v.finished;
+    stats = v.stats;
+  } : progress_report)
 
 module BenchpressApi = struct
   open Pbrt_services.Value_mode

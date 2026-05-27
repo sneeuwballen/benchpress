@@ -8,16 +8,27 @@ let bearer_of_req req =
     else
       None
 
-let authenticate auth req =
-  match bearer_of_req req with
-  | None -> Error "missing Authorization: Bearer header"
-  | Some key ->
-    (match Auth.authenticate auth ~key with
-    | Some user_id -> Ok user_id
-    | None -> Error "invalid API key")
+let is_localhost req =
+  match Tiny_httpd.Request.client_addr req with
+  | Unix.ADDR_INET (addr, _) ->
+    Unix.string_of_inet_addr addr = "127.0.0.1"
+    || Unix.string_of_inet_addr addr = "::1"
+  | _ -> false
 
-let require_auth auth req ~send_resp =
-  match authenticate auth req with
+let authenticate ~allow_localhost auth req =
+  if allow_localhost && is_localhost req then
+    Ok "localhost"
+  else (
+    match bearer_of_req req with
+    | None -> Error "missing Authorization: Bearer header"
+    | Some key ->
+      (match Auth.authenticate auth ~key with
+      | Some user_id -> Ok user_id
+      | None -> Error "invalid API key")
+  )
+
+let require_auth ~allow_localhost auth req ~send_resp =
+  match authenticate ~allow_localhost auth req with
   | Ok user_id -> Some user_id
   | Error msg ->
     let body = Printf.sprintf {|{"code":"unauthenticated","msg":%S}|} msg in
@@ -33,9 +44,9 @@ let require_auth auth req ~send_resp =
 (* Hmap key used to store the authenticated user_id on the HTTP request. *)
 let user_meta_key : string Hmap.key = Hmap.Key.create ()
 
-let middleware auth : Tiny_httpd.Middleware.t =
+let middleware ~allow_localhost auth : Tiny_httpd.Middleware.t =
  fun handler req ~resp ->
-  match authenticate auth req with
+  match authenticate ~allow_localhost auth req with
   | Error msg ->
     (* Drain the request body so the connection can be reused. *)
     let (_ : string Tiny_httpd.Request.t) =

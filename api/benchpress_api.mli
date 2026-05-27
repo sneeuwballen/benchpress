@@ -62,6 +62,24 @@ type list_jobs_response = private {
   mutable jobs : job_entry list;
 }
 
+type active_item = private {
+  mutable _presence: Pbrt.Bitfield.t; (** presence for 3 fields *)
+  mutable prover : string;
+  mutable file : string;
+  mutable running_time : float;
+}
+
+type progress_report = private {
+  mutable _presence: Pbrt.Bitfield.t; (** presence for 6 fields *)
+  mutable uuid : string;
+  mutable start_ts : float;
+  mutable total_tasks : int32;
+  mutable done_tasks : int32;
+  mutable active : active_item list;
+  mutable finished : bool;
+  mutable stats : string;
+}
+
 
 (** {2 Basic values} *)
 
@@ -94,6 +112,12 @@ val default_job_entry : unit -> job_entry
 
 val default_list_jobs_response : unit -> list_jobs_response 
 (** [default_list_jobs_response ()] is a new empty value for type [list_jobs_response] *)
+
+val default_active_item : unit -> active_item 
+(** [default_active_item ()] is a new empty value for type [active_item] *)
+
+val default_progress_report : unit -> progress_report 
+(** [default_progress_report ()] is a new empty value for type [progress_report] *)
 
 
 (** {2 Make functions} *)
@@ -257,6 +281,87 @@ val copy_list_jobs_response : list_jobs_response -> list_jobs_response
 val list_jobs_response_set_jobs : list_jobs_response -> job_entry list -> unit
   (** set field jobs in list_jobs_response *)
 
+val make_active_item : 
+  ?prover:string ->
+  ?file:string ->
+  ?running_time:float ->
+  unit ->
+  active_item
+(** [make_active_item … ()] is a builder for type [active_item] *)
+
+val copy_active_item : active_item -> active_item
+
+val active_item_has_prover : active_item -> bool
+  (** presence of field "prover" in [active_item] *)
+
+val active_item_set_prover : active_item -> string -> unit
+  (** set field prover in active_item *)
+
+val active_item_has_file : active_item -> bool
+  (** presence of field "file" in [active_item] *)
+
+val active_item_set_file : active_item -> string -> unit
+  (** set field file in active_item *)
+
+val active_item_has_running_time : active_item -> bool
+  (** presence of field "running_time" in [active_item] *)
+
+val active_item_set_running_time : active_item -> float -> unit
+  (** set field running_time in active_item *)
+
+val make_progress_report : 
+  ?uuid:string ->
+  ?start_ts:float ->
+  ?total_tasks:int32 ->
+  ?done_tasks:int32 ->
+  ?active:active_item list ->
+  ?finished:bool ->
+  ?stats:string ->
+  unit ->
+  progress_report
+(** [make_progress_report … ()] is a builder for type [progress_report] *)
+
+val copy_progress_report : progress_report -> progress_report
+
+val progress_report_has_uuid : progress_report -> bool
+  (** presence of field "uuid" in [progress_report] *)
+
+val progress_report_set_uuid : progress_report -> string -> unit
+  (** set field uuid in progress_report *)
+
+val progress_report_has_start_ts : progress_report -> bool
+  (** presence of field "start_ts" in [progress_report] *)
+
+val progress_report_set_start_ts : progress_report -> float -> unit
+  (** set field start_ts in progress_report *)
+
+val progress_report_has_total_tasks : progress_report -> bool
+  (** presence of field "total_tasks" in [progress_report] *)
+
+val progress_report_set_total_tasks : progress_report -> int32 -> unit
+  (** set field total_tasks in progress_report *)
+
+val progress_report_has_done_tasks : progress_report -> bool
+  (** presence of field "done_tasks" in [progress_report] *)
+
+val progress_report_set_done_tasks : progress_report -> int32 -> unit
+  (** set field done_tasks in progress_report *)
+
+val progress_report_set_active : progress_report -> active_item list -> unit
+  (** set field active in progress_report *)
+
+val progress_report_has_finished : progress_report -> bool
+  (** presence of field "finished" in [progress_report] *)
+
+val progress_report_set_finished : progress_report -> bool -> unit
+  (** set field finished in progress_report *)
+
+val progress_report_has_stats : progress_report -> bool
+  (** presence of field "stats" in [progress_report] *)
+
+val progress_report_set_stats : progress_report -> string -> unit
+  (** set field stats in progress_report *)
+
 
 (** {2 Formatters} *)
 
@@ -289,6 +394,12 @@ val pp_job_entry : Format.formatter -> job_entry -> unit
 
 val pp_list_jobs_response : Format.formatter -> list_jobs_response -> unit 
 (** [pp_list_jobs_response v] formats v *)
+
+val pp_active_item : Format.formatter -> active_item -> unit 
+(** [pp_active_item v] formats v *)
+
+val pp_progress_report : Format.formatter -> progress_report -> unit 
+(** [pp_progress_report v] formats v *)
 
 
 (** {2 Protobuf Encoding} *)
@@ -323,6 +434,12 @@ val encode_pb_job_entry : job_entry -> Pbrt.Encoder.t -> unit
 val encode_pb_list_jobs_response : list_jobs_response -> Pbrt.Encoder.t -> unit
 (** [encode_pb_list_jobs_response v encoder] encodes [v] with the given [encoder] *)
 
+val encode_pb_active_item : active_item -> Pbrt.Encoder.t -> unit
+(** [encode_pb_active_item v encoder] encodes [v] with the given [encoder] *)
+
+val encode_pb_progress_report : progress_report -> Pbrt.Encoder.t -> unit
+(** [encode_pb_progress_report v encoder] encodes [v] with the given [encoder] *)
+
 
 (** {2 Protobuf Decoding} *)
 
@@ -355,6 +472,12 @@ val decode_pb_job_entry : Pbrt.Decoder.t -> job_entry
 
 val decode_pb_list_jobs_response : Pbrt.Decoder.t -> list_jobs_response
 (** [decode_pb_list_jobs_response decoder] decodes a [list_jobs_response] binary value from [decoder] *)
+
+val decode_pb_active_item : Pbrt.Decoder.t -> active_item
+(** [decode_pb_active_item decoder] decodes a [active_item] binary value from [decoder] *)
+
+val decode_pb_progress_report : Pbrt.Decoder.t -> progress_report
+(** [decode_pb_progress_report decoder] decodes a [progress_report] binary value from [decoder] *)
 
 
 (** {2 Protobuf YoJson Encoding} *)
@@ -389,6 +512,12 @@ val encode_json_job_entry : job_entry -> Yojson.Basic.t
 val encode_json_list_jobs_response : list_jobs_response -> Yojson.Basic.t
 (** [encode_json_list_jobs_response v encoder] encodes [v] to to json *)
 
+val encode_json_active_item : active_item -> Yojson.Basic.t
+(** [encode_json_active_item v encoder] encodes [v] to to json *)
+
+val encode_json_progress_report : progress_report -> Yojson.Basic.t
+(** [encode_json_progress_report v encoder] encodes [v] to to json *)
+
 
 (** {2 JSON Decoding} *)
 
@@ -421,6 +550,12 @@ val decode_json_job_entry : Yojson.Basic.t -> job_entry
 
 val decode_json_list_jobs_response : Yojson.Basic.t -> list_jobs_response
 (** [decode_json_list_jobs_response decoder] decodes a [list_jobs_response] value from [decoder] *)
+
+val decode_json_active_item : Yojson.Basic.t -> active_item
+(** [decode_json_active_item decoder] decodes a [active_item] value from [decoder] *)
+
+val decode_json_progress_report : Yojson.Basic.t -> progress_report
+(** [decode_json_progress_report decoder] decodes a [progress_report] value from [decoder] *)
 
 
 (** {2 Services} *)

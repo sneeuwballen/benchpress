@@ -1,11 +1,81 @@
 open Common
 module T = Test
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
+module Api = Benchpress_api_proto.Benchpress_api
+
+let http_post_json ~host ~port json_body =
+  let body_len = String.length json_body in
+  let request =
+    Printf.sprintf
+      "POST /api/progress/ HTTP/1.1\r\n\
+       Host: %s:%d\r\n\
+       Content-Type: application/json\r\n\
+       Content-Length: %d\r\n\
+       Connection: close\r\n\
+       \r\n\
+       %s"
+      host port body_len json_body
+  in
+  let addr = Unix.ADDR_INET (Unix.inet_addr_of_string host, port) in
+  try
+    let sock = Unix.socket ~cloexec:true Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Unix.connect sock addr;
+    let oc = Unix.out_channel_of_descr sock in
+    output_string oc request;
+    flush oc;
+    close_out oc
+  with exn ->
+    Log.debug (fun k -> k "progress report failed: %s" (Printexc.to_string exn))
+
+let send_report ~server (report : Api.progress_report) =
+  match String.rindex_opt server ':' with
+  | None -> Log.debug (fun k -> k "invalid server address: %s" server)
+  | Some i ->
+    let host = String.sub server 0 i in
+    let port_str = String.sub server (i + 1) (String.length server - i - 1) in
+    (match int_of_string_opt port_str with
+    | None -> Log.debug (fun k -> k "invalid port: %s" server)
+    | Some port ->
+      let json =
+        Api.encode_json_progress_report report |> Yojson.Basic.to_string
+      in
+      http_post_json ~host ~port json)
+
+let make_server_progress_cb ~server ~uuid ~start_ts ~total_tasks_ref =
+  let done_tasks = ref 0 in
+  let last_sent = ref 0.0 in
+  let send_update ~finished ~stats =
+    let now = Unix.gettimeofday () in
+    if finished || now -. !last_sent >= 5.0 then (
+      last_sent := now;
+      let report =
+        Api.make_progress_report ~uuid:(Uuidm.to_string uuid) ~start_ts
+          ~total_tasks:(Int32.of_int !total_tasks_ref)
+          ~done_tasks:(Int32.of_int !done_tasks) ~finished ~stats ()
+      in
+      send_report ~server report
+    )
+  in
+  object
+    method on_progress ~percent:_ ~elapsed_time:_ ~eta:_ =
+      let new_done = !done_tasks + 1 in
+      done_tasks := new_done;
+      send_update ~finished:false ~stats:""
+
+    method on_done =
+      done_tasks := !total_tasks_ref;
+      send_update ~finished:true ~stats:""
+
+    method finalize =
+      done_tasks := !total_tasks_ref;
+      send_update ~finished:true ~stats:""
+  end
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
     ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update ?(compress = false)
-    (defs : Definitions.t) (r : Action.run_provers) : _ * Test_compact_result.t
+    ?cb_progress ~total_tasks_ref (defs : Definitions.t)
+    (r : Action.run_provers) : Test_top_result.t lazy_t * Test_compact_result.t
     =
   let@ () =
     Error.guard
@@ -18,9 +88,12 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
       r.limits r.j r.pattern r.dirs r.provers
   in
   let len = List.length r.problems in
+  total_tasks_ref := len * List.length r.provers;
   Notify.sendf notify "testing with %d provers, %d problems…"
     (List.length r.provers) len;
-  let progress = Exec_action.Progress_run_provers.make ?pp_results ?dyn r in
+  let progress =
+    Exec_action.Progress_run_provers.make ?pp_results ?dyn ?cb_progress r
+  in
   (* solve *)
   let result =
     Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
@@ -77,7 +150,7 @@ type top_task =
 let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     ?summary ?task ?(dir_files = []) ?proof_dir ?output ?(save = true)
     ?(wal_mode = false) ?(compress = false) ~desktop_notification ~no_failure
-    ~update ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks
+    ~update ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks ?server
     (defs : Definitions.t) paths () : unit =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   Log.info (fun k ->
@@ -191,13 +264,26 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     let j = CCOpt.Infix.(j <+> Definitions.option_j defs) in
     let progress = CCOpt.Infix.(dyn <+> Definitions.option_progress defs) in
     let limits = run_provers_action.limits in
-    (* run action here! *)
     let uuid = Misc.mk_uuid () in
-
+    let total_tasks_ref = ref 0 in
+    let cb_full =
+      match server with
+      | Some s ->
+        make_server_progress_cb ~server:s ~uuid ~start_ts:timestamp
+          ~total_tasks_ref
+      | None ->
+        object
+          method on_progress ~percent:_ ~elapsed_time:_ ~eta:_ = ()
+          method on_done = ()
+          method finalize = ()
+        end
+    in
     let top_res, (results : Test_compact_result.t) =
       execute_run_prover_action ~uuid ?pp_results ?proof_dir ?dyn:progress
         ~limits ?j ?cpus ?output ~notify ~timestamp ~save ~wal_mode ~update
-        ~compress defs run_provers_action
+        ~compress
+        ~cb_progress:(cb_full :> Exec_action.cb_progress)
+        ~total_tasks_ref defs run_provers_action
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in
@@ -209,6 +295,7 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     );
     let r = Bin_utils.check_compact_res ~no_failure notify results in
     Notify.sync notify;
+    cb_full#finalize;
     Bin_utils.printbox_compact_results results;
     (* try to send a desktop notification *)
     if desktop_notification then (

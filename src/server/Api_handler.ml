@@ -249,7 +249,8 @@ let handle_list_jobs state http_req (_req : Api.list_jobs_request) =
   in
   Api.make_list_jobs_response ~jobs:entries ()
 
-let register ~auth ~task_q ~defs ~data_dir ~http_server =
+let register ~(allow_localhost : bool) ~auth ~task_q ~defs ~data_dir
+    ~http_server =
   let state = { auth; task_q; defs; data_dir } in
   let service =
     Api.BenchpressApi.Server.make
@@ -261,5 +262,5 @@ let register ~auth ~task_q ~defs ~data_dir ~http_server =
   in
   Log.info (fun k -> k "registering API service");
   add_service
-    ~middlewares:[ Auth_middleware.middleware auth ]
+    ~middlewares:[ Auth_middleware.middleware ~allow_localhost auth ]
     http_server service
