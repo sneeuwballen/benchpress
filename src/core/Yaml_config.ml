@@ -1,6 +1,5 @@
 (* This file is free software. See file "license" for more details. *)
 
-open Common
 open Json_decode
 
 exception Config_error of string
@@ -141,14 +140,15 @@ let rec resolve_action (defs : Definitions.t) (action_val : Ezjsonm.value) :
   | `O ((k, _) :: _) ->
     (match k with
     | "run_provers" ->
-      let prover_names = run_exn (field "provers" (list string)) action_val in
+      let inner = run_exn (field "run_provers" value) action_val in
+      let prover_names = run_exn (field "provers" (list string)) inner in
       let dir_paths =
-        run_exn (field_or "dirs" ~default:[] (list string)) action_val
+        run_exn (field_or "dirs" ~default:[] (list string)) inner
       in
-      let timeout = run_exn (field_opt "timeout" int) action_val in
-      let memory = run_exn (field_opt "memory" int) action_val in
-      let j = run_exn (field_opt "j" int) action_val in
-      let pattern = run_exn (field_opt "pattern" string) action_val in
+      let timeout = run_exn (field_opt "timeout" int) inner in
+      let memory = run_exn (field_opt "memory" int) inner in
+      let j = run_exn (field_opt "j" int) inner in
+      let pattern = run_exn (field_opt "pattern" string) inner in
       let provers = List.map (Definitions.find_prover' defs) prover_names in
       let dirs = List.map (Definitions.mk_subdir defs) dir_paths in
       let limits = Definitions.mk_limits ?timeout ?memory () in
@@ -238,7 +238,7 @@ let load_yaml_string (content : string) (cur_dir : string) : Definitions.t =
 let load_json_string (content : string) (cur_dir : string) : Definitions.t =
   let value =
     try Ezjsonm.value_from_string content
-    with Ezjsonm.Parse_error (v, msg) ->
+    with Ezjsonm.Parse_error (_v, msg) ->
       raise (Config_error (Printf.sprintf "JSON parse error: %s" msg))
   in
   decode value cur_dir

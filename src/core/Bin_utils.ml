@@ -7,34 +7,17 @@ module Log = (val Logs.src_log (Logs.Src.create "benchpress.bin_utils"))
 let is_zst_file = Misc.is_zst_file
 let strip_zst_suffix = Misc.strip_zst_suffix
 
-(** Load a list of config files into a [Definitions.t]. Supports YAML, JSON, and
-    Lua config files. *)
+(** Load a list of config files into a [Definitions.t]. Supports YAML and JSON
+    config files. Always includes the builtin config. *)
 let load_config_files (files : string list) : Definitions.t =
-  let is_yaml_or_json f =
-    let ext = Filename.extension f in
-    ext = ".yaml" || ext = ".yml" || ext = ".json"
+  let builtin =
+    Yaml_config.load_yaml_string Builtin_config.config "builtin_config.yaml"
   in
-  let yaml_files, lua_files = List.partition is_yaml_or_json files in
-  let yaml_defs =
-    match yaml_files with
-    | [] -> Definitions.empty
-    | _ ->
-      let init = Yaml_config.load_file (List.hd yaml_files) in
-      List.fold_left
-        (fun defs file ->
-          let more = Yaml_config.load_file file in
-          Definitions.merge defs more)
-        init (List.tl yaml_files)
-  in
-  let lua_defs =
-    match lua_files with
-    | [] -> Definitions.empty
-    | _ ->
-      let engine = Lua_engine.create () in
-      List.iter (Lua_engine.load_file engine) lua_files;
-      Lua_engine.to_definitions engine
-  in
-  Definitions.merge yaml_defs lua_defs
+  List.fold_left
+    (fun defs file ->
+      let more = Yaml_config.load_file file in
+      Definitions.merge defs more)
+    builtin files
 
 let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
   let open Cmdliner in
@@ -61,7 +44,7 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
     Arg.(
       value
       & opt_all (list ~sep:',' string) []
-      & info [ "c"; "config" ] ~doc:"configuration file (yaml, json, or lua)")
+      & info [ "c"; "config" ] ~doc:"configuration file (yaml or json)")
   and with_default =
     Arg.(
       value & opt bool false

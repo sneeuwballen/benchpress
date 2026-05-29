@@ -29,21 +29,16 @@
   trace.core
   yojson
   ezjsonm
-  yaml
-  ezlua
-  ocaml-lua
-  ppx_ezlua)
- (preprocess
-  (pps ppx_ezlua))
+  yaml)
  (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 
 (rule
  (targets builtin_config.ml)
- (deps builtin_config.lua)
+ (deps builtin_config.yaml)
  (action
   (with-stdout-to
    %{targets}
    (progn
-    (echo "let config = {lua|")
+    (echo "let config = {yaml|")
     (cat %{deps})
-    (echo "|lua} ;;")))))
+    (echo "|yaml} ;;")))))

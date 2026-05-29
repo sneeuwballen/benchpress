@@ -4,7 +4,7 @@
  (flags :standard -warn-error -a+8))
 
 (rule
- (targets fake_lua.out)
+ (targets fake_yaml.out)
  (deps
   (source_tree .))
  (action
@@ -16,7 +16,7 @@
     --save=false
     -q
     -c
-    conf_prover1.lua
+    conf_prover1.yaml
     --task
     runall))))
 
@@ -24,4 +24,4 @@
  (alias runtest)
  (package benchpress)
  (action
-  (diff fake_lua.expected fake_lua.out)))
+  (diff fake_yaml.expected fake_yaml.out)))

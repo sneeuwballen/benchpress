@@ -60,9 +60,6 @@
    (>= 0.6))
   (printbox-text
    (>= 0.6))
-  ezlua
-  ppx_ezlua
-  ocaml-lua
   ezjsonm
   yaml))
 

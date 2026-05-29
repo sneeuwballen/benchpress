@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../data/config-schema.json
+provers:
+  - name: fake1
+    binary: "$cur_dir/fake_prover.sh"
+    cmd: "$binary $file"
+    sat: "^SAT"
+    unsat: "^UNSAT"
+    unknown: "^UNKNOWN"
+
+dirs:
+  - path: "$cur_dir/fake_files/"
+    pattern: '.*\.fake'
+
+tasks:
+  - name: runall
+    action:
+      run_provers:
+        provers: [fake1]
+        dirs: ["$cur_dir/fake_files/"]
+        timeout: 30

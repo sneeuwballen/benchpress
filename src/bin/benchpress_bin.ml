@@ -513,11 +513,13 @@ module New_config = struct
       Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
-(** {2 Convert sexp config to Lua} *)
+(** {2 Convert between YAML and JSON configs} *)
 
 module Convert_config = struct
   type params = {
-    input: string; [@pos 0] [@docv "FILE"]  (** sexp config file to convert *)
+    input: string; [@pos 0] [@docv "FILE"]  (** config file to convert *)
+    format: string option; [@default None] [@names [ "f"; "format" ]]
+        (** output format: json or yaml *)
     output: string; [@default "-"] [@names [ "o"; "output" ]]
         (** output file ("-" for stdout) *)
   }
@@ -526,19 +528,42 @@ module Convert_config = struct
   let run (p : params) debug =
     Misc.setup_logs debug;
     let@ () = catch_err in
-    let src = CCIO.with_in p.input CCIO.read_all in
-    match Sexp_to_lua.sexp_str_to_lua_str src ~filename:p.input with
-    | Error e -> Error.fail e
-    | Ok lua ->
-      if p.output = "-" then
-        print_string lua
-      else (
-        CCIO.with_out p.output (fun oc -> output_string oc lua);
-        Format.printf "wrote %s@." p.output
-      )
+    let infer_format ext =
+      match ext with
+      | ".json" -> `yaml
+      | ".yaml" | ".yml" -> `json
+      | _ -> `yaml
+    in
+    let format =
+      match p.format with
+      | Some "json" -> `json
+      | Some "yaml" -> `yaml
+      | Some s ->
+        Error.failf "unsupported output format: %s (use 'json' or 'yaml')" s
+      | None -> infer_format (Filename.extension p.input)
+    in
+    let value =
+      match Filename.extension p.input with
+      | ".json" ->
+        Ezjsonm.value_from_string (CCIO.with_in p.input CCIO.read_all)
+      | ".yaml" | ".yml" ->
+        Yaml.of_string_exn (CCIO.with_in p.input CCIO.read_all)
+      | ext -> Error.failf "unsupported input format: %s" ext
+    in
+    let output_str =
+      match format with
+      | `json -> Ezjsonm.value_to_string ~minify:false value
+      | `yaml -> Yaml.to_string_exn value
+    in
+    if p.output = "-" then
+      print_string output_str
+    else (
+      CCIO.with_out p.output (fun oc -> output_string oc output_str);
+      Format.printf "wrote %s@." p.output
+    )
 
   let cmd =
-    let doc = "convert a .sexp config file to Lua" in
+    let doc = "convert a config file between YAML and JSON" in
     Cmdliner.Cmd.v
       (Cmdliner.Cmd.info ~doc "convert-config")
       Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
