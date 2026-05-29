@@ -679,11 +679,6 @@ let handle_prover_in (self : t) : unit =
         div []
           [
             pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover ];
-            (match prover.Prover.defined_in with
-            | None -> span [] []
-            | Some f ->
-              div []
-                [ txt "defined in"; mk_a [ A.href (uri_get_file f) ] [ txt f ] ]);
           ];
       ]
   in
@@ -1607,11 +1602,6 @@ let handle_provers (self : t) : unit =
       mk_li []
         [
           pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p ];
-          (match p.Prover.defined_in with
-          | None -> span [] []
-          | Some f ->
-            div []
-              [ txt "defined in"; mk_a [ A.href (uri_get_file f) ] [ txt f ] ]);
         ]
     in
     let l = CCList.map mk_prover provers in
@@ -1651,14 +1641,6 @@ let handle_tasks (self : t) : unit =
                     ];
                   mk_col ~cls:"col-auto" []
                     [ pre [] [ txt @@ Format.asprintf "%a@?" Task.pp t ] ];
-                  (match t.Task.defined_in with
-                  | None -> span [] []
-                  | Some f ->
-                    div []
-                      [
-                        txt "defined in";
-                        mk_a [ A.href (uri_get_file f) ] [ txt f ];
-                      ]);
                 ];
             ])
         tasks

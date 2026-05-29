@@ -575,31 +575,40 @@ end = struct
           CCList.map (fun prover -> prover.Prover.name, pb) self.provers)
         self.problems
     in
-    let config_file = Misc.file_for_uuid "config" ~timestamp uuid "lua" in
+    let config_file = Misc.file_for_uuid "config" ~timestamp uuid "yaml" in
     CCIO.with_out config_file (fun oc ->
         let pf fmt = Printf.fprintf oc fmt in
-        let opt f = function
+        let opt name = function
           | None -> ()
-          | Some v -> f v
+          | Some v -> pf "    %s: %S\n" name v
         in
+        pf "provers:\n";
         List.iter
           (fun (p : Prover.t) ->
-            pf "benchpress.prover {\n";
-            pf "  name = %S,\n" p.name;
-            pf "  binary = %S,\n" p.binary;
-            pf "  cmd = %S,\n" p.cmd;
-            opt (fun s -> pf "  sat = %S,\n" s) p.sat;
-            opt (fun s -> pf "  unsat = %S,\n" s) p.unsat;
-            opt (fun s -> pf "  unknown = %S,\n" s) p.unknown;
-            opt (fun s -> pf "  timeout = %S,\n" s) p.timeout;
-            opt (fun s -> pf "  memory = %S,\n" s) p.memory;
-            pf "}\n\n")
+            pf "  - name: %S\n" p.name;
+            pf "    binary: %S\n" p.binary;
+            pf "    cmd: %S\n" p.cmd;
+            opt "sat" p.sat;
+            opt "unsat" p.unsat;
+            opt "unknown" p.unknown;
+            opt "timeout" p.timeout;
+            opt "memory" p.memory;
+            if p.produces_proof then (
+              pf "    produces_proof: true\n";
+              opt "proof_ext" p.proof_ext
+            );
+            pf "\n")
           self.provers;
-        Misc.Str_map.iter
-          (fun _ (c : Proof_checker.t) ->
-            pf "-- proof checker: %s\n" c.name;
-            pf "-- cmd: %s\n\n" c.cmd)
-          self.checkers);
+        if Misc.Str_map.cardinal self.checkers > 0 then (
+          pf "proof_checkers:\n";
+          Misc.Str_map.iter
+            (fun _ (c : Proof_checker.t) ->
+              pf "  - name: %S\n" c.name;
+              pf "    cmd: %S\n" c.cmd;
+              pf "    valid: %S\n" c.valid;
+              pf "    invalid: %S\n" c.invalid;
+              pf "\n")
+            self.checkers));
 
     let get_tasks =
       let jobs_ref = ref jobs in

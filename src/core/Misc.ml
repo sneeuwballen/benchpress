@@ -186,7 +186,7 @@ let default_config () =
         Some path
       else
         None)
-    [ "conf.yaml"; "conf.yml"; "conf.json"; "conf.lua" ]
+    [ "conf.yaml"; "conf.yml"; "conf.json" ]
   |> function
   | Some p -> p
   | None -> dir // "conf.yaml"

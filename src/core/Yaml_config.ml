@@ -85,7 +85,6 @@ let decode_prover (cur_dir : string) : Prover.t t =
     Prover.name;
     binary;
     cmd;
-    cmd_fn = None;
     binary_deps;
     version;
     produces_proof;
@@ -100,9 +99,6 @@ let decode_prover (cur_dir : string) : Prover.t t =
     memory;
     custom;
     static_labels;
-    analyze_fn = None;
-    defined_in = None;
-    inherits = None;
   }
 
 let decode_proof_checker (cur_dir : string) : Proof_checker.t t =
@@ -212,7 +208,6 @@ let decode (value : Ezjsonm.value) (cur_dir : string) : Definitions.t =
               Task.name = task_name;
               synopsis = None;
               action;
-              defined_in = None;
             }
           in
           Definitions.add_task (With_loc.make ~loc:Loc.none task) defs)

@@ -14,18 +14,6 @@ type version =
 
 type name = string
 
-type cmd_ctx = {
-  binary: string;
-  file: string;
-  timeout: int;  (** timeout in seconds *)
-  memory: int;  (** memory limit in MB *)
-  proof_file: string option;  (** path where proof output should be written *)
-}
-
-type cmd_result =
-  | Shell of string  (** run via /bin/sh *)
-  | Exec of string array  (** execve directly, no shell *)
-
 type t = {
   (* Prover identification *)
   name: name;
@@ -36,8 +24,6 @@ type t = {
       (* additional list of binaries this depends on *)
   cmd: string;
       (* the command line to run. Possibly contains $binary, $file, $memory and $timeout *)
-  cmd_fn: (cmd_ctx -> cmd_result) option;
-      (** Lua-defined cmd function; takes priority over [cmd] when set. *)
   produces_proof: bool;
   proof_ext: string option;  (** file extension for proofs *)
   get_checkers:
@@ -63,12 +49,6 @@ type t = {
   custom: (string * string) list; (* custom tags *)
   static_labels: string list;
       (** Labels always attached to every result from this prover *)
-  analyze_fn:
-    (stdout:string -> stderr:string -> (Res.t * string list) option) option;
-      (** Lua-defined parse function; takes priority over regex fields when set.
-          Returns the result and any extra labels for this specific run. *)
-  defined_in: string option;
-  inherits: name option;  (** parent definition *)
 }
 
 type t_ = t
@@ -133,7 +113,6 @@ let pp out self =
     name;
     version;
     cmd;
-    cmd_fn = _;
     ulimits;
     unsat;
     sat;
@@ -143,17 +122,14 @@ let pp out self =
     binary;
     custom;
     static_labels;
-    analyze_fn = _;
     get_checkers = _;
     produces_proof;
     proof_ext;
-    inherits;
     binary_deps = _;
-    defined_in;
   } =
     self
   in
-  Fmt.fprintf out "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
+  Fmt.fprintf out "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
     (pp_f "name" pp_str) name
     (pp_f "version" Version.pp)
     version (pp_f "cmd" pp_str) cmd (pp_f "binary" pp_str) binary
@@ -163,12 +139,10 @@ let pp out self =
     timeout
     (pp_opt "unknown" pp_regex)
     unknown
-    (pp_opt "defined_in" pp_str)
-    defined_in
     (pp_f "produces_proof" Fmt.bool)
     produces_proof
     (pp_opt "proof_ext" pp_str)
-    proof_ext (pp_opt "inherits" pp_str) inherits
+    proof_ext
     (pp_l1 (pp_pair pp_str pp_regex))
     custom (pp_l1 pp_str) static_labels
 
@@ -246,47 +220,13 @@ let run ?env ?proof_file ~limits ~file (self : t) : Run_proc_result.t =
   let padded_limits =
     Limit.All.update_time (CCOpt.map Limit.Time.(add (mk ~s:1 ()))) limits
   in
-  match self.cmd_fn with
-  | Some fn ->
-    let ctx =
-      {
-        binary = self.binary;
-        file;
-        proof_file;
-        timeout =
-          (match limits.Limit.All.time with
-          | None -> 0
-          | Some t -> int_of_float (Limit.Time.as_float Seconds t));
-        memory =
-          (match limits.Limit.All.memory with
-          | None -> 0
-          | Some m -> int_of_float (Limit.Memory.as_float Megabytes m));
-      }
-    in
-    (match fn ctx with
-    | Shell cmd ->
-      let cmd =
-        Ulimit.prefix_cmd ~conf:self.ulimits ~limits:padded_limits ~cmd
-      in
-      Run_proc.run cmd
-    | Exec argv ->
-      (* Direct exec: no shell, no quoting. ulimit wrapping not applied
-         since it relies on shell syntax; limits must be set by the caller
-         via other means (e.g. cgroup or the cmd itself). *)
-      ignore env;
-      Run_proc.run_argv argv)
-  | None ->
-    let cmd = make_command ?env ?proof_file ~limits self ~file in
-    let cmd = Ulimit.prefix_cmd ~conf:self.ulimits ~limits:padded_limits ~cmd in
-    Run_proc.run cmd
+  let cmd = make_command ?env ?proof_file ~limits self ~file in
+  let cmd = Ulimit.prefix_cmd ~conf:self.ulimits ~limits:padded_limits ~cmd in
+  Run_proc.run cmd
 
 let analyze_p_opt (self : t) (r : Run_proc_result.t) :
     (Res.t * string list) option =
-  (* If a Lua parse function is set, use it *)
-  match self.analyze_fn with
-  | Some fn -> fn ~stdout:r.stdout ~stderr:r.stderr
-  | None ->
-    (* find if [re: re option] is present in [stdout] or [stderr] *)
+  (* find if [re: re option] is present in [stdout] or [stderr] *)
     let find_ re =
       let re = Re.Perl.compile_pat ~opts:[ `Multiline ] re in
       Re.execp re r.stdout || Re.execp re r.stderr
@@ -383,7 +323,8 @@ let to_db db (self : t) : unit =
     ""
     (* proof_checker column kept for schema compat; runtime uses get_checkers *)
     (self.proof_ext |> str_or)
-    (self.inherits |> CCOpt.get_or ~default:"")
+    ""
+  (* inherits column kept for schema compatibility, always empty *)
   |> Misc.unwrap_db (fun () -> "prover.to-db");
   if self.custom <> [] then
     List.iter
@@ -451,20 +392,20 @@ let of_db db name : t =
           k "prover.of_db: not ulimit_* fields, assuming defaults");
       { time = true; memory = true; stack = false }
   in
-  let produces_proof, proof_ext, inherits =
+  let produces_proof, proof_ext =
     (* parse separately, for migration purposes (old DBs don't have this) *)
     try
       Db.exec_exn db
-        {|select produces_proof, proof_ext, inherits from prover where name=?|}
+        {|select produces_proof, proof_ext from prover where name=?|}
         ~f:Db.Cursor.next
         ~ty:
           Db.Ty.(
             ( [ text ],
-              [ nullable text; nullable text; nullable text ],
-              fun a b c -> CCOpt.map_or ~default:false bool_of_string a, b, c ))
+              [ nullable text; nullable text ],
+              fun a b -> CCOpt.map_or ~default:false bool_of_string a, b ))
         name
-      |> CCOpt.get_or ~default:(false, None, None)
-    with _ -> false, None, None
+      |> CCOpt.get_or ~default:(false, None)
+    with _ -> false, None
   in
   Db.exec db
     {|select
@@ -477,7 +418,6 @@ let of_db db name : t =
           [ any_str; any_str; any_str; any_str; any_str; any_str; any_str ],
           fun version binary unsat sat unknown timeout memory ->
             let version = Version.deser_sexp version |> Error.unwrap in
-            let cmd = "<unknown>" in
             let sat = nonnull sat in
             let unsat = nonnull unsat in
             let unknown = nonnull unknown in
@@ -485,15 +425,11 @@ let of_db db name : t =
             let memory = nonnull memory in
             {
               name;
-              cmd;
-              cmd_fn = None;
+              cmd = "<unknown>";
               binary_deps = [];
-              defined_in = None;
-              custom;
               static_labels = [];
-              analyze_fn = None;
+              custom;
               get_checkers = None;
-              inherits;
               produces_proof;
               proof_ext;
               version;

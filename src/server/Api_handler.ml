@@ -161,7 +161,6 @@ let handle_new_job state http_req (req : Api.new_job_request) =
         name;
         synopsis = None;
         action = Action.Act_run_provers action;
-        defined_in = None;
       }
   in
   (* Use a ref so the on_complete closure can capture the job_id that is

@@ -14,30 +14,16 @@ type version =
 
 type name = string
 
-type cmd_ctx = {
-  binary: string;
-  file: string;
-  timeout: int;  (** timeout in seconds *)
-  memory: int;  (** memory limit in MB *)
-  proof_file: string option;  (** path where proof output should be written *)
-}
-
-type cmd_result =
-  | Shell of string  (** run via /bin/sh *)
-  | Exec of string array  (** execve directly, no shell *)
-
 type t = {
   (* Prover identification *)
   name: name;
   version: version;
-  (* Pover execution *)
+  (* Prover execution *)
   binary: string; (* name of the program itself *)
   binary_deps: string list; (* list of binaries this depends on *)
   cmd: string;
       (* the command line to run.
          possibly contains $binary, $file, $memory and $timeout *)
-  cmd_fn: (cmd_ctx -> cmd_result) option;
-      (** Lua-defined cmd function; takes priority over [cmd] when set. *)
   produces_proof: bool;
   proof_ext: string option;  (** file extension for proofs *)
   get_checkers:
@@ -62,12 +48,6 @@ type t = {
   custom: (string * string) list; (* custom tags *)
   static_labels: string list;
       (** Labels always attached to every result from this prover *)
-  analyze_fn:
-    (stdout:string -> stderr:string -> (Res.t * string list) option) option;
-      (** Lua-defined parse function; takes priority over regex fields when set.
-      *)
-  defined_in: string option;
-  inherits: name option;  (** parent definition *)
 }
 (** The type of provers configurations *)
 
