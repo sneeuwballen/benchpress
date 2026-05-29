@@ -14,6 +14,7 @@ type def =
   | D_proof_checker of Proof_checker.t with_loc
 
 val empty : t
+val merge : t -> t -> t
 val find_prover : t -> string -> Prover.t with_loc
 val find_prover' : t -> string -> Prover.t
 val find_checker : t -> string -> Proof_checker.t with_loc
@@ -38,10 +39,14 @@ end
 
 val option_j : t -> int option
 val option_progress : t -> bool option
+val with_option_j : int option -> t -> t
+val with_option_progress : bool option -> t -> t
+val with_cur_dir : string -> t -> t
 val add_prover : Prover.t with_loc -> t -> t
 val add_dir : Dir.t -> t -> t
 val add_task : Task.t with_loc -> t -> t
 val add_proof_checker : Proof_checker.t with_loc -> t -> t
+val mk_limits : ?timeout:int -> ?memory:int -> unit -> Limit.All.t
 val mk_subdir : t -> string -> Subdir.t
 val mk_paths : ?dir_files:string list -> string list -> string list
 

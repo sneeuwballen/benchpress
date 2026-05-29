@@ -57,9 +57,34 @@ let add_dir (d : Dir.t) self : t =
   in
   { self with dirs = d :: self.dirs; dir_vars }
 
+let merge (a : t) (b : t) : t =
+  {
+    defs = Str_map.union (fun _k a _b -> Some a) a.defs b.defs;
+    dirs = a.dirs @ b.dirs;
+    dir_vars = Str_map.union (fun _k a _b -> Some a) a.dir_vars b.dir_vars;
+    errors = a.errors @ b.errors;
+    cur_dir = b.cur_dir;
+    config_file = b.config_file;
+    tags = a.tags @ b.tags;
+    option_j =
+      (match b.option_j with
+      | Some _ -> b.option_j
+      | None -> a.option_j);
+    option_progress =
+      (match b.option_progress with
+      | Some _ -> b.option_progress
+      | None -> a.option_progress);
+  }
+
 let errors self = self.errors
 let option_j self = self.option_j
 let option_progress self = self.option_progress
+let with_option_j (j : int option) (self : t) : t = { self with option_j = j }
+
+let with_option_progress (p : bool option) (self : t) : t =
+  { self with option_progress = p }
+
+let with_cur_dir (d : string) (self : t) : t = { self with cur_dir = d }
 let custom_tags self = self.tags
 
 module Def = struct

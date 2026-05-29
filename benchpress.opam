@@ -35,6 +35,8 @@ depends: [
   "ezlua"
   "ppx_ezlua"
   "ocaml-lua"
+  "ezjsonm"
+  "yaml"
   "odoc" {with-doc}
 ]
 build: [

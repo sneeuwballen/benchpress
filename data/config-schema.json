@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://benchpress.dev/config-schema.json",
+  "title": "Benchpress Configuration",
+  "description": "Configuration for the Benchpress benchmark runner. Write as YAML or JSON.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "provers": {
+      "type": "array",
+      "description": "Solver/prover definitions",
+      "items": { "$ref": "#/$defs/prover" }
+    },
+    "proof_checkers": {
+      "type": "array",
+      "description": "Proof checker definitions",
+      "items": { "$ref": "#/$defs/proof_checker" }
+    },
+    "dirs": {
+      "type": "array",
+      "description": "Problem directories to benchmark",
+      "items": { "$ref": "#/$defs/dir" }
+    },
+    "tasks": {
+      "type": "array",
+      "description": "Named runnable tasks",
+      "items": { "$ref": "#/$defs/task" }
+    },
+    "options": {
+      "$ref": "#/$defs/options"
+    }
+  },
+  "$defs": {
+    "prover": {
+      "type": "object",
+      "required": ["name", "cmd"],
+      "additionalProperties": false,
+      "properties": {
+        "name":           { "type": "string", "description": "Prover identifier" },
+        "binary":         { "type": "string", "description": "Binary path (default: same as name, looked up in $PATH)" },
+        "cmd":            { "type": "string", "description": "Command template. Variables: $binary, $file, $timeout, $memory, $proof_file, $cur_dir" },
+        "sat":            { "type": "string", "description": "Perl regex for SAT" },
+        "unsat":          { "type": "string", "description": "Perl regex for UNSAT" },
+        "unknown":        { "type": "string", "description": "Perl regex for UNKNOWN" },
+        "timeout":        { "type": "string", "description": "Perl regex for TIMEOUT" },
+        "memory":         { "type": "string", "description": "Perl regex for OOM" },
+        "version":        { "type": "string", "description": "Version string" },
+        "binary_deps":    { "type": "array", "items": { "type": "string" } },
+        "produces_proof": { "type": "boolean", "default": false },
+        "proof_ext":      { "type": "string", "description": "Proof file extension" },
+        "proof_check":    { "type": "array", "items": { "$ref": "#/$defs/proof_check_entry" } },
+        "tags":           { "type": "array", "items": { "$ref": "#/$defs/custom_tag" } },
+        "static_labels":  { "type": "array", "items": { "type": "string" } },
+        "ulimit_time":    { "type": "boolean", "default": true },
+        "ulimit_memory":  { "type": "boolean", "default": true },
+        "ulimit_stack":   { "type": "boolean", "default": false }
+      }
+    },
+    "proof_check_entry": {
+      "type": "object",
+      "required": ["checker"],
+      "additionalProperties": false,
+      "properties": {
+        "checker": { "type": "string", "description": "Name of a proof_checker" },
+        "when":    { "type": "string", "description": "Condition. E.g. 'result == \"unsat\"'" },
+        "file":    { "type": "string", "description": "Override proof file path" }
+      }
+    },
+    "custom_tag": {
+      "type": "object",
+      "required": ["name", "regex"],
+      "additionalProperties": false,
+      "properties": {
+        "name":  { "type": "string" },
+        "regex": { "type": "string" }
+      }
+    },
+    "proof_checker": {
+      "type": "object",
+      "required": ["name", "cmd", "valid", "invalid"],
+      "additionalProperties": false,
+      "properties": {
+        "name":    { "type": "string" },
+        "cmd":     { "type": "string", "description": "Command template. Variables: $file, $proof_file, $cur_dir" },
+        "valid":   { "type": "string" },
+        "invalid": { "type": "string" }
+      }
+    },
+    "dir": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "name":    { "type": "string" },
+        "path":    { "type": "string" },
+        "pattern": { "type": "string" },
+        "expect":  { "type": "string", "enum": ["comment", "unknown", "sat", "unsat", "error", "timeout"] }
+      }
+    },
+    "task": {
+      "type": "object",
+      "required": ["name", "action"],
+      "additionalProperties": false,
+      "properties": {
+        "name":     { "type": "string" },
+        "synopsis": { "type": "string" },
+        "action":   { "$ref": "#/$defs/action" }
+      }
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["run_provers"],
+          "additionalProperties": false,
+          "properties": {
+            "run_provers": { "$ref": "#/$defs/run_provers" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["seq"],
+          "additionalProperties": false,
+          "properties": {
+            "seq": { "type": "array", "items": { "$ref": "#/$defs/action" } }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["run_cmd"],
+          "additionalProperties": false,
+          "properties": {
+            "run_cmd": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "run_provers": {
+      "type": "object",
+      "required": ["provers"],
+      "additionalProperties": false,
+      "properties": {
+        "provers": { "type": "array", "items": { "type": "string" } },
+        "dirs":    { "type": "array", "items": { "type": "string" } },
+        "timeout": { "type": "integer", "minimum": 1 },
+        "memory":  { "type": "integer", "minimum": 1 },
+        "j":       { "type": "integer", "minimum": 1 },
+        "pattern": { "type": "string" }
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "j":        { "type": "integer", "minimum": 1 },
+        "progress": { "type": "boolean" }
+      }
+    }
+  }
+}

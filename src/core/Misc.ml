@@ -176,7 +176,20 @@ let set_lexbuf_filename buf filename =
 let ( // ) = Filename.concat
 let data_dir () = Xdg.data_dir () // !Xdg.name_of_project
 let config_dir () = Xdg.config_dir () // !Xdg.name_of_project
-let default_config () = config_dir () // "conf.lua"
+
+let default_config () =
+  let dir = config_dir () in
+  List.find_map
+    (fun name ->
+      let path = dir // name in
+      if Sys.file_exists (Xdg.interpolate_home path) then
+        Some path
+      else
+        None)
+    [ "conf.yaml"; "conf.yml"; "conf.json"; "conf.lua" ]
+  |> function
+  | Some p -> p
+  | None -> dir // "conf.yaml"
 
 (** Get current time in seconds since epoch *)
 let now_s () = Ptime_clock.now () |> Ptime.to_float_s

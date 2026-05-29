@@ -28,6 +28,8 @@
   processor
   trace.core
   yojson
+  ezjsonm
+  yaml
   ezlua
   ocaml-lua
   ppx_ezlua)

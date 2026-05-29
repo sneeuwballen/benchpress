@@ -62,7 +62,9 @@
    (>= 0.6))
   ezlua
   ppx_ezlua
-  ocaml-lua))
+  ocaml-lua
+  ezjsonm
+  yaml))
 
 (package
  (name benchpress-server)

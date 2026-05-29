@@ -376,13 +376,8 @@ module Check_config = struct
       else
         p.files
     in
-    List.iter
-      (fun path ->
-        let engine = Lua_engine.create () in
-        Lua_engine.load_file engine path;
-        let defs = Lua_engine.to_definitions engine in
-        Format.printf "@[<v>config %s:@ %a@]@." path Definitions.pp defs)
-      f
+    let defs = Bin_utils.load_config_files f in
+    Format.printf "@[<v>%a@]@." Definitions.pp defs
 
   let cmd =
     let doc = "parse and print configuration file(s)" in
@@ -505,13 +500,14 @@ module New_config = struct
     Misc.setup_logs debug;
     let@ () = catch_err in
     match p.output with
-    | None -> print_string Lua_config.config_template
+    | None -> print_string Yaml_config.config_template
     | Some path ->
-      CCIO.with_out path (fun oc -> output_string oc Lua_config.config_template);
+      CCIO.with_out path (fun oc ->
+          output_string oc Yaml_config.config_template);
       Format.printf "wrote %s@." path
 
   let cmd =
-    let doc = "create a new annotated Lua config file" in
+    let doc = "create a new YAML config file with schema annotation" in
     Cmdliner.Cmd.v
       (Cmdliner.Cmd.info ~doc "new-config")
       Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
