@@ -608,7 +608,8 @@ end = struct
               pf "    valid: %S\n" c.valid;
               pf "    invalid: %S\n" c.invalid;
               pf "\n")
-            self.checkers));
+            self.checkers
+        ));
 
     let get_tasks =
       let jobs_ref = ref jobs in

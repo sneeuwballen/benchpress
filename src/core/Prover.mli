@@ -8,10 +8,7 @@ open Common
 
 (** {2 Prover configurations} *)
 
-type version =
-  | Tag of string
-  | Git of { branch: string; commit: string (* branch & commit hash *) }
-
+type version = string
 type name = string
 
 type t = {
@@ -65,7 +62,6 @@ module Version : sig
 
   val pp : t Fmt.printer
   val to_string_short : t -> string
-  val to_sexp : t -> Sexp_loc.t
   val ser_sexp : t -> string
 end
 

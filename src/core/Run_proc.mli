@@ -5,7 +5,3 @@ val with_proc_mgr : Eio_unix.Process.mgr_ty Eio.Resource.t -> (unit -> 'a) -> 'a
 val run : string -> Run_proc_result.t
 (** [run cmd] runs the shell command [cmd] via [/bin/sh -c] and returns its
     output. Requires a process manager set via [with_proc_mgr]. *)
-
-val run_argv : string array -> Run_proc_result.t
-(** [run_argv argv] spawns [argv.(0)] directly (no shell) and returns its
-    output. Requires a process manager set via [with_proc_mgr]. *)

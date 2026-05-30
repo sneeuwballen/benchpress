@@ -78,8 +78,8 @@ let decode_prover (cur_dir : string) : Prover.t t =
   in
   let version =
     match version with
-    | Some s -> Prover.Tag s
-    | None -> Prover.Tag "<unknown>"
+    | Some s -> s
+    | None -> "<unknown>"
   in
   {
     Prover.name;
@@ -203,13 +203,7 @@ let decode (value : Ezjsonm.value) (cur_dir : string) : Definitions.t =
               raise
                 (Config_error (Printf.sprintf "task '%s': %s" task_name msg))
           in
-          let task =
-            {
-              Task.name = task_name;
-              synopsis = None;
-              action;
-            }
-          in
+          let task = { Task.name = task_name; synopsis = None; action } in
           Definitions.add_task (With_loc.make ~loc:Loc.none task) defs)
         defs raw_tasks
     in

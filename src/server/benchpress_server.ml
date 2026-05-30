@@ -677,9 +677,7 @@ let handle_prover_in (self : t) : unit =
             uri_prover_in file p_name, "prover", true;
           ];
         div []
-          [
-            pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover ];
-          ];
+          [ pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover ] ];
       ]
   in
   H.Response.make_string (Ok (Html.to_string h))
@@ -1599,10 +1597,7 @@ let handle_provers (self : t) : unit =
   let h =
     let open Html in
     let mk_prover p =
-      mk_li []
-        [
-          pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p ];
-        ]
+      mk_li [] [ pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p ] ]
     in
     let l = CCList.map mk_prover provers in
     mk_page ~title:"provers"

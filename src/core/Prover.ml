@@ -8,10 +8,7 @@ let src_log = Logs.Src.create "prover"
 
 module Log = (val Logs.src_log src_log)
 
-type version =
-  | Tag of string
-  | Git of { branch: string; commit: string (* branch & commit hash *) }
-
+type version = string
 type name = string
 
 type t = {
@@ -20,8 +17,7 @@ type t = {
   version: version;
   (* Prover execution *)
   binary: string; (* name of the program itself *)
-  binary_deps: (string list[@default []]);
-      (* additional list of binaries this depends on *)
+  binary_deps: string list; (* additional list of binaries this depends on *)
   cmd: string;
       (* the command line to run. Possibly contains $binary, $file, $memory and $timeout *)
   produces_proof: bool;
@@ -62,49 +58,25 @@ let compare_by_name p1 p2 = compare_name p1.name p2.name
 module Version = struct
   type t = version
 
-  let to_string_short = function
-    | Tag s -> s
-    | Git { branch = b; commit = c } -> Printf.sprintf "%s#%s" b c
-
-  let pp out =
-    let open Misc.Pp in
-    function
-    | Tag s -> Fmt.fprintf out "%a" pp_str s
-    | Git { branch = b; commit = c } ->
-      Fmt.fprintf out "(@[git@ branch=%a@ commit=%a@])" pp_str b pp_str c
-
-  let to_sexp = function
-    | Tag s -> Sexp_loc.atom s
-    | Git { branch; commit } ->
-      let open Sexp_loc in
-      of_list
-        [
-          atom "git";
-          of_list [ atom "branch"; atom branch ];
-          of_list [ atom "commit"; atom commit ];
-        ]
-
-  let sexp_decode =
-    let open Sexp_decode in
-    try_l ~msg:"expected version"
-      [
-        ( is_atom,
-          let+ s = string in
-          Tag s );
-        ( is_applied "git",
-          let* m = applied_fields "git" in
-          let* branch = Fields.field m "branch" string in
-          let* commit = Fields.field m "commit" string in
-          let+ () = Fields.check_no_field_left m in
-          Git { branch; commit } );
-      ]
-
-  let ser_sexp v = Sexp_loc.to_string @@ to_sexp v
+  let to_string_short v = v
+  let pp out v = Fmt.string out v
+  let ser_sexp v = v
 
   let deser_sexp s =
-    match Sexp_loc.parse_string ~filename:"<from db>" s with
-    | Error e -> Error (Error.make ~loc:Loc.none e)
-    | Ok s -> Sexp_decode.run' sexp_decode s |> CCResult.map_err Error.make
+    try
+      (* parse old sexp-encoded versions from the DB, e.g. (Tag "foo") *)
+      let s = String.trim s in
+      if String.length s >= 2 && s.[0] = '(' then (
+        let inner = String.sub s 1 (String.length s - 2) |> String.trim in
+        if String.starts_with ~prefix:"Tag" inner then
+          Scanf.sscanf inner "Tag %S" Fun.id
+        else if String.starts_with ~prefix:"Git" inner then
+          "<git>"
+        else
+          s
+      ) else
+        s
+    with _ -> s
 end
 
 let pp out self =
@@ -227,34 +199,34 @@ let run ?env ?proof_file ~limits ~file (self : t) : Run_proc_result.t =
 let analyze_p_opt (self : t) (r : Run_proc_result.t) :
     (Res.t * string list) option =
   (* find if [re: re option] is present in [stdout] or [stderr] *)
-    let find_ re =
-      let re = Re.Perl.compile_pat ~opts:[ `Multiline ] re in
-      Re.execp re r.stdout || Re.execp re r.stderr
-    in
-    let find_opt_ re =
-      match re with
-      | None -> false
-      | Some re -> find_ re
-    in
-    let res_opt =
-      if find_opt_ self.sat then
-        Some Res.Sat
-      else if find_opt_ self.unsat then
-        Some Res.Unsat
-      else if find_opt_ self.timeout then
-        Some Res.Timeout
-      else if find_opt_ self.unknown then
-        Some Res.Unknown
-      else
-        CCList.find_map
-          (fun (tag, re) ->
-            if find_ re then
-              Some (Res.Tag tag)
-            else
-              None)
-          self.custom
-    in
-    CCOpt.map (fun res -> res, []) res_opt
+  let find_ re =
+    let re = Re.Perl.compile_pat ~opts:[ `Multiline ] re in
+    Re.execp re r.stdout || Re.execp re r.stderr
+  in
+  let find_opt_ re =
+    match re with
+    | None -> false
+    | Some re -> find_ re
+  in
+  let res_opt =
+    if find_opt_ self.sat then
+      Some Res.Sat
+    else if find_opt_ self.unsat then
+      Some Res.Unsat
+    else if find_opt_ self.timeout then
+      Some Res.Timeout
+    else if find_opt_ self.unknown then
+      Some Res.Unknown
+    else
+      CCList.find_map
+        (fun (tag, re) ->
+          if find_ re then
+            Some (Res.Tag tag)
+          else
+            None)
+        self.custom
+  in
+  CCOpt.map (fun res -> res, []) res_opt
 
 let db_prepare (db : Db.t) : unit =
   Db.exec0 db
@@ -417,7 +389,7 @@ let of_db db name : t =
         ( [ text ],
           [ any_str; any_str; any_str; any_str; any_str; any_str; any_str ],
           fun version binary unsat sat unknown timeout memory ->
-            let version = Version.deser_sexp version |> Error.unwrap in
+            let version = Version.deser_sexp version in
             let sat = nonnull sat in
             let unsat = nonnull unsat in
             let unknown = nonnull unknown in

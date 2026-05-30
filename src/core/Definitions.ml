@@ -244,22 +244,6 @@ let mk_run_provers_slurm_submission ?j ~paths ?timeout ?memory ?pattern ~provers
     loc;
   }
 
-let completions (self : t) ?before_pos (str : string) : def list =
-  to_iter self
-  |> Iter.filter_map (fun (name, d) ->
-         if CCString.prefix ~pre:str name then
-           Some d
-         else
-           None)
-  |> (match before_pos with
-     | None -> fun i -> i
-     | Some query_pos ->
-       Iter.filter (fun d ->
-           (* keep [d] if it comes before [query_pos] *)
-           let loc = Def.loc d in
-           Loc.Pos.le loc.input loc.stop query_pos))
-  |> Iter.to_rev_list
-
 let pp_def out = function
   | D_prover { view = p; _ } -> Fmt.fprintf out "%a" Prover.pp p
   | D_task { view = t; _ } -> Fmt.fprintf out "%a" Task.pp t

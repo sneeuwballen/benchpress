@@ -80,7 +80,4 @@ val mk_run_provers_slurm_submission :
   t ->
   Action.run_provers_slurm_submission
 
-val completions : t -> ?before_pos:Loc.pos -> string -> def list
-(** Find possible completions *)
-
 val pp : t Fmt.printer
