@@ -11,11 +11,11 @@ provers:
     cmd: "minisat -cpu-lim=$timeout $file"
 
   - name: z3
-    cmd: "z3 $file"
+    cmd: "z3 -T:${timeout} -memory:${memory} $file"
     unsat: "unsat|(s UNSATISFIABLE)"
     sat: "(^sat)|(s SATISFIABLE)"
 
-  - name: cvc4
-    cmd: "cvc4 $file"
+  - name: cvc5
+    cmd: "cvc5 --tlimit=${timeout}000 $file"
     unsat: "unsat"
     sat: "^sat"
