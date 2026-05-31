@@ -1905,7 +1905,7 @@ let handle_file self : unit =
       Log.debug (fun k -> k "get-file: `%s`" file);
       let bytes =
         if file = "prelude" then
-          H.IO.Input.of_string Builtin_config.config (* magic file! *)
+          H.IO.Input.of_string Static_data.builtin_config (* magic file! *)
         else (
           try H.IO.Input.of_in_channel @@ open_in file
           with e ->

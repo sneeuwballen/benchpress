@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://benchpress.dev/config-schema.json
+#
+# Benchpress configuration file.
+# Write as YAML (preferred) or JSON.
+# Use 'benchpress check-config' to validate.
+
+provers:
+  # Minimal prover example
+  - name: my-prover
+    cmd: "$binary $file"
+    sat: "^SAT"
+    unsat: "^UNSAT"
+    unknown: "^UNKNOWN"
+
+  # Prover with proof checking
+  # - name: my-prover-with-proof
+  #   cmd: "$binary $file $proof_file"
+  #   sat: "^SAT"
+  #   unsat: "^UNSAT"
+  #   produces_proof: true
+  #   proof_ext: drat
+  #   proof_check:
+  #     - checker: drat-trim
+  #       when: result == "unsat"
+
+# proof_checkers:
+#   - name: drat-trim
+#     cmd: "$cur_dir/drat-trim $file $proof_file"
+#     valid: "s VERIFIED$"
+#     invalid: "s NOT VERIFIED$"
+
+dirs:
+  - path: "$cur_dir/problems"
+    pattern: '.*\.smt2$'
+
+tasks:
+  - name: all
+    action:
+      run_provers:
+        provers: [my-prover]
+        timeout: 30
+        dirs: ["$cur_dir/problems"]
+
+# options:
+#   j: 4
+#   progress: true

@@ -34,13 +34,12 @@ let rec eval (t : t) (ctx : context) : bool =
     | false -> eval b ctx)
   | Not e -> not (eval e ctx)
 
-let is_space c = c = ' ' || c = '\t'
+let[@inline] is_space c = c = ' ' || c = '\t'
 
 let is_word_char c =
-  Char.equal c '_'
-  || (Char.code 'a' <= Char.code c && Char.code c <= Char.code 'z')
-  || (Char.code 'A' <= Char.code c && Char.code c <= Char.code 'Z')
-  || (Char.code '0' <= Char.code c && Char.code c <= Char.code '9')
+  match c with
+  | '_' | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
+  | _ -> false
 
 let parse (s : string) : (t, string) result =
   let len = String.length s in

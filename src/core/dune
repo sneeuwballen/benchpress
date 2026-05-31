@@ -33,12 +33,17 @@
  (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 
 (rule
- (targets builtin_config.ml)
- (deps builtin_config.yaml)
+ (targets static_data.ml)
+ (deps
+  (:builtin builtin_config.yaml)
+  (:example example_config.yaml))
  (action
   (with-stdout-to
    %{targets}
    (progn
-    (echo "let config = {yaml|")
-    (cat %{deps})
+    (echo "let builtin_config = {yaml|")
+    (cat %{builtin})
+    (echo "|yaml} ;;")
+    (echo "let example_config = {yaml|")
+    (cat %{example})
     (echo "|yaml} ;;")))))
