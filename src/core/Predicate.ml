@@ -34,142 +34,94 @@ let rec eval (t : t) (ctx : context) : bool =
     | false -> eval b ctx)
   | Not e -> not (eval e ctx)
 
-let[@inline] is_space c = c = ' ' || c = '\t'
+open CCParse
+open CCParse.Infix
 
-let is_word_char c =
-  match c with
-  | '_' | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
-  | _ -> false
+let is_word_char c = is_alpha_num c || c = '_'
 
-let parse (s : string) : (t, string) result =
-  let len = String.length s in
-  let i = ref 0 in
-  let skip_ws () =
-    while !i < len && is_space s.[!i] do
-      incr i
-    done
-  in
-  let peek () =
-    if !i < len then
-      Some s.[!i]
+let parse s =
+  let kw_test w =
+    chars1_if is_word_char >>= fun word ->
+    if String.equal word w then
+      pure ()
     else
-      None
+      fail ""
   in
-  let starts_with word =
-    let wlen = String.length word in
-    !i + wlen <= len
-    && String.sub s !i wlen = word
-    && (!i + wlen >= len || not (is_word_char s.[!i + wlen]))
-  in
-  let read_word () =
-    let start = !i in
-    while !i < len && is_word_char s.[!i] do
-      incr i
-    done;
-    String.sub s start (!i - start)
-  in
-  let read_string_literal () =
-    if !i >= len || s.[!i] <> '"' then
-      None
-    else (
-      incr i;
-      let start = !i in
-      while !i < len && s.[!i] <> '"' do
-        incr i
-      done;
-      if !i >= len then
-        None
-      else (
-        let v = String.sub s start (!i - start) in
-        incr i;
-        Some v
-      )
-    )
-  in
-  let read_cmp () =
-    if !i + 1 < len && Char.equal s.[!i] '=' && Char.equal s.[!i + 1] '=' then (
-      i := !i + 2;
-      Some Eq
-    ) else if !i + 1 < len && Char.equal s.[!i] '!' && Char.equal s.[!i + 1] '='
-      then (
-      i := !i + 2;
-      Some Neq
-    ) else
-      None
-  in
-  let rec parse_primary () =
-    skip_ws ();
-    match peek () with
-    | Some '(' ->
-      incr i;
-      let e = parse_or_expr () in
-      skip_ws ();
-      if !i < len && s.[!i] = ')' then incr i;
-      e
-    | _ ->
-      let word_start = !i in
-      let word = read_word () in
-      let field =
-        match word with
-        | "result" -> Some Result
-        | "has_proof" -> Some Has_proof
-        | _ -> None
-      in
-      (match field with
-      | None ->
-        i := word_start;
-        Always
-      | Some f ->
-        skip_ws ();
-        (match read_cmp () with
-        | Some cmp ->
-          skip_ws ();
-          (match read_string_literal () with
-          | Some v -> Compare (f, cmp, v)
-          | None -> Field f)
-        | None -> Field f))
-  and parse_not_expr () =
-    skip_ws ();
-    if starts_with "not" then (
-      i := !i + 3;
-      Not (parse_not_expr ())
-    ) else
-      parse_primary ()
-  and parse_and_expr () =
-    let left = parse_not_expr () in
-    let rec loop left =
-      skip_ws ();
-      if starts_with "and" then (
-        i := !i + 3;
-        let right = parse_not_expr () in
-        loop (And (left, right))
-      ) else
-        left
-    in
-    loop left
-  and parse_or_expr () =
-    let left = parse_and_expr () in
-    let rec loop left =
-      skip_ws ();
-      if starts_with "or" then (
-        i := !i + 2;
-        let right = parse_and_expr () in
-        loop (Or (left, right))
-      ) else
-        left
-    in
-    loop left
-  in
-  skip_ws ();
-  if len = 0 then
-    Ok Always
-  else (
-    let t = parse_or_expr () in
-    skip_ws ();
-    if !i = len then
-      Ok t
+  let kw_consume w =
+    chars1_if is_word_char >>= fun word ->
+    if String.equal word w then
+      pure word
     else
-      Error
-        (Printf.sprintf "unexpected input at position %d: %S" !i
-           (String.sub s !i (len - !i)))
-  )
+      fail (Printf.sprintf "expected keyword '%s'" w)
+  in
+  let str_literal = char '"' *> chars_if (fun c -> c <> '"') <* char '"' in
+  let cmp_ = string "==" >|= (fun _ -> Eq) <|> (string "!=" >|= fun _ -> Neq) in
+  let field_rest f =
+    try_or_l
+      [
+        ( skip_space *> (string "==" <|> string "!=") *> pure (),
+          let* c = cmp_ in
+          let* v = skip_space *> str_literal in
+          pure (Compare (f, c, v)) );
+      ]
+      ~else_:(pure (Field f))
+  in
+  let expr =
+    fix (fun expr ->
+        let primary =
+          char '(' *> skip_space *> expr
+          <* skip_space
+          <* optional (char ')')
+          <|> try_or_l
+                [
+                  kw_test "result", kw_consume "result" *> field_rest Result;
+                  ( kw_test "has_proof",
+                    kw_consume "has_proof" *> field_rest Has_proof );
+                ]
+                ~else_:(pure Always)
+        in
+        let not_expr =
+          fix (fun self ->
+              skip_space
+              *> try_or_l
+                   [
+                     ( kw_test "not",
+                       kw_consume "not" *> skip_space *> self >|= fun e -> Not e
+                     );
+                   ]
+                   ~else_:primary)
+        in
+        let and_expr =
+          skip_space
+          *>
+          let* left = not_expr in
+          let rec loop left =
+            skip_space
+            *> try_or_l
+                 [
+                   ( kw_test "and",
+                     kw_consume "and" *> skip_space *> not_expr >>= fun right ->
+                     loop (And (left, right)) );
+                 ]
+                 ~else_:(pure left)
+          in
+          loop left
+        in
+        skip_space
+        *>
+        let* left = and_expr in
+        let rec loop left =
+          skip_space
+          *> try_or_l
+               [
+                 ( kw_test "or",
+                   kw_consume "or" *> skip_space *> and_expr >>= fun right ->
+                   loop (Or (left, right)) );
+               ]
+               ~else_:(pure left)
+        in
+        loop left)
+  in
+  parse_string
+    (skip_space *> (eoi >|= (fun () -> Always) <|> (expr <* skip_space <* eoi)))
+    s
