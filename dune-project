@@ -25,7 +25,7 @@
   base-unix
   (containers
    (and
-    (>= 3.3)
+    (>= 3.6)
     (< 4.0)))
   (eio (>= 1.0))
   (eio_posix (>= 1.0))

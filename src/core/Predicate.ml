@@ -47,24 +47,14 @@ let parse s =
     else
       fail ""
   in
-  let kw_consume w =
-    chars1_if is_word_char >>= fun word ->
-    if String.equal word w then
-      pure word
-    else
-      fail (Printf.sprintf "expected keyword '%s'" w)
-  in
+  let kw_consume w = kw_test w >|= fun _ -> w in
   let str_literal = char '"' *> chars_if (fun c -> c <> '"') <* char '"' in
   let cmp_ = string "==" >|= (fun _ -> Eq) <|> (string "!=" >|= fun _ -> Neq) in
   let field_rest f =
-    try_or_l
-      [
-        ( skip_space *> (string "==" <|> string "!=") *> pure (),
-          let* c = cmp_ in
-          let* v = skip_space *> str_literal in
-          pure (Compare (f, c, v)) );
-      ]
-      ~else_:(pure (Field f))
+    (let* c = skip_space *> cmp_ in
+     let* v = skip_space *> str_literal in
+     pure (Compare (f, c, v)))
+    <|> pure (Field f)
   in
   let expr =
     fix (fun expr ->
