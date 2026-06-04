@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://benchpress.dev/config-schema.json
+# yaml-language-server: $schema=../data/config-schema.json
 #
 # Benchpress configuration file.
 # Write as YAML (preferred) or JSON.
@@ -11,6 +11,22 @@ provers:
     sat: "^SAT"
     unsat: "^UNSAT"
     unknown: "^UNKNOWN"
+
+  # Prover extending another (inherits all fields, overrides some)
+  # - name: my-prover-v2
+  #   extends: my-prover
+  #   cmd: "$binary --incremental $file"
+  #   timeout: "TIMEOUT"
+
+  # Version examples
+  # - name: z3
+  #   cmd: "$binary $file"
+  #   sat: "^sat"
+  #   unsat: "^unsat"
+  #   version: "4.8.10"                    # exact string
+  #   version: { exact: "4.8.10" }         # same, explicit
+  #   version: { git: /path/to/z3/repo }   # compute from git
+  #   version: { cmd: "z3 --version" }     # run command
 
   # Prover with proof checking
   # - name: my-prover-with-proof
@@ -33,6 +49,23 @@ dirs:
   - path: "$cur_dir/problems"
     pattern: '.*\.smt2$'
 
+  # Expect examples
+  # - path: /some/path
+  #   expect: sat                          # all problems are SAT
+  #   expect:                              # try methods in order
+  #     try:
+  #       - sat
+  #       - run: z3                        # run prover to decide
+  #   expect:                              # plain list = try
+  #     - unknown
+  #     - timeout
+
+  # Directory inheritance
+  # - name: qf
+  #   extends: base-dir
+  #   pattern: "*.qf_*.smt2"               # refine pattern
+  #   expect: unsat                         # override expect
+
 tasks:
   - name: all
     action:
@@ -40,6 +73,28 @@ tasks:
         provers: [my-prover]
         timeout: 30
         dirs: ["$cur_dir/problems"]
+
+  # git_checkout action
+  # - name: checkout
+  #   action:
+  #     git_checkout:
+  #       dir: /path/to/repo
+  #       ref: main
+  #       fetch_first: fetch    # optional: "fetch" or "pull"
+
+  # Slurm action
+  # - name: cluster
+  #   action:
+  #     run_provers_slurm:
+  #       provers: [my-prover]
+  #       dirs: ["$cur_dir/problems"]
+  #       timeout: 30
+  #       memory: 4096
+  #       partition: compute
+  #       nodes: 4
+  #       addr: "10.0.0.1"
+  #       port: 8080
+  #       ntasks: 16
 
 # options:
 #   j: 4

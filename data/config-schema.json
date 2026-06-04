@@ -33,10 +33,11 @@
   "$defs": {
     "prover": {
       "type": "object",
-      "required": ["name", "cmd"],
+      "required": ["name"],
       "additionalProperties": false,
       "properties": {
         "name":           { "type": "string", "description": "Prover identifier" },
+        "extends":        { "type": "string", "description": "Name of a base prover to inherit fields from" },
         "binary":         { "type": "string", "description": "Binary path (default: same as name, looked up in $PATH)" },
         "cmd":            { "type": "string", "description": "Command template. Variables: $binary, $file, $timeout, $memory, $proof_file, $cur_dir" },
         "sat":            { "type": "string", "description": "Perl regex for SAT" },
@@ -44,7 +45,7 @@
         "unknown":        { "type": "string", "description": "Perl regex for UNKNOWN" },
         "timeout":        { "type": "string", "description": "Perl regex for TIMEOUT" },
         "memory":         { "type": "string", "description": "Perl regex for OOM" },
-        "version":        { "type": "string", "description": "Version string" },
+        "version":        { "$ref": "#/$defs/version", "description": "Version specifier" },
         "binary_deps":    { "type": "array", "items": { "type": "string" } },
         "produces_proof": { "type": "boolean", "default": false },
         "proof_ext":      { "type": "string", "description": "Proof file extension" },
@@ -55,6 +56,21 @@
         "ulimit_memory":  { "type": "boolean", "default": true },
         "ulimit_stack":   { "type": "boolean", "default": false }
       }
+    },
+    "version": {
+      "oneOf": [
+        { "type": "string", "description": "Exact version string" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "exact": { "type": "string", "description": "Exact version string" },
+            "git":   { "type": "string", "description": "Path to git repo — compute version from branch+commit" },
+            "cmd":   { "type": "string", "description": "Command to run to get version string (supports $binary)" }
+          },
+          "maxProperties": 1
+        }
+      ]
     },
     "proof_check_entry": {
       "type": "object",
@@ -88,14 +104,29 @@
     },
     "dir": {
       "type": "object",
-      "required": ["path"],
       "additionalProperties": false,
       "properties": {
-        "name":    { "type": "string" },
-        "path":    { "type": "string" },
-        "pattern": { "type": "string" },
-        "expect":  { "type": "string", "enum": ["comment", "unknown", "sat", "unsat", "error", "timeout"] }
+        "name":    { "type": "string", "description": "Directory name (used with $dir:name)" },
+        "extends": { "type": "string", "description": "Name of a base directory to inherit path/pattern/expect from" },
+        "path":    { "type": "string", "description": "Path to the problem directory" },
+        "pattern": { "type": "string", "description": "Regex for problem files" },
+        "expect":  { "$ref": "#/$defs/expect", "description": "How to determine expected results" }
       }
+    },
+    "expect": {
+      "oneOf": [
+        { "type": "string", "enum": ["comment", "unknown", "sat", "unsat", "error", "timeout"] },
+        { "type": "array", "items": { "$ref": "#/$defs/expect" }, "description": "Try each method in order" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "run": { "type": "string", "description": "Run this prover to determine expected result" },
+            "try": { "type": "array", "items": { "$ref": "#/$defs/expect" }, "description": "Try each method in order" }
+          },
+          "maxProperties": 1
+        }
+      ]
     },
     "task": {
       "type": "object",
@@ -115,6 +146,22 @@
           "additionalProperties": false,
           "properties": {
             "run_provers": { "$ref": "#/$defs/run_provers" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["run_provers_slurm"],
+          "additionalProperties": false,
+          "properties": {
+            "run_provers_slurm": { "$ref": "#/$defs/run_provers_slurm" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["git_checkout"],
+          "additionalProperties": false,
+          "properties": {
+            "git_checkout": { "$ref": "#/$defs/git_checkout" }
           }
         },
         {
@@ -146,6 +193,34 @@
         "memory":  { "type": "integer", "minimum": 1 },
         "j":       { "type": "integer", "minimum": 1 },
         "pattern": { "type": "string" }
+      }
+    },
+    "run_provers_slurm": {
+      "type": "object",
+      "required": ["provers"],
+      "additionalProperties": false,
+      "properties": {
+        "provers":   { "type": "array", "items": { "type": "string" } },
+        "dirs":      { "type": "array", "items": { "type": "string" } },
+        "timeout":   { "type": "integer", "minimum": 1 },
+        "memory":    { "type": "integer", "minimum": 1 },
+        "j":         { "type": "integer", "minimum": 1 },
+        "pattern":   { "type": "string" },
+        "partition": { "type": "string", "description": "Slurm partition" },
+        "nodes":     { "type": "integer", "minimum": 1 },
+        "addr":      { "type": "string", "description": "Server IP address" },
+        "port":      { "type": "integer", "minimum": 0 },
+        "ntasks":    { "type": "integer", "minimum": 1, "description": "Tasks per worker" }
+      }
+    },
+    "git_checkout": {
+      "type": "object",
+      "required": ["dir", "ref"],
+      "additionalProperties": false,
+      "properties": {
+        "dir":         { "type": "string", "description": "Path to the git repository" },
+        "ref":         { "type": "string", "description": "Branch/tag/commit to checkout" },
+        "fetch_first": { "type": "string", "enum": ["fetch", "pull"], "description": "Fetch before checking out" }
       }
     },
     "options": {
