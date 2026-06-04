@@ -12,7 +12,7 @@ let strip_zst_suffix = Misc.strip_zst_suffix
 let load_config_files (files : string list) : Definitions.t =
   let builtin =
     Yaml_config.load_yaml_string Static_data.builtin_config
-      "builtin_config.yaml"
+      ~cur_dir:(Sys.getcwd ())
   in
   List.fold_left
     (fun defs file ->

@@ -14,25 +14,20 @@ export XDG_CONFIG_HOME="$HOME/.config"
 mkdir -p "$XDG_DATA_HOME/benchpress" "$XDG_CONFIG_HOME"
 
 PORT="${PORT:-8083}"
-CONFIG="$HOME/config.lua"
+CONFIG="$HOME/config.yaml"
 
 # Config with two provers and a benchmark directory.
 # "always-true" completes instantly; "slow" sleeps 30 s per file for cancel tests.
 cat > "$CONFIG" << 'EOF'
-benchpress.prover {
-  name = "always-true",
-  cmd = "/bin/true $file",
-}
+provers:
+  - name: always-true
+    cmd: "/bin/true $file"
+  - name: slow
+    cmd: "sleep 30; true $file"
 
-benchpress.prover {
-  name = "slow",
-  cmd = "sleep 30; true $file",
-}
-
-benchpress.dir {
-  path = "/tmp/bench",
-  expect = "unknown",
-}
+dirs:
+  - path: /tmp/bench
+    expect: unknown
 EOF
 
 # Create test benchmark files
