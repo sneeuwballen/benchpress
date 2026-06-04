@@ -9,7 +9,8 @@ services:
     # Override entrypoint: run the server only, test runner hits it over the network.
     entrypoint: ["benchpress-server", "serve",
                  "--port", "8083",
-                 "--config", "/etc/benchpress/config.sexp"]
+                 "--config", "/etc/benchpress/config.sexp",
+                 "-v"]
     environment:
       XDG_DATA_HOME: /data
       XDG_CONFIG_HOME: /config

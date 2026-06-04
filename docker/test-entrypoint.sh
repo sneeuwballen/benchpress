@@ -39,6 +39,7 @@ touch /tmp/bench/a.fake /tmp/bench/b.fake
 setsid benchpress-server serve \
     --port "$PORT" \
     --config "$CONFIG" \
+    -v \
     &
 SERVER_PID=$!
 
