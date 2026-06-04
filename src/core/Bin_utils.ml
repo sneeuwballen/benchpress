@@ -4,6 +4,22 @@ module Db = Misc.Db
 module MStr = Misc.Str_map
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.bin_utils"))
 
+let is_zst_file = Misc.is_zst_file
+let strip_zst_suffix = Misc.strip_zst_suffix
+
+(** Load a list of config files into a [Definitions.t]. Supports YAML and JSON
+    config files. Always includes the builtin config. *)
+let load_config_files (files : string list) : Definitions.t =
+  let builtin =
+    Yaml_config.load_yaml_string Static_data.builtin_config
+      "builtin_config.yaml"
+  in
+  List.fold_left
+    (fun defs file ->
+      let more = Yaml_config.load_file file in
+      Definitions.merge defs more)
+    builtin files
+
 let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
   let open Cmdliner in
   let aux conf_files with_default logs_cmd =
@@ -21,8 +37,7 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
     Log.info (fun k ->
         k "parse config files %a" CCFormat.Dump.(list string) conf_files);
     try
-      let stanzas = Stanza.parse_files conf_files in
-      let defs = Definitions.add_stanza_l stanzas Definitions.empty in
+      let defs = load_config_files conf_files in
       `Ok (logs_cmd, defs)
     with Error.E err -> `Error (false, Error.show err)
   in
@@ -30,16 +45,13 @@ let definitions_term : (Logs.level option * Definitions.t) Cmdliner.Term.t =
     Arg.(
       value
       & opt_all (list ~sep:',' string) []
-      & info [ "c"; "config" ] ~doc:"configuration file (sexp)")
+      & info [ "c"; "config" ] ~doc:"configuration file (yaml or json)")
   and with_default =
     Arg.(
       value & opt bool false
       & info [ "d"; "default" ] ~doc:"combine with the default config file(s)")
   and debug = Logs_cli.level ~env:(Cmd.Env.info "LOG" ~doc:"log level") () in
   Term.(ret (const aux $ args $ with_default $ debug))
-
-let is_zst_file = Misc.is_zst_file
-let strip_zst_suffix = Misc.strip_zst_suffix
 
 let with_decompressed_zst (path : string) (f : string -> 'a) : 'a =
   let tmp = Filename.temp_file "benchpress_" ".sqlite" in
@@ -72,12 +84,9 @@ let get_definitions () : Definitions.t =
   let conf_files = List.map Xdg.interpolate_home conf_files in
   Log.info (fun k ->
       k "parse config files %a" CCFormat.Dump.(list string) conf_files);
-  let l = Stanza.parse_files conf_files in
-  (* combine configs *)
-  Definitions.of_stanza_l l
+  load_config_files conf_files
 
 (* CSV output *)
-(* Legacy: dump CSV to file if provided *)
 let dump_csv ~csv results : unit =
   match csv with
   | None -> ()
@@ -87,7 +96,6 @@ let dump_csv ~csv results : unit =
     (try ignore (Sys.command (Printf.sprintf "gzip -f '%s'" file) : int)
      with _ -> ())
 
-(* New: dump CSV to stdout if flag is true *)
 let dump_csv_stdout ~csv results : unit =
   if csv then (
     Log.app (fun k -> k "write results in CSV to stdout");

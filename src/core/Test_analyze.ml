@@ -268,17 +268,6 @@ let of_db_dirs (db : Db.t) : string list =
   | None -> []
   | Some p -> [ Summarize_dirs.string_of_path p ]
 
-(* FIXME:
-   Summarize_dirs.setup_fun db;
-   Misc.err_with
-   ~map_err:(Printf.sprintf "while computing dirs from DB: %s")
-   (fun scope ->
-     Db.exec db ~f:Db.Cursor.to_list
-       ~ty:Db.Ty.(nil, p1 text, id)
-       {| select mergepaths(distinct file) from prover_res; |}
-     |> scope.unwrap_with Db.Rc.to_string)
-*)
-
 (* build statistics and list of mismatch from raw results *)
 
 let is_ok r = r.bad = 0

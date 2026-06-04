@@ -156,13 +156,7 @@ let handle_new_job state http_req (req : Api.new_job_request) =
       req.Api.output_name
   in
   let task =
-    Task.
-      {
-        name;
-        synopsis = None;
-        action = Action.Act_run_provers action;
-        defined_in = None;
-      }
+    Task.{ name; synopsis = None; action = Action.Act_run_provers action }
   in
   (* Use a ref so the on_complete closure can capture the job_id that is
      returned by push, without a recursive binding. *)

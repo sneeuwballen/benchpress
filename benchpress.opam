@@ -12,7 +12,7 @@ depends: [
   "ocaml" {>= "4.14"}
   "dune" {>= "3.2"}
   "base-unix"
-  "containers" {>= "3.3" & < "4.0"}
+  "containers" {>= "3.6" & < "4.0"}
   "eio" {>= "1.0"}
   "eio_posix" {>= "1.0"}
   "re" {>= "1.8" & < "2.0"}
@@ -32,6 +32,8 @@ depends: [
   "trace-tef"
   "printbox" {>= "0.6"}
   "printbox-text" {>= "0.6"}
+  "ezjsonm"
+  "yaml"
   "odoc" {with-doc}
 ]
 build: [

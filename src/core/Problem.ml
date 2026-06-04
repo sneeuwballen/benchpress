@@ -79,7 +79,7 @@ let find_expect ?default_expect ~expect file : Res.t =
                ())
       in
       (match Prover.analyze_p_opt prover raw, default_expect with
-      | Some r, _ -> r
+      | Some (r, _labels), _ -> r
       | None, Some r -> r
       | None, None -> Error.failf "cannot find expect for problem `%s`" file)
   in

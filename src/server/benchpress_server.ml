@@ -393,6 +393,167 @@ let trace_middleware : H.Middleware.t =
   in
   h req ~resp
 
+(** user metadata: render the fragment (table + add form) *)
+let render_user_meta_html file entries =
+  let open Html in
+  let file_enc = U.percent_encode file in
+  let table_rows =
+    List.map
+      (fun (k, v) ->
+        tr []
+          [
+            td [] [ txt k ];
+            td [] [ txt v ];
+            td []
+              [
+                mk_button ~cls:"btn-danger btn-sm"
+                  [
+                    ( "hx-delete",
+                      spf "/user-meta/%s/%s/" file_enc (U.percent_encode k) );
+                    "hx-target", "#user-meta";
+                    "hx-swap", "innerHTML";
+                    "hx-confirm", spf "Delete metadata '%s'?" k;
+                  ]
+                  [ txt "delete" ];
+              ];
+          ])
+      entries
+  in
+  div
+    [ A.id "user-meta" ]
+    ((if table_rows = [] then
+        [ p [ A.class_ "text-secondary" ] [ txt "No user metadata." ] ]
+      else
+        [
+          table
+            [ A.class_ "table table-sm" ]
+            ([
+               thead []
+                 [
+                   tr []
+                     [ th [] [ txt "Key" ]; th [] [ txt "Value" ]; th [] [] ];
+                 ];
+             ]
+            @ [ tbody [] table_rows ]);
+        ])
+    @ [
+        form
+          [
+            A.class_ "row g-2 mt-2";
+            "hx-post", spf "/user-meta/%s/" file_enc;
+            "hx-target", "#user-meta";
+            "hx-swap", "innerHTML";
+          ]
+          [
+            div
+              [ A.class_ "col-auto" ]
+              [
+                input
+                  [
+                    A.name "key";
+                    A.type_ "text";
+                    A.placeholder "key";
+                    A.class_ "form-control form-control-sm";
+                    A.required "";
+                  ];
+              ];
+            div
+              [ A.class_ "col-auto" ]
+              [
+                input
+                  [
+                    A.name "value";
+                    A.type_ "text";
+                    A.placeholder "value";
+                    A.class_ "form-control form-control-sm";
+                    A.required "";
+                  ];
+              ];
+            div
+              [ A.class_ "col-auto" ]
+              [ mk_button ~cls:"btn-primary btn-sm" [] [ txt "Add" ] ];
+          ];
+      ])
+
+let with_result_db_read file ~f =
+  let file_full = Bin_utils.mk_file_full file in
+  if Bin_utils.is_sqlite_file file_full then
+    Db.with_db ~timeout:1500 ~mode:`READONLY file_full f
+  else if Misc.is_zst_file file_full then
+    Bin_utils.with_decompressed_zst file_full (fun tmp ->
+        Db.with_db ~timeout:1500 ~mode:`READONLY tmp f)
+  else
+    failf 400 "unsupported file format for '%s'" file
+
+let with_result_db_write file ~f =
+  let file_full = Bin_utils.mk_file_full file in
+  if Bin_utils.is_sqlite_file file_full then
+    Db.with_db ~timeout:1500 file_full f
+  else
+    failf 400 "writing metadata is only supported for .sqlite files, not '%s'"
+      file
+
+let handle_user_meta_get (self : t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "user-meta" @/ string_urlencoded @/ return)
+  @@ fun file _req ->
+  let@ _chrono = query_wrap (Error.wrapf "serving /user-meta/%s" file) in
+  let html =
+    try
+      let entries =
+        with_result_db_read file ~f:(fun db ->
+            Test_metadata.get_all_user_meta db)
+      in
+      render_user_meta_html file entries
+    with Error.E e | E (e, _) ->
+      Html.div [ Html.A.id "user-meta" ] [ Html.txt (Error.show e) ]
+  in
+  H.Response.make_string ~headers:default_html_headers
+    (Ok (Html.to_string_elt html))
+
+let handle_user_meta_post (self : t) : unit =
+  H.add_route_handler self.server ~meth:`POST
+    H.Route.(exact "user-meta" @/ string_urlencoded @/ return)
+  @@ fun file req ->
+  let@ _chrono = query_wrap (Error.wrapf "POST /user-meta/%s" file) in
+  let body = H.Request.body req |> String.trim in
+  let params =
+    U.parse_query body
+    |> Misc.unwrap_str (fun () -> spf "parse-query failed on %s" body)
+  in
+  let key =
+    try List.assoc "key" params
+    with Not_found -> failf 400 "missing 'key' parameter"
+  in
+  let value =
+    try List.assoc "value" params
+    with Not_found -> failf 400 "missing 'value' parameter"
+  in
+  if String.trim key = "" then failf 400 "key must not be empty";
+  with_result_db_write file ~f:(fun db ->
+      Test_metadata.set_user_meta db ~key ~value);
+  let entries =
+    with_result_db_read file ~f:(fun db -> Test_metadata.get_all_user_meta db)
+  in
+  let html = render_user_meta_html file entries in
+  H.Response.make_string ~headers:default_html_headers
+    (Ok (Html.to_string_elt html))
+
+let handle_user_meta_delete (self : t) : unit =
+  H.add_route_handler self.server ~meth:`DELETE
+    H.Route.(
+      exact "user-meta" @/ string_urlencoded @/ string_urlencoded @/ return)
+  @@ fun file key _req ->
+  let@ _chrono = query_wrap (Error.wrapf "DELETE /user-meta/%s/%s" file key) in
+  with_result_db_write file ~f:(fun db ->
+      Test_metadata.delete_user_meta db ~key);
+  let entries =
+    with_result_db_read file ~f:(fun db -> Test_metadata.get_all_user_meta db)
+  in
+  let html = render_user_meta_html file entries in
+  H.Response.make_string ~headers:default_html_headers
+    (Ok (Html.to_string_elt html))
+
 (* show individual files *)
 let handle_show (self : t) : unit =
   H.add_route_handler self.server ~meth:`GET
@@ -453,6 +614,14 @@ let handle_show (self : t) : unit =
                  ]);
             h3 [] [ txt "Summary" ];
             div [] [ pb_html box_meta ];
+            h3 [] [ txt "User Metadata" ];
+            div
+              [
+                "hx-get", spf "/user-meta/%s/" (U.percent_encode file);
+                "hx-trigger", "load";
+                "hx-swap", "innerHTML";
+              ]
+              [ txt "Loading..." ];
             h3 [] [ txt "stats" ];
             div [] [ pb_html box_stat ];
             h3 [] [ txt "summary" ];
@@ -508,14 +677,7 @@ let handle_prover_in (self : t) : unit =
             uri_prover_in file p_name, "prover", true;
           ];
         div []
-          [
-            pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover ];
-            (match prover.Prover.defined_in with
-            | None -> span [] []
-            | Some f ->
-              div []
-                [ txt "defined in"; mk_a [ A.href (uri_get_file f) ] [ txt f ] ]);
-          ];
+          [ pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp prover ] ];
       ]
   in
   H.Response.make_string (Ok (Html.to_string h))
@@ -1435,15 +1597,7 @@ let handle_provers (self : t) : unit =
   let h =
     let open Html in
     let mk_prover p =
-      mk_li []
-        [
-          pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p ];
-          (match p.Prover.defined_in with
-          | None -> span [] []
-          | Some f ->
-            div []
-              [ txt "defined in"; mk_a [ A.href (uri_get_file f) ] [ txt f ] ]);
-        ]
+      mk_li [] [ pre [] [ txt @@ Format.asprintf "@[<v>%a@]" Prover.pp p ] ]
     in
     let l = CCList.map mk_prover provers in
     mk_page ~title:"provers"
@@ -1482,14 +1636,6 @@ let handle_tasks (self : t) : unit =
                     ];
                   mk_col ~cls:"col-auto" []
                     [ pre [] [ txt @@ Format.asprintf "%a@?" Task.pp t ] ];
-                  (match t.Task.defined_in with
-                  | None -> span [] []
-                  | Some f ->
-                    div []
-                      [
-                        txt "defined in";
-                        mk_a [ A.href (uri_get_file f) ] [ txt f ];
-                      ]);
                 ];
             ])
         tasks
@@ -1759,7 +1905,7 @@ let handle_file self : unit =
       Log.debug (fun k -> k "get-file: `%s`" file);
       let bytes =
         if file = "prelude" then
-          H.IO.Input.of_string Builtin_config.config (* magic file! *)
+          H.IO.Input.of_string Static_data.builtin_config (* magic file! *)
         else (
           try H.IO.Input.of_in_channel @@ open_in file
           with e ->
@@ -1825,6 +1971,9 @@ module Cmd = struct
       handle_file_summary self;
       handle_assets server;
       handle_show self;
+      handle_user_meta_get self;
+      handle_user_meta_post self;
+      handle_user_meta_delete self;
       handle_show_echarts self;
       handle_prover_in self;
       handle_show_errors self;

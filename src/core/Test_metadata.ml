@@ -87,6 +87,34 @@ let to_db (db : Db.t) (self : t) : unit =
     (Uuidm.to_string self.uuid)
   |> Misc.unwrap_db (fun () -> Fmt.asprintf "inserting metadata '%a'" pp self)
 
+let system_keys = [ "uuid"; "timestamp"; "total-wall-time"; "total_wall_time" ]
+let is_system_key k = List.mem k system_keys
+
+let get_all_user_meta (db : Db.t) : (string * string) list =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "metadata.get-all-user-meta" in
+  Db.exec_no_params db
+    {|SELECT key, value FROM meta WHERE key NOT IN ('uuid','timestamp','total-wall-time','total_wall_time');|}
+    ~ty:Db.Ty.(p2 text (nullable any_str), fun k v -> k, v)
+    ~f:Db.Cursor.to_list_rev
+  |> Misc.unwrap_db (fun () -> "get-all-user-meta")
+  |> List.filter_map (fun (k, v) -> CCOpt.map (fun v -> k, v) v)
+
+let set_user_meta (db : Db.t) ~key ~value : unit =
+  if is_system_key key then
+    Error.failf "cannot modify system metadata key '%s'" key;
+  Db.exec_no_cursor db {|INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?);|}
+    ~ty:Db.Ty.(p2 text text)
+    key value
+  |> Misc.unwrap_db (fun () -> spf "set-user-meta '%s'" key)
+
+let delete_user_meta (db : Db.t) ~key : unit =
+  if is_system_key key then
+    Error.failf "cannot delete system metadata key '%s'" key;
+  Db.exec_no_cursor db {|DELETE FROM meta WHERE key = ?;|}
+    ~ty:Db.Ty.(p1 text)
+    key
+  |> Misc.unwrap_db (fun () -> spf "delete-user-meta '%s'" key)
+
 let of_db db : t =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "metadata.of-db" in
   Error.guard (Error.wrap "while reading metadata") @@ fun () ->

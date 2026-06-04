@@ -8,17 +8,14 @@ open Common
 
 (** {2 Prover configurations} *)
 
-type version =
-  | Tag of string
-  | Git of { branch: string; commit: string (* branch & commit hash *) }
-
+type version = string
 type name = string
 
 type t = {
   (* Prover identification *)
   name: name;
   version: version;
-  (* Pover execution *)
+  (* Prover execution *)
   binary: string; (* name of the program itself *)
   binary_deps: string list; (* list of binaries this depends on *)
   cmd: string;
@@ -26,7 +23,17 @@ type t = {
          possibly contains $binary, $file, $memory and $timeout *)
   produces_proof: bool;
   proof_ext: string option;  (** file extension for proofs *)
-  proof_checker: string option;  (** proof checker for its proofs *)
+  get_checkers:
+    (stdout:string ->
+    stderr:string ->
+    res:Res.t ->
+    proof_file:string option ->
+    (string * string option) list)
+    option;
+      (** Given the result of running the prover, return a list of
+          [(checker_name, proof_file_override)] pairs to schedule.
+          [proof_file_override = None] uses the auto-generated proof file;
+          [Some path] uses [path] instead. *)
   (* whether some limits should be enforced/set by ulimit *)
   ulimits: Ulimit.conf;
   (* Result analysis *)
@@ -36,8 +43,8 @@ type t = {
   timeout: string option; (* regex for "timeout" *)
   memory: string option; (* regex for "out of memory" *)
   custom: (string * string) list; (* custom tags *)
-  defined_in: string option;
-  inherits: name option;  (** parent definition *)
+  static_labels: string list;
+      (** Labels always attached to every result from this prover *)
 }
 (** The type of provers configurations *)
 
@@ -55,7 +62,6 @@ module Version : sig
 
   val pp : t Fmt.printer
   val to_string_short : t -> string
-  val to_sexp : t -> Sexp_loc.t
   val ser_sexp : t -> string
 end
 
@@ -110,8 +116,9 @@ val run :
   t ->
   Run_proc_result.t
 
-val analyze_p_opt : t -> Run_proc_result.t -> Res.t option
-(** Analyze raw result to look for the result *)
+val analyze_p_opt : t -> Run_proc_result.t -> (Res.t * string list) option
+(** Analyze raw result to look for the result and any extra labels. Returns
+    [None] if no result pattern matched. *)
 
 module Map_name : CCMap.S with type key = t
 (** Map by name *)

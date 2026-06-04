@@ -50,7 +50,8 @@ type t = {
   invalid_proof: int;
   custom: (string * detail_stats) list;
   total: int;
-  total_time: float; (* for sat+unsat *)
+  total_time: float; (* sum of rtime for all results *)
+  total_time_solved: float; (* sum of rtime for sat+unsat *)
 }
 
 let get_unsat r = r.unsat
@@ -68,6 +69,7 @@ let get_custom s r =
 
 let get_total r = r.total
 let get_total_time r = r.total_time
+let get_total_time_solved r = r.total_time_solved
 
 let pb_details_stats_color ~details c { n; total; mean; sd } =
   let open PB in
@@ -136,6 +138,8 @@ let to_printbox_l ?(details = false) ?to_link l : PB.t =
       mk_row1 "memory" get_memory PB.int;
       mk_row1 "total" get_total PB.int;
       mk_row1 "total_time" get_total_time (fun s ->
+          PB.line (Misc.human_duration s));
+      mk_row1 "total_time_solved" get_total_time_solved (fun s ->
           PB.line (Misc.human_duration s));
     ]
   in
@@ -208,12 +212,23 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
   let total_time =
     Db.exec db
       {|
-        select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
+        select sum(rtime) from prover_res where prover=?;
           |}
       prover
       ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.)
       ~f:Db.Cursor.get_one_exn
     |> Misc.unwrap_db (fun () -> spf "obtaining total time for %s" prover)
+  in
+  let total_time_solved =
+    Db.exec db
+      {|
+        select sum(rtime) from prover_res where prover=? and res in ('sat', 'unsat');
+          |}
+      prover
+      ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.)
+      ~f:Db.Cursor.get_one_exn
+    |> Misc.unwrap_db (fun () ->
+           spf "obtaining total solved time for %s" prover)
   in
   {
     sat;
@@ -227,6 +242,7 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
     custom;
     total;
     total_time;
+    total_time_solved;
   }
 
 let of_db (db : Db.t) : (Prover.name * t) list =
@@ -239,8 +255,8 @@ let pp out (s : t) : unit =
   Fmt.fprintf out
     "(@[<hv>:unsat %d@ :sat %d@ :solved %d@ :errors %d@ :unknown %d@ \
      :valid-proof %d@ :invalid-proof %d@ :timeout %d@ :total %d@ :total_time \
-     %.2f@])"
+     %.2f@ :total_time_solved %.2f@])"
     s.unsat.n s.sat.n (s.sat.n + s.unsat.n) s.errors s.unknown.n s.valid_proof
     s.invalid_proof s.timeout
     (s.unsat.n + s.sat.n + s.errors + s.unknown.n + s.timeout)
-    s.total_time
+    s.total_time s.total_time_solved
