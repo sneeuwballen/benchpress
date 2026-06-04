@@ -857,6 +857,7 @@ module Progress_run_provers : sig
 
   val make :
     ?cb_progress:cb_progress ->
+    ?cb_on_res:(Run_prover_problem.job_res -> unit) ->
     ?pp_results:bool ->
     ?dyn:bool ->
     Exec_run_provers.expanded ->
@@ -864,8 +865,9 @@ module Progress_run_provers : sig
   (** Make a progress tracker.
       @param dyn if true, print a progress bar in the terminal
       @param pp_results if true, print each individual result as it's found
-      @param on_progress
-        callback when progress is made, with a percentage and ETA *)
+      @param cb_progress
+        callback when progress is made, with a percentage and ETA
+      @param cb_on_res callback each time a job result is produced *)
 end = struct
   type t =
     < on_res : Run_prover_problem.job_res -> unit
@@ -926,7 +928,7 @@ end = struct
     in
     pp_bar, get_state, bump, tick
 
-  let progress ~w_prover ~w_pb ?cb_progress ~pp_results ~dyn n : t =
+  let progress ~w_prover ~w_pb ?cb_progress ?cb_on_res ~pp_results ~dyn n : t =
     let n_fail = ref 0 in
     let pp_bar, get_state, bump, tick = progress_dynamic ~n_fail n in
     let pp_common_ () =
@@ -946,6 +948,8 @@ end = struct
         tick ();
 
         if Run_prover_problem.is_bad res then incr n_fail;
+
+        CCOpt.iter (fun cb -> cb res) cb_on_res;
 
         Log.debug (fun k ->
             k "%a" (Run_prover_problem.pp_result ~w_prover ~w_pb) res);
@@ -971,7 +975,7 @@ end = struct
         | Some cb -> cb#on_done
     end
 
-  let make ?cb_progress ?(pp_results = true) ?(dyn = false)
+  let make ?cb_progress ?cb_on_res ?(pp_results = true) ?(dyn = false)
       (r : Exec_run_provers.expanded) : t =
     match cb_progress, pp_results, dyn with
     | None, false, false -> nil
@@ -988,7 +992,7 @@ end = struct
           0 r.problems
         |> min 60
       in
-      progress ~w_prover ~w_pb ?cb_progress ~pp_results ~dyn
+      progress ~w_prover ~w_pb ?cb_progress ?cb_on_res ~pp_results ~dyn
         (len * List.length r.provers)
 end
 

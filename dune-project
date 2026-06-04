@@ -34,6 +34,7 @@
     (>= 1.8)
     (< 2.0)))
   csv
+  curly
   (cmdliner
    (>= 1.1.0))
   ppx_subliner

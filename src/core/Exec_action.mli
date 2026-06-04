@@ -90,6 +90,7 @@ module Progress_run_provers : sig
 
   val make :
     ?cb_progress:cb_progress ->
+    ?cb_on_res:(Run_prover_problem.job_res -> unit) ->
     ?pp_results:bool ->
     ?dyn:bool ->
     Exec_run_provers.expanded ->
@@ -97,8 +98,9 @@ module Progress_run_provers : sig
   (** Make a progress tracker.
       @param dyn if true, print a progress bar in the terminal
       @param pp_results if true, print each individual result as it's found
-      @param on_progress
-        callback when progress is made, with a percentage and ETA *)
+      @param cb_progress
+        callback when progress is made, with a percentage and ETA
+      @param cb_on_res callback each time a job result is produced *)
 end
 
 val dump_results_sqlite : Test_top_result.t -> unit
