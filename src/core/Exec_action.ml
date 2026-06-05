@@ -842,160 +842,6 @@ end = struct
     top_res, r
 end
 
-type cb_progress =
-  < on_progress : percent:int -> elapsed_time:float -> eta:float -> unit
-  ; on_done : unit >
-
-module Progress_run_provers : sig
-  type t =
-    < on_res : Run_prover_problem.job_res -> unit
-    ; on_start_proof_check : unit
-    ; on_proof_check_res : Test.proof_check_result -> unit
-    ; on_done : unit >
-
-  val nil : t
-
-  val make :
-    ?cb_progress:cb_progress ->
-    ?cb_on_res:(Run_prover_problem.job_res -> unit) ->
-    ?pp_results:bool ->
-    ?dyn:bool ->
-    Exec_run_provers.expanded ->
-    t
-  (** Make a progress tracker.
-      @param dyn if true, print a progress bar in the terminal
-      @param pp_results if true, print each individual result as it's found
-      @param cb_progress
-        callback when progress is made, with a percentage and ETA
-      @param cb_on_res callback each time a job result is produced *)
-end = struct
-  type t =
-    < on_res : Run_prover_problem.job_res -> unit
-    ; on_start_proof_check : unit
-    ; on_proof_check_res : Test.proof_check_result -> unit
-    ; on_done : unit >
-
-  let nil : t =
-    object
-      method on_res _ = ()
-      method on_start_proof_check = ()
-      method on_proof_check_res _ = ()
-      method on_done = ()
-    end
-
-  (* callback that prints a result *)
-  let progress_dynamic ~n_fail len =
-    let start = Misc.now_s () in
-    let len = ref len in
-    let count = ref 0 in
-    let tick () = incr count in
-    let get_state () =
-      let time_elapsed = Misc.now_s () -. start in
-      let percent =
-        if !len = 0 then
-          100.
-        else
-          float_of_int !count *. 100. /. float_of_int !len
-      in
-      (* elapsed=(percent/100)*total, so total=elapsed*100/percent; eta=total-elapsed *)
-      let eta = time_elapsed *. (100. -. percent) /. percent in
-      percent, time_elapsed, eta
-    in
-    let bump () = incr len in
-    let pp_bar () =
-      let len_bar = 50 in
-      let bar =
-        String.init len_bar (fun i ->
-            if i * !len <= len_bar * !count then
-              '#'
-            else
-              '-')
-      in
-      let percent, time_elapsed, eta = get_state () in
-      let fail_indicator =
-        if !n_fail = 0 then
-          ""
-        else
-          spf " !%d" !n_fail
-      in
-      Misc.synchronized_sync (fun () ->
-          Format.printf "... %6d/%d%s | %3.1f%% [%6s: %s] [eta %6s]@?" !count
-            !len fail_indicator percent
-            (Misc.human_duration time_elapsed)
-            bar (Misc.human_duration eta));
-      if !count = !len then
-        Misc.synchronized_sync (fun () -> Format.printf "@.")
-    in
-    pp_bar, get_state, bump, tick
-
-  let progress ~w_prover ~w_pb ?cb_progress ?cb_on_res ~pp_results ~dyn n : t =
-    let n_fail = ref 0 in
-    let pp_bar, get_state, bump, tick = progress_dynamic ~n_fail n in
-    let pp_common_ () =
-      if dyn then (
-        output_string stdout Misc.reset_line;
-        pp_bar ()
-      );
-      CCOpt.iter
-        (fun cb ->
-          let percent, elapsed_time, eta = get_state () in
-          cb#on_progress ~percent:(int_of_float percent) ~elapsed_time ~eta)
-        cb_progress;
-      ()
-    in
-    object
-      method on_res res =
-        tick ();
-
-        if Run_prover_problem.is_bad res then incr n_fail;
-
-        CCOpt.iter (fun cb -> cb res) cb_on_res;
-
-        Log.debug (fun k ->
-            k "%a" (Run_prover_problem.pp_result ~w_prover ~w_pb) res);
-        if pp_results then
-          Run_prover_problem.pp_result_progress ~w_prover ~w_pb res;
-        pp_common_ ()
-
-      method on_start_proof_check =
-        bump ();
-        (* add another task *)
-        pp_common_ ()
-
-      method on_proof_check_res res =
-        if pp_results then
-          Run_prover_problem.pp_check_result_progress ~w_prover ~w_pb res;
-        pp_common_ ()
-
-      method on_done =
-        pp_common_ ();
-        Log.info (fun k -> k "done");
-        match cb_progress with
-        | None -> ()
-        | Some cb -> cb#on_done
-    end
-
-  let make ?cb_progress ?cb_on_res ?(pp_results = true) ?(dyn = false)
-      (r : Exec_run_provers.expanded) : t =
-    match cb_progress, pp_results, dyn with
-    | None, false, false -> nil
-    | _ ->
-      let len = List.length r.problems in
-      let w_prover =
-        List.fold_left
-          (fun m p -> max m (String.length (Prover.name p) + 1))
-          0 r.provers
-        |> min 25
-      and w_pb =
-        List.fold_left
-          (fun m pb -> max m (String.length pb.Problem.name + 1))
-          0 r.problems
-        |> min 60
-      in
-      progress ~w_prover ~w_pb ?cb_progress ?cb_on_res ~pp_results ~dyn
-        (len * List.length r.provers)
-end
-
 let dump_results_sqlite (results : Test_top_result.t) : unit =
   let uuid = results.Test_top_result.meta.uuid in
   (* save results *)
@@ -1058,7 +904,7 @@ module Git_checkout = struct
 end
 
 (** Run the given action *)
-let rec run ?output ?(save = true) ?interrupted ?cb_progress
+let rec run ?output ?(save = true) ?interrupted ?progress_cb
     (defs : Definitions.t) (a : Action.t) : unit =
   Error.guard (Error.wrapf "running action %a" Action.pp a) @@ fun () ->
   match a with
@@ -1071,11 +917,31 @@ let rec run ?output ?(save = true) ?interrupted ?cb_progress
         ?j:(Definitions.option_j defs)
         defs r.limits r.j r.pattern r.dirs r.provers
     in
-    let progress =
-      Progress_run_provers.make ~pp_results:true ~dyn:is_dyn ?cb_progress
-        r_expanded
+    let total_tasks =
+      List.length r_expanded.problems * List.length r_expanded.provers
     in
     let uuid = Misc.mk_uuid () in
+    let uuid_s = Uuidm.to_string uuid in
+    let progress_components =
+      (if is_dyn then
+         [ Progress.make_terminal ~total_tasks () ]
+       else
+         [])
+      @
+      match progress_cb with
+      | None -> []
+      | Some cb ->
+        [
+          Progress.make ~uuid:uuid_s ~start_ts:(Misc.now_s ()) ~total_tasks
+            ~callbacks:cb;
+        ]
+    in
+    let progress =
+      match progress_components with
+      | [] -> Progress.nil
+      | [ t ] -> t
+      | l -> Progress.fanout l
+    in
     let res =
       Exec_run_provers.run ?interrupted ~on_solve:progress#on_res
         ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
@@ -1108,11 +974,31 @@ let rec run ?output ?(save = true) ?interrupted ?cb_progress
         ?j:(Definitions.option_j defs)
         defs limits j pattern dirs provers
     in
-    let progress =
-      Progress_run_provers.make ~pp_results:true ~dyn:is_dyn ?cb_progress
-        r_expanded
+    let total_tasks =
+      List.length r_expanded.problems * List.length r_expanded.provers
     in
     let uuid = Misc.mk_uuid () in
+    let uuid_s = Uuidm.to_string uuid in
+    let progress_components =
+      (if is_dyn then
+         [ Progress.make_terminal ~total_tasks () ]
+       else
+         [])
+      @
+      match progress_cb with
+      | None -> []
+      | Some cb ->
+        [
+          Progress.make ~uuid:uuid_s ~start_ts:(Misc.now_s ()) ~total_tasks
+            ~callbacks:cb;
+        ]
+    in
+    let progress =
+      match progress_components with
+      | [] -> Progress.nil
+      | [ t ] -> t
+      | l -> Progress.fanout l
+    in
     let res =
       Exec_run_provers.run_sbatch_job ~timestamp:(Misc.now_s ()) ?interrupted
         ~on_solve:progress#on_res
@@ -1125,6 +1011,6 @@ let rec run ?output ?(save = true) ?interrupted ?cb_progress
     Format.printf "task done: %a@." Test_compact_result.pp res;
     ()
   | Action.Act_progn l ->
-    List.iter (fun a -> run ?output ~save ?interrupted defs a) l
+    List.iter (fun a -> run ?output ~save ?interrupted ?progress_cb defs a) l
   | Action.Act_git_checkout git -> Git_checkout.run git
   | Action.Act_run_cmd { cmd; loc } -> run_cmd ~loc cmd

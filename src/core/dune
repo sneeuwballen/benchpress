@@ -6,6 +6,7 @@
   "Benchpress core library, with all the data structures and functions")
  (wrapped true)
  (libraries
+  benchpress_api_proto
   containers
   containers.unix
   eio

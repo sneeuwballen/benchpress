@@ -6,6 +6,9 @@ open Common
 module T = Test
 module Db = Sqlite3_utils
 
+(** Eio environment for creating NATS connections, set at startup. *)
+let eio_env : Obj.t option ref = ref None
+
 let catch_err f =
   try
     f ();
@@ -108,12 +111,47 @@ module Run = struct
       else
         None
     in
-    Run_main.main ~pp_results:p.progress ?dyn ~j:p.j ?cpus ?timeout:p.timeout
-      ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
-      ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
-      ?output:p.output ~save:p.save ~wal_mode:p.wal_mode ~compress:p.compress
-      ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
-      ~update:p.update ?server:p.server defs p.paths ()
+    let call_main nats =
+      Run_main.main ~pp_results:p.progress ?dyn ~j:p.j ?cpus ?timeout:p.timeout
+        ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
+        ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
+        ?output:p.output ~save:p.save ~wal_mode:p.wal_mode ~compress:p.compress
+        ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
+        ~update:p.update ?nats defs p.paths ()
+    in
+    match p.server with
+    | None -> call_main None
+    | Some server ->
+      let host, port =
+        match String.rindex_opt server ':' with
+        | None -> server, 4222
+        | Some i ->
+          ( String.sub server 0 i,
+            (match
+               int_of_string_opt
+                 (String.sub server (i + 1) (String.length server - i - 1))
+             with
+            | Some p -> p
+            | None -> 4222) )
+      in
+      (match !eio_env with
+      | None -> call_main None
+      | Some env ->
+        let net = Eio.Stdenv.net (Obj.obj env) in
+        (match
+           Eio.Switch.run (fun sw ->
+               match Nats.connect ~sw ~net ~host ~port () with
+               | nats -> call_main (Some nats)
+               | exception e ->
+                 Format.eprintf
+                   "warning: could not connect to NATS at %s:%d: %s\n%!" host
+                   port (Printexc.to_string e);
+                 call_main None)
+         with
+        | () -> ()
+        | exception e ->
+          Format.eprintf "warning: NATS shutdown error: %s\n%!"
+            (Printexc.to_string e)))
 
   let cmd =
     let doc =
@@ -627,6 +665,7 @@ let () =
 
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   let proc_mgr = Eio.Stdenv.process_mgr env in
+  eio_env := Some (Obj.repr env);
   Run_proc.with_proc_mgr proc_mgr @@ fun () ->
   match parse_opt () with
   | Error (`Parse | `Term | `Exn) -> exit 2

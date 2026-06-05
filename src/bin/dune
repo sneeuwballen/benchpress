@@ -8,6 +8,7 @@
   (until-clean))
  (libraries
   benchpress
+  benchpress_nats
   benchpress_api_proto
   containers
   cmdliner

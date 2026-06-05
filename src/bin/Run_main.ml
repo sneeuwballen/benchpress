@@ -7,134 +7,103 @@ module Api = Benchpress_api_proto.Benchpress_api
 
 (* TODO: replace HTTP with NATS messaging for progress reporting *)
 
-let send_report ~server (report : Api.progress_report) =
-  let url = Printf.sprintf "http://%s/api/progress/" server in
-  let json = Api.encode_json_progress_report report |> Yojson.Basic.to_string in
-  let headers = [ "content-type", "application/json" ] in
-  let req = Curly.Request.make ~meth:`POST ~url ~headers ~body:json () in
-  match
-    Eio_unix.run_in_systhread ~label:"benchpress.send-progress" (fun () ->
-        Curly.run req)
-  with
-  | Ok r ->
-    if r.Curly.Response.code < 200 || r.Curly.Response.code >= 300 then
-      Log.warn (fun k ->
-          k "progress report rejected: HTTP %d (%s)" r.Curly.Response.code
-            server)
-  | Error e ->
-    Log.debug (fun k ->
-        k "progress report failed: %a (%s)" Curly.Error.pp e server)
+let report_to_json (r : Progress.report) : string =
+  Api.encode_json_progress_report r |> Yojson.Basic.to_string
 
-let make_server_progress_cb ~server ~uuid ~start_ts ~total_tasks_ref =
-  let done_tasks = ref 0 in
-  let last_sent = ref 0.0 in
-  let sent_finished = ref false in
-  let active_items : (float * Api.active_item) list ref = ref [] in
-  let last_stats_s = ref 0.0 in
-  let stat_total_sat = ref 0 in
-  let stat_total_unsat = ref 0 in
-  let stat_total_unknown = ref 0 in
-  let stat_total_timeout = ref 0 in
-  let stat_total_error = ref 0 in
-  let stat_total_custom : (string, int ref) Hashtbl.t = Hashtbl.create 8 in
-  let _active_lock = Mutex.create () in
-  let add_active (item : Api.active_item) =
-    Mutex.lock _active_lock;
-    active_items := (Unix.gettimeofday (), item) :: !active_items;
-    Mutex.unlock _active_lock
-  in
-  let snapshot_active () =
-    Mutex.lock _active_lock;
+(** Create a [Progress.callbacks] that publishes each report to NATS. *)
+let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
+  let uuid_s = Uuidm.to_string uuid in
+  let solve_subject = [ "benchpress"; "progress"; "solve"; uuid_s ] in
+  let check_subject = [ "benchpress"; "progress"; "check"; uuid_s ] in
+  let done_subject = [ "benchpress"; "progress"; "done"; uuid_s ] in
+  let last_send = ref 0.0 in
+  let sent_done = ref false in
+  let publish kind report =
     let now = Unix.gettimeofday () in
-    (* keep items seen in the last 15s as "active" *)
-    active_items := List.filter (fun (ts, _) -> now -. ts <= 15.0) !active_items;
-    let items =
-      List.rev_map (fun (_, item) -> item) !active_items |> CCList.take 10
+    let finished = report.Api.finished in
+    let should_send =
+      ((not finished) && now -. !last_send >= 1.0)
+      || (finished && not !sent_done)
     in
-    Mutex.unlock _active_lock;
-    items
-  in
-  let make_stats () =
-    let buf = Buffer.create 128 in
-    Buffer.add_string buf
-      (spf "sat:%d unsat:%d unknown:%d timeout:%d error:%d" !stat_total_sat
-         !stat_total_unsat !stat_total_unknown !stat_total_timeout
-         !stat_total_error);
-    Hashtbl.iter
-      (fun tag cnt -> Buffer.add_string buf (spf " %s:%d" tag !cnt))
-      stat_total_custom;
-    Buffer.contents buf
-  in
-  let send_update ~finished ~stats =
-    let now = Unix.gettimeofday () in
-    if finished then
-      if !sent_finished then
-        ()
-      else (
-        sent_finished := true;
-        last_sent := now
-      )
-    else if now -. !last_sent < 5.0 then
-      ()
-    else
-      last_sent := now;
-    if now -. !last_sent >= 5.0 || finished then (
-      let active = snapshot_active () in
-      let report =
-        Api.make_progress_report ~uuid:(Uuidm.to_string uuid) ~start_ts
-          ~total_tasks:(Int32.of_int !total_tasks_ref)
-          ~done_tasks:(Int32.of_int !done_tasks) ~active ~finished ~stats ()
+    if should_send then (
+      last_send := now;
+      if finished then sent_done := true;
+      let subject =
+        match kind with
+        | `Solve -> solve_subject
+        | `Check -> check_subject
+        | `Done -> done_subject
       in
-      send_report ~server report
+      let json = report_to_json report in
+      try Nats.pub nats ~subject json with _ -> ()
     )
   in
-  let stats_maybe now =
-    if now -. !last_stats_s >= 60.0 then (
-      last_stats_s := now;
-      make_stats ()
-    ) else
-      ""
+  let make_done_report () =
+    let r = Api.default_progress_report () in
+    Api.progress_report_set_uuid r uuid_s;
+    Api.progress_report_set_start_ts r 0.;
+    Api.progress_report_set_finished r true;
+    r
   in
-  object
-    method on_progress ~percent:_ ~elapsed_time:_ ~eta:_ =
-      let new_done = !done_tasks + 1 in
-      done_tasks := new_done;
-      let now = Unix.gettimeofday () in
-      send_update ~finished:false ~stats:(stats_maybe now)
+  {
+    Progress.on_report = (fun r -> publish `Solve r);
+    on_done = (fun () -> publish `Done (make_done_report ()));
+    on_res = (fun _ -> ());
+  }
 
-    method on_done =
-      done_tasks := !total_tasks_ref;
-      send_update ~finished:true ~stats:(make_stats ())
-
-    method finalize =
-      done_tasks := !total_tasks_ref;
-      send_update ~finished:true ~stats:(make_stats ())
-
-    method on_res (res : Run_prover_problem.job_res) =
-      let prover = Run_result.program res in
-      let file = (Run_result.problem res).Problem.name in
-      let running_time = res.raw.rtime in
-      let item = Api.make_active_item ~prover ~file ~running_time () in
-      add_active item;
-      match res.res with
-      | Res.Sat -> incr stat_total_sat
-      | Res.Unsat -> incr stat_total_unsat
-      | Res.Unknown -> incr stat_total_unknown
-      | Res.Timeout -> incr stat_total_timeout
-      | Res.Error -> incr stat_total_error
-      | Res.Tag tag ->
-        (match Hashtbl.find_opt stat_total_custom tag with
-        | Some r -> incr r
-        | None ->
-          let r = ref 0 in
-          incr r;
-          Hashtbl.add stat_total_custom tag r)
-  end
+(** Legacy HTTP progress callback — kept for backward compat. TODO: remove once
+    all clients use NATS. *)
+let make_http_progress_cb ~server ~uuid ~total_tasks_ref : Progress.callbacks =
+  let send_report report =
+    let url = Printf.sprintf "http://%s/api/progress/" server in
+    let json = report_to_json report in
+    let headers = [ "content-type", "application/json" ] in
+    let req = Curly.Request.make ~meth:`POST ~url ~headers ~body:json () in
+    match
+      Eio_unix.run_in_systhread ~label:"benchpress.send-progress" (fun () ->
+          Curly.run req)
+    with
+    | Ok r ->
+      if r.Curly.Response.code < 200 || r.Curly.Response.code >= 300 then
+        Log.warn (fun k ->
+            k "progress report rejected: HTTP %d (%s)" r.Curly.Response.code
+              server)
+    | Error e ->
+      Log.debug (fun k ->
+          k "progress report failed: %a (%s)" Curly.Error.pp e server)
+  in
+  let debounce_last = ref 0.0 in
+  let sent_finished = ref false in
+  let make_done_report () =
+    let r = Api.default_progress_report () in
+    Api.progress_report_set_uuid r (Uuidm.to_string uuid);
+    Api.progress_report_set_start_ts r 0.;
+    Api.progress_report_set_total_tasks r (Int32.of_int !total_tasks_ref);
+    Api.progress_report_set_done_tasks r (Int32.of_int !total_tasks_ref);
+    Api.progress_report_set_finished r true;
+    r
+  in
+  {
+    Progress.on_report =
+      (fun r ->
+        let now = Unix.gettimeofday () in
+        let should_send =
+          (r.Api.finished && not !sent_finished)
+          || ((not r.Api.finished) && now -. !debounce_last >= 5.0)
+        in
+        if should_send then (
+          debounce_last := now;
+          if r.Api.finished then sent_finished := true;
+          send_report r
+        ));
+    on_done = (fun () -> send_report (make_done_report ()));
+    on_res = (fun _ -> ());
+  }
 
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
     ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update ?(compress = false)
-    ?cb_progress ?cb_on_res ~total_tasks_ref (defs : Definitions.t)
+    ?progress_cb ~total_tasks_ref (defs : Definitions.t)
     (r : Action.run_provers) : Test_top_result.t lazy_t * Test_compact_result.t
     =
   let@ () =
@@ -148,12 +117,28 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
       r.limits r.j r.pattern r.dirs r.provers
   in
   let len = List.length r.problems in
-  total_tasks_ref := len * List.length r.provers;
+  let total_tasks = len * List.length r.provers in
+  total_tasks_ref := total_tasks;
   Notify.sendf notify "testing with %d provers, %d problems…"
     (List.length r.provers) len;
-  let progress =
-    Exec_action.Progress_run_provers.make ?pp_results ?dyn ?cb_progress
-      ?cb_on_res r
+  let uuid_s = Uuidm.to_string uuid in
+  let start_ts = CCOpt.value ~default:(Misc.now_s ()) timestamp in
+  let progress_components =
+    (if CCOpt.get_or ~default:false dyn then
+       [ Progress.make_terminal ~total_tasks ?pp_results () ]
+     else
+       [])
+    @
+    match progress_cb with
+    | None -> []
+    | Some cb ->
+      [ Progress.make ~uuid:uuid_s ~start_ts ~total_tasks ~callbacks:cb ]
+  in
+  let progress : Progress.t =
+    match progress_components with
+    | [] -> Progress.nil
+    | [ t ] -> t
+    | l -> Progress.fanout l
   in
   (* solve *)
   let result =
@@ -168,9 +153,9 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
   in
   result
 
-let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
-    ?output ~notify ~(uuid : Uuidm.t) ~(save : bool) ~wal_mode ~update
-    ?(compress = false) (defs : Definitions.t)
+let execute_submit_job_action ?j ?timestamp ?dyn ?limits ?proof_dir ?output
+    ~notify ~(uuid : Uuidm.t) ~(save : bool) ~wal_mode ~update
+    ?(compress = false) ?progress_cb (defs : Definitions.t)
     (r : Action.run_provers_slurm_submission) : _ * Test_compact_result.t =
   let@ _sp =
     Error.guard
@@ -184,9 +169,28 @@ let execute_submit_job_action ?pp_results ?j ?timestamp ?dyn ?limits ?proof_dir
       defs r.limits r.j r.pattern r.dirs r.provers
   in
   let len = List.length exp_r.problems in
+  let total_tasks = len * List.length r.provers in
   Notify.sendf notify "testing with %d provers, %d problems…"
     (List.length r.provers) len;
-  let progress = Exec_action.Progress_run_provers.make ?pp_results ?dyn exp_r in
+  let uuid_s = Uuidm.to_string uuid in
+  let start_ts = Misc.now_s () in
+  let progress_components =
+    (if CCOpt.get_or ~default:false dyn then
+       [ Progress.make_terminal ~total_tasks () ]
+     else
+       [])
+    @
+    match progress_cb with
+    | None -> []
+    | Some cb ->
+      [ Progress.make ~uuid:uuid_s ~start_ts ~total_tasks ~callbacks:cb ]
+  in
+  let progress =
+    match progress_components with
+    | [] -> Progress.nil
+    | [ t ] -> t
+    | l -> Progress.fanout l
+  in
   (* submit job *)
   let result =
     Error.guard (Error.wrapf "running %d tests" len) @@ fun () ->
@@ -211,7 +215,7 @@ type top_task =
 let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     ?summary ?task ?(dir_files = []) ?proof_dir ?output ?(save = true)
     ?(wal_mode = false) ?(compress = false) ~desktop_notification ~no_failure
-    ~update ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks ?server
+    ~update ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks ?nats
     (defs : Definitions.t) paths () : unit =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   Log.info (fun k ->
@@ -327,26 +331,16 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     let limits = run_provers_action.limits in
     let uuid = Misc.mk_uuid () in
     let total_tasks_ref = ref 0 in
-    let cb_full =
-      match server with
-      | Some s ->
-        make_server_progress_cb ~server:s ~uuid ~start_ts:timestamp
-          ~total_tasks_ref
-      | None ->
-        object
-          method on_progress ~percent:_ ~elapsed_time:_ ~eta:_ = ()
-          method on_done = ()
-          method finalize = ()
-          method on_res _ = ()
-        end
+    let server_progress_cb =
+      match nats with
+      | Some nats -> Some (make_nats_progress_cb ~nats ~uuid)
+      | None -> None
     in
     let top_res, (results : Test_compact_result.t) =
       execute_run_prover_action ~uuid ?pp_results ?proof_dir ?dyn:progress
         ~limits ?j ?cpus ?output ~notify ~timestamp ~save ~wal_mode ~update
-        ~compress
-        ~cb_progress:(cb_full :> Exec_action.cb_progress)
-        ~cb_on_res:(fun r -> cb_full#on_res r)
-        ~total_tasks_ref defs run_provers_action
+        ~compress ?progress_cb:server_progress_cb ~total_tasks_ref defs
+        run_provers_action
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in
@@ -358,7 +352,6 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     );
     let r = Bin_utils.check_compact_res ~no_failure notify results in
     Notify.sync notify;
-    cb_full#finalize;
     Bin_utils.printbox_compact_results results;
     (* try to send a desktop notification *)
     if desktop_notification then (
@@ -377,9 +370,9 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     let uuid = Misc.mk_uuid () in
 
     let top_res, (results : Test_compact_result.t) =
-      execute_submit_job_action ?pp_results ~uuid ?proof_dir ?dyn:progress
-        ~limits ?j ?output ~notify ~timestamp ~save ~wal_mode ~update ~compress
-        defs run_provers_action_sbatch
+      execute_submit_job_action ~uuid ?proof_dir ?dyn:progress ~limits ?j
+        ?output ~notify ~timestamp ~save ~wal_mode ~update ~compress defs
+        run_provers_action_sbatch
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in

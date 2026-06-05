@@ -1,7 +1,3 @@
-type cb_progress =
-  < on_progress : percent:int -> elapsed_time:float -> eta:float -> unit
-  ; on_done : unit >
-
 module Exec_run_provers : sig
   type t = Action.run_provers
 
@@ -79,37 +75,13 @@ module Exec_run_provers : sig
     Test_top_result.t lazy_t * Test_compact_result.t
 end
 
-module Progress_run_provers : sig
-  type t =
-    < on_res : Run_prover_problem.job_res -> unit
-    ; on_start_proof_check : unit
-    ; on_proof_check_res : Test.proof_check_result -> unit
-    ; on_done : unit >
-
-  val nil : t
-
-  val make :
-    ?cb_progress:cb_progress ->
-    ?cb_on_res:(Run_prover_problem.job_res -> unit) ->
-    ?pp_results:bool ->
-    ?dyn:bool ->
-    Exec_run_provers.expanded ->
-    t
-  (** Make a progress tracker.
-      @param dyn if true, print a progress bar in the terminal
-      @param pp_results if true, print each individual result as it's found
-      @param cb_progress
-        callback when progress is made, with a percentage and ETA
-      @param cb_on_res callback each time a job result is produced *)
-end
-
 val dump_results_sqlite : Test_top_result.t -> unit
 
 val run :
   ?output:string ->
   ?save:bool ->
   ?interrupted:(unit -> bool) ->
-  ?cb_progress:cb_progress ->
+  ?progress_cb:Progress.callbacks ->
   Definitions.t ->
   Action.t ->
   unit
