@@ -1,0 +1,4 @@
+(library
+ (name benchpress_nats)
+ (wrapped false)
+ (libraries eio eio.unix logs))
