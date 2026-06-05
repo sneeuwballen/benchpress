@@ -53,16 +53,15 @@ let die fmt =
       exit 1)
     fmt
 
-type rpc_config = { client: Curly_transport.client; host: string; port: int }
+type rpc_config = { host: string; port: int; api_key: string option }
 
 let call_rpc cfg rpc req =
+  let client = { Curly_transport.api_key = cfg.api_key } in
   match
-    Client.call ~encoding:`JSON ~host:cfg.host ~port:cfg.port cfg.client rpc req
+    Client.call ~encoding:`JSON ~host:cfg.host ~port:cfg.port client rpc req
   with
   | Ok r -> r
   | Error e -> die "%s" (Format.asprintf "%a" Twirp_core.Error.pp_error e)
-
-(* ── Common CLI terms ───────────────────────────────────────────────────── *)
 
 let parse_server s =
   match String.rindex_opt s ':' with
@@ -70,49 +69,19 @@ let parse_server s =
   | Some i ->
     let host = String.sub s 0 i in
     let port_str = String.sub s (i + 1) (String.length s - i - 1) in
-    ( host,
-      (match int_of_string_opt port_str with
-      | Some p -> p
-      | None -> 8080) )
-
-let server_term =
-  let open Cmdliner in
-  Arg.(
-    value
-    & opt string "localhost:8889"
-    & info [ "server" ]
-        ~env:(Cmd.Env.info "BENCHPRESS_SERVER")
-        ~doc:"Server address as HOST:PORT" ~docv:"HOST:PORT")
-
-let api_key_term =
-  let open Cmdliner in
-  Arg.(
-    value
-    & opt (some string) None
-    & info [ "api-key" ]
-        ~env:(Cmd.Env.info "BENCHPRESS_API_KEY")
-        ~doc:"API key (Bearer token)" ~docv:"KEY")
-
-let common_term =
-  let open Cmdliner in
-  Term.(
-    const (fun server api_key ->
-        let host, port = parse_server server in
-        { client = { Curly_transport.api_key }; host; port })
-    $ server_term $ api_key_term)
+    host, Option.value ~default:8080 (int_of_string_opt port_str)
 
 (* ── Status display helpers ──────────────────────────────────────────────── *)
 
 let json_of_list_jobs_resp r =
-  let module Api = Benchpress_api_proto.Benchpress_api in
-  Api.encode_json_list_jobs_response r |> Yojson.Basic.to_string
+  encode_json_list_jobs_response r |> Yojson.Basic.to_string
 
 let display_job_list ~json resp =
   if json then
     print_string (json_of_list_jobs_resp resp)
   else
     List.iter
-      (fun (e : Benchpress_api_proto.Benchpress_api.job_entry) ->
+      (fun (e : job_entry) ->
         printf "%s  %s" e.job_id (str_of_status e.status);
         (match e.status with
         | Running -> printf " (%ld%%)" e.progress_percent
@@ -174,10 +143,17 @@ module Cmd_run = struct
     name: string option; [@names [ "name" ]]
     wait: bool; [@names [ "wait"; "w" ]]
     json: bool;
+    server: string;
+        [@default "localhost:8889"]
+        [@env "BENCHPRESS_SERVER"]
+        [@docv "HOST:PORT"]
+    api_key: string option; [@env "BENCHPRESS_API_KEY"] [@docv "KEY"]
   }
   [@@deriving subliner]
 
-  let run cfg p =
+  let run p =
+    let host, port = parse_server p.server in
+    let cfg = { host; port; api_key = p.api_key } in
     let req =
       make_new_job_request ~provers:p.provers ~paths:p.paths
         ?timeout_s:(Option.map Int32.of_int p.timeout)
@@ -196,16 +172,26 @@ module Cmd_run = struct
   let cmd =
     let open Cmdliner in
     let info = Cmd.info "run" ~doc:"Submit a benchmarking job" in
-    Cmd.v info Term.(const run $ common_term $ params_cmdliner_term ())
+    Cmd.v info Term.(const run $ params_cmdliner_term ())
 end
 
 (* ── status subcommand ──────────────────────────────────────────────────── *)
 
 module Cmd_status = struct
-  type params = { job_id: string option; [@pos 0] [@docv "JOB_ID"] json: bool }
+  type params = {
+    job_id: string option; [@pos 0] [@docv "JOB_ID"]
+    json: bool;
+    server: string;
+        [@default "localhost:8889"]
+        [@env "BENCHPRESS_SERVER"]
+        [@docv "HOST:PORT"]
+    api_key: string option; [@env "BENCHPRESS_API_KEY"] [@docv "KEY"]
+  }
   [@@deriving subliner]
 
-  let run cfg p =
+  let run p =
+    let host, port = parse_server p.server in
+    let cfg = { host; port; api_key = p.api_key } in
     match p.job_id with
     | Some job_id ->
       let r =
@@ -222,16 +208,25 @@ module Cmd_status = struct
     let info =
       Cmd.info "status" ~doc:"Query job status (list all if no JOB_ID given)"
     in
-    Cmd.v info Term.(const run $ common_term $ params_cmdliner_term ())
+    Cmd.v info Term.(const run $ params_cmdliner_term ())
 end
 
 (* ── cancel subcommand ──────────────────────────────────────────────────── *)
 
 module Cmd_cancel = struct
-  type params = { job_id: string [@pos 0] [@docv "JOB_ID"] }
+  type params = {
+    job_id: string; [@pos 0] [@docv "JOB_ID"]
+    server: string;
+        [@default "localhost:8889"]
+        [@env "BENCHPRESS_SERVER"]
+        [@docv "HOST:PORT"]
+    api_key: string option; [@env "BENCHPRESS_API_KEY"] [@docv "KEY"]
+  }
   [@@deriving subliner]
 
-  let run cfg p =
+  let run p =
+    let host, port = parse_server p.server in
+    let cfg = { host; port; api_key = p.api_key } in
     let _r =
       call_rpc cfg BenchpressApi.Client.cancelJob
         (make_cancel_job_request ~job_id:p.job_id ())
@@ -241,7 +236,7 @@ module Cmd_cancel = struct
   let cmd =
     let open Cmdliner in
     let info = Cmd.info "cancel" ~doc:"Cancel a running job" in
-    Cmd.v info Term.(const run $ common_term $ params_cmdliner_term ())
+    Cmd.v info Term.(const run $ params_cmdliner_term ())
 end
 
 (* ── listen subcommand ──────────────────────────────────────────────────── *)
@@ -255,7 +250,7 @@ module Cmd_listen = struct
   }
   [@@deriving subliner]
 
-  let run (p : params) : unit =
+  let run p =
     let host, port =
       match String.rindex_opt p.server ':' with
       | None -> p.server, 4222
@@ -265,7 +260,7 @@ module Cmd_listen = struct
              int_of_string_opt
                (String.sub p.server (i + 1) (String.length p.server - i - 1))
            with
-          | Some p -> p
+          | Some port -> port
           | None -> 4222) )
     in
     Eio_main.run @@ fun env ->
@@ -307,7 +302,6 @@ module Cmd_listen = struct
                 Printf.eprintf "warning: invalid progress message: %s\n%!"
                   (Printexc.to_string exn))
         in
-        (* block until interrupted *)
         Eio.Time.sleep clock infinity)
 
   let cmd =
