@@ -1,6 +1,6 @@
 (* This file is free software. See file "license" for more details. *)
 
-type value = Ezjsonm.value
+type value = Config_value.value
 type path = Root | Field of string * path | Index of int * path
 
 val path_to_string : path -> string

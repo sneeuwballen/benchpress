@@ -45,10 +45,7 @@
   base64
   ptime
   processor
-  (pp_loc
-   (and
-    (>= 2.0)
-    (< 3.0)))
+  jsonm
   (sqlite3
    (>= 5.0.3))
   (sqlite3_utils
@@ -61,7 +58,6 @@
    (>= 0.6))
   (printbox-text
    (>= 0.6))
-  ezjsonm
   yaml))
 
 (package

@@ -1,26 +1,9 @@
-open Pp_loc
-
-type pos = Position.t
-
-module Input : sig
-  type t
-
-  val string : string -> t
-  val file : string -> t
-end
-
-module Pos : sig
-  val dummy : pos
-  val of_line_col : int -> int -> pos
-  val to_line_col : Input.t -> pos -> int * int
-  val to_lexing : ?filename:string -> Input.t -> pos -> Lexing.position
-  val le : Input.t -> pos -> pos -> bool
-end
-
-type t = { start: pos; stop: pos; input: Input.t }
+type pos = { line: int; col: int }
+type t = { file: string; start: pos; stop: pos }
 
 val none : t
-val loc : t -> loc
-val contains : t -> pos -> bool
-val of_lexbuf : input:Input.t -> Lexing.lexbuf -> t
+(** Dummy location, used when no real position is available. *)
+
 val pp : Format.formatter -> t -> unit
+(** Format as "file:start_line:start_col-stop_line:stop_col" or compact
+    "file:line" if start/stop on same line. *)

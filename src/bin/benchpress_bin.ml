@@ -547,15 +547,23 @@ module Convert_config = struct
     let value =
       match Filename.extension p.input with
       | ".json" ->
-        Ezjsonm.value_from_string (CCIO.with_in p.input CCIO.read_all)
+        (match
+           Parse_json.parse (CCIO.with_in p.input CCIO.read_all) ~file:p.input
+         with
+        | Ok v -> v
+        | Error msg -> Error.failf "%s" msg)
       | ".yaml" | ".yml" ->
-        Yaml.of_string_exn (CCIO.with_in p.input CCIO.read_all)
+        (match
+           Parse_yaml.parse (CCIO.with_in p.input CCIO.read_all) ~file:p.input
+         with
+        | Ok v -> v
+        | Error msg -> Error.failf "%s" msg)
       | ext -> Error.failf "unsupported input format: %s" ext
     in
     let output_str =
       match format with
-      | `json -> Ezjsonm.value_to_string ~minify:false value
-      | `yaml -> Yaml.to_string_exn value
+      | `json -> Config_value.to_json value
+      | `yaml -> Config_value.to_yaml value |> Yaml.to_string_exn
     in
     if p.output = "-" then
       print_string output_str

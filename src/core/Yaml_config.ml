@@ -61,9 +61,9 @@ type raw_version =
 let decode_version : raw_version t =
   let open Json_decode in
   let* v = value in
-  match v with
-  | `String s -> return (RV_string s)
-  | `O _ ->
+  match v.node with
+  | String s -> return (RV_string s)
+  | O _ ->
     let* git = field_opt "git" string in
     let* cmd = field_opt "cmd" string in
     let+ exact = field_opt "exact" string in
@@ -344,12 +344,12 @@ type raw_expect =
 let decode_raw_expect : raw_expect t =
   fix (fun self ->
       let* v = value in
-      match v with
-      | `String s -> return (RE_string s)
-      | `A _ ->
+      match v.node with
+      | String s -> return (RE_string s)
+      | A _ ->
         let+ items = list self in
         RE_try items
-      | `O _ ->
+      | O _ ->
         let* try_ = field_opt "try" (list self) in
         let+ run = field_opt "run" string in
         (match try_, run with
@@ -456,11 +456,11 @@ let parse_git_fetch = function
     config_errorf
       "git_checkout.fetch_first: expected 'fetch' or 'pull', got '%s'" s
 
-let rec resolve_action (defs : Definitions.t) (action_val : Ezjsonm.value) :
-    Action.t =
+let rec resolve_action (defs : Definitions.t) (action_val : Config_value.value)
+    : Action.t =
   let open Json_decode in
-  match action_val with
-  | `O ((k, _) :: _) ->
+  match action_val.node with
+  | O ((k, _) :: _) ->
     (match k with
     | "run_provers" ->
       let inner = run_exn (field "run_provers" value) action_val in
@@ -537,7 +537,7 @@ let rec resolve_action (defs : Definitions.t) (action_val : Ezjsonm.value) :
 
 (** {2 Task and Options} *)
 
-let decode_task_raw : (string * Ezjsonm.value) t =
+let decode_task_raw : (string * Config_value.value) t =
   let* name = field "name" string in
   let+ action_v = field "action" value in
   name, action_v
@@ -549,7 +549,7 @@ let decode_options : (int option * bool option) t =
 
 (** {2 Main Decode} *)
 
-let decode (value : Ezjsonm.value) (cur_dir : string) : Definitions.t =
+let decode (value : Config_value.value) (cur_dir : string) : Definitions.t =
   let decoder =
     let* raw_provers =
       field_or "provers" ~default:[] (list (decode_raw_prover cur_dir))
@@ -651,17 +651,16 @@ let decode (value : Ezjsonm.value) (cur_dir : string) : Definitions.t =
 (** {2 Loading} *)
 
 let load_yaml_string (content : string) ~(cur_dir : string) : Definitions.t =
-  match Yaml.of_string content with
+  let file = Filename.concat cur_dir "<config>" in
+  match Parse_yaml.parse content ~file with
   | Ok value -> decode value cur_dir
-  | Error (`Msg e) -> config_errorf "YAML parse error: %s" e
+  | Error msg -> config_errorf "%s" msg
 
 let load_json_string (content : string) ~(cur_dir : string) : Definitions.t =
-  let value =
-    try Ezjsonm.value_from_string content
-    with Ezjsonm.Parse_error (_v, msg) ->
-      config_errorf "JSON parse error: %s" msg
-  in
-  decode value cur_dir
+  let file = Filename.concat cur_dir "<config>" in
+  match Parse_json.parse content ~file with
+  | Ok value -> decode value cur_dir
+  | Error msg -> config_errorf "%s" msg
 
 let load_file (path : string) : Definitions.t =
   let content =
