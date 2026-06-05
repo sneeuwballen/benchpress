@@ -244,6 +244,78 @@ module Cmd_cancel = struct
     Cmd.v info Term.(const run $ common_term $ params_cmdliner_term ())
 end
 
+(* ── listen subcommand ──────────────────────────────────────────────────── *)
+
+module Cmd_listen = struct
+  module Api = Benchpress_api_proto.Benchpress_api
+
+  type params = {
+    server: string; [@default "localhost:4222"] [@docv "HOST:PORT"]
+        (** NATS server address *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) : unit =
+    let host, port =
+      match String.rindex_opt p.server ':' with
+      | None -> p.server, 4222
+      | Some i ->
+        ( String.sub p.server 0 i,
+          (match
+             int_of_string_opt
+               (String.sub p.server (i + 1) (String.length p.server - i - 1))
+           with
+          | Some p -> p
+          | None -> 4222) )
+    in
+    Eio_main.run @@ fun env ->
+    let net = Eio.Stdenv.net env in
+    let clock = Eio.Stdenv.clock env in
+    let subject = [ "benchpress"; "progress"; ">" ] in
+    Eio.Switch.run @@ fun sw ->
+    Nats.with_connect ~sw ~net ~host ~port () (fun nats ->
+        let last_print = ref 0.0 in
+        let _sub =
+          Nats.sub nats ~sw ~subject (fun msg ->
+              let now = Unix.gettimeofday () in
+              match
+                Api.decode_json_progress_report
+                  (Yojson.Basic.from_string msg.payload)
+              with
+              | report ->
+                let should_print = now -. !last_print >= 10.0 in
+                if should_print then last_print := now;
+                if should_print || report.Api.finished then (
+                  let pct =
+                    if report.Api.total_tasks = 0l then
+                      0
+                    else
+                      Int32.to_int report.Api.done_tasks
+                      * 100
+                      / Int32.to_int report.Api.total_tasks
+                  in
+                  let status =
+                    if report.Api.finished then
+                      "done"
+                    else
+                      "running"
+                  in
+                  Printf.printf "[%s] %s %d%%  %s\n%!" report.Api.uuid status
+                    pct report.Api.stats
+                )
+              | exception exn ->
+                Printf.eprintf "warning: invalid progress message: %s\n%!"
+                  (Printexc.to_string exn))
+        in
+        (* block until interrupted *)
+        Eio.Time.sleep clock infinity)
+
+  let cmd =
+    let open Cmdliner in
+    let info = Cmd.info "listen" ~doc:"Listen for progress events via NATS" in
+    Cmd.v info Term.(const run $ params_cmdliner_term ())
+end
+
 (* ── entry point ────────────────────────────────────────────────────────── *)
 
 let () =
@@ -257,4 +329,5 @@ let () =
   in
   exit
     (Cmd.eval
-       (Cmd.group info ~default [ Cmd_run.cmd; Cmd_status.cmd; Cmd_cancel.cmd ]))
+       (Cmd.group info ~default
+          [ Cmd_run.cmd; Cmd_status.cmd; Cmd_cancel.cmd; Cmd_listen.cmd ]))
