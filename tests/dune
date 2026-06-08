@@ -10,15 +10,7 @@
  (action
   (with-stdout-to
    %{targets}
-   (run
-    ../src/bin/benchpress_bin.exe
-    run
-    --save=false
-    -q
-    -c
-    conf_prover1.yaml
-    --task
-    runall))))
+   (bash "../src/bin/benchpress_bin.exe run --save=false -q -c conf_prover1.yaml --task runall | sed -E '/^total_time/s/[0-9.]+s/--s/'"))))
 
 (rule
  (alias runtest)
