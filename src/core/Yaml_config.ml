@@ -1,7 +1,6 @@
 (* This file is free software. See file "license" for more details. *)
 
 open Json_decode
-
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.yaml_config"))
 
 exception Config_error of string
@@ -377,8 +376,7 @@ let rec resolve_expect (re : raw_expect) ~(defs : Definitions.t) : Dir.expect =
     (match parse_expect_string s with
     | `Const e -> e
     | _ -> Dir.E_comment)
-  | RE_run name ->
-    Dir.E_program { prover = Definitions.find_prover' defs name }
+  | RE_run name -> Dir.E_program { prover = Definitions.find_prover' defs name }
   | RE_try l ->
     let l = List.map (fun re -> resolve_expect re ~defs) l in
     Dir.E_try l
@@ -459,8 +457,8 @@ let parse_git_fetch = function
     config_errorf
       "git_checkout.fetch_first: expected 'fetch' or 'pull', got '%s'" s
 
-let rec resolve_action ~(defs : Definitions.t) (action_val : Config_value.value) :
-    Action.t =
+let rec resolve_action ~(defs : Definitions.t) (action_val : Config_value.value)
+    : Action.t =
   let open Json_decode in
   let find_prover name = Definitions.find_prover' defs name in
   match action_val.node with
@@ -590,8 +588,8 @@ let decode ~previous (value : Config_value.value) (cur_dir : string) :
               | Some b -> Some b
               | None ->
                 config_errorf
-                  "prover '%s': extends unknown prover '%s' (must be \
-                   declared before it)"
+                  "prover '%s': extends unknown prover '%s' (must be declared \
+                   before it)"
                   rp.rp_name base_name)
           in
           let p = resolve_prover rp ~base ~cur_dir in
@@ -615,8 +613,7 @@ let decode ~previous (value : Config_value.value) (cur_dir : string) :
         (fun defs c ->
           let name = (With_loc.view c).Proof_checker.name in
           if Definitions.mem_def defs name then
-            Log.warn (fun k ->
-                k "duplicate definition '%s', overriding" name);
+            Log.warn (fun k -> k "duplicate definition '%s', overriding" name);
           Definitions.add_proof_checker c defs)
         defs checkers
     in
@@ -640,8 +637,8 @@ let decode ~previous (value : Config_value.value) (cur_dir : string) :
               | Some b -> Some b
               | None ->
                 config_errorf
-                  "dir '%s': extends unknown dir '%s' (must be declared \
-                   before it)"
+                  "dir '%s': extends unknown dir '%s' (must be declared before \
+                   it)"
                   (CCOption.value rd.rd_name ~default:"<unnamed>")
                   base_name)
           in
@@ -659,8 +656,7 @@ let decode ~previous (value : Config_value.value) (cur_dir : string) :
         (fun defs d ->
           (match d.Dir.name with
           | Some n when Definitions.mem_dir defs n ->
-            Log.warn (fun k ->
-                k "duplicate dir '%s', overriding" n)
+            Log.warn (fun k -> k "duplicate dir '%s', overriding" n)
           | _ -> ());
           Definitions.add_dir d defs)
         defs dirs

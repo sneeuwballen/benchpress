@@ -139,7 +139,9 @@ let all_tasks self : _ list =
 let all_dirs self : Dir.t list = self.dirs
 let find self name = Str_map.get name self.defs
 let mem_def (self : t) (name : string) : bool = Str_map.mem name self.defs
-let mem_dir (self : t) (name : string) : bool = Str_map.mem ("dir:" ^ name) self.dir_vars
+
+let mem_dir (self : t) (name : string) : bool =
+  Str_map.mem ("dir:" ^ name) self.dir_vars
 
 let find_prover self name : Prover.t with_loc =
   match Str_map.get name self.defs with
