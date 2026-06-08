@@ -5,10 +5,7 @@ module Api = Benchpress_api_proto.Benchpress_api
 
 [@@@alert "-unstable"]
 
-(* TODO: replace HTTP with NATS messaging for progress reporting *)
-
-let report_to_json (r : Progress.report) : string =
-  Api.encode_json_progress_report r |> Yojson.Basic.to_string
+(* ── NATS progress publishing ───────────────────────────────────────────── *)
 
 (** Create a [Progress.callbacks] that publishes each report to NATS. *)
 let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
@@ -34,7 +31,9 @@ let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
         | `Check -> check_subject
         | `Done -> done_subject
       in
-      let json = report_to_json report in
+      let json =
+        Api.encode_json_progress_report report |> Yojson.Basic.to_string
+      in
       try Nats.pub nats ~subject json with _ -> ()
     )
   in
@@ -48,55 +47,6 @@ let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
   {
     Progress.on_report = (fun r -> publish `Solve r);
     on_done = (fun () -> publish `Done (make_done_report ()));
-    on_res = (fun _ -> ());
-  }
-
-(** Legacy HTTP progress callback — kept for backward compat. TODO: remove once
-    all clients use NATS. *)
-let make_http_progress_cb ~server ~uuid ~total_tasks_ref : Progress.callbacks =
-  let send_report report =
-    let url = Printf.sprintf "http://%s/api/progress/" server in
-    let json = report_to_json report in
-    let headers = [ "content-type", "application/json" ] in
-    let req = Curly.Request.make ~meth:`POST ~url ~headers ~body:json () in
-    match
-      Eio_unix.run_in_systhread ~label:"benchpress.send-progress" (fun () ->
-          Curly.run req)
-    with
-    | Ok r ->
-      if r.Curly.Response.code < 200 || r.Curly.Response.code >= 300 then
-        Log.warn (fun k ->
-            k "progress report rejected: HTTP %d (%s)" r.Curly.Response.code
-              server)
-    | Error e ->
-      Log.debug (fun k ->
-          k "progress report failed: %a (%s)" Curly.Error.pp e server)
-  in
-  let debounce_last = ref 0.0 in
-  let sent_finished = ref false in
-  let make_done_report () =
-    let r = Api.default_progress_report () in
-    Api.progress_report_set_uuid r (Uuidm.to_string uuid);
-    Api.progress_report_set_start_ts r 0.;
-    Api.progress_report_set_total_tasks r (Int32.of_int !total_tasks_ref);
-    Api.progress_report_set_done_tasks r (Int32.of_int !total_tasks_ref);
-    Api.progress_report_set_finished r true;
-    r
-  in
-  {
-    Progress.on_report =
-      (fun r ->
-        let now = Unix.gettimeofday () in
-        let should_send =
-          (r.Api.finished && not !sent_finished)
-          || ((not r.Api.finished) && now -. !debounce_last >= 5.0)
-        in
-        if should_send then (
-          debounce_last := now;
-          if r.Api.finished then sent_finished := true;
-          send_report r
-        ));
-    on_done = (fun () -> send_report (make_done_report ()));
     on_res = (fun _ -> ());
   }
 

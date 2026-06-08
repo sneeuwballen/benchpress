@@ -119,7 +119,12 @@ module Run = struct
         ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
         ~update:p.update ?nats defs p.paths ()
     in
-    match p.server with
+    let nats_server =
+      match p.server with
+      | Some _ -> p.server (* CLI flag overrides everything *)
+      | None -> Definitions.option_nats_server defs
+    in
+    match nats_server with
     | None -> call_main None
     | Some server ->
       let host, port =
@@ -134,13 +139,14 @@ module Run = struct
             | Some p -> p
             | None -> 4222) )
       in
+      let host_s = Nats.resolve_host host in
       (match !eio_env with
       | None -> call_main None
       | Some env ->
         let net = Eio.Stdenv.net (Obj.obj env) in
         (match
            Eio.Switch.run (fun sw ->
-               match Nats.connect ~sw ~net ~host ~port () with
+               match Nats.connect ~sw ~net ~host:host_s ~port () with
                | nats -> call_main (Some nats)
                | exception e ->
                  Format.eprintf

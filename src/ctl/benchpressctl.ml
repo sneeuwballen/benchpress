@@ -1,6 +1,12 @@
 (** benchpressctl — CLI client for the benchpress server Twirp API *)
 
 open Printf
+module Log = (val Logs.src_log (Logs.Src.create "benchpressctl"))
+
+let setup_logs (lvl : Logs.level option) =
+  Logs.set_reporter (Logs.format_reporter ());
+  Logs.set_level ~all:true lvl;
+  Log.info (fun k -> k "logging initialized")
 
 (* ── Twirp client transport via curly ──────────────────────────────────── *)
 
@@ -152,6 +158,7 @@ module Cmd_run = struct
   [@@deriving subliner]
 
   let run p =
+    Log.info (fun k -> k "run: provers=%a" Fmt.(list string) p.provers);
     let host, port = parse_server p.server in
     let cfg = { host; port; api_key = p.api_key } in
     let req =
@@ -263,12 +270,22 @@ module Cmd_listen = struct
           | Some port -> port
           | None -> 4222) )
     in
+    let host_s =
+      try Unix.string_of_inet_addr (Unix.inet_addr_of_string host)
+      with Failure _ ->
+        let entry = Unix.gethostbyname host in
+        if Array.length entry.Unix.h_addr_list = 0 then
+          failwith (Printf.sprintf "no address for host %S" host);
+        Unix.string_of_inet_addr entry.Unix.h_addr_list.(0)
+    in
+    Log.info (fun k -> k "connecting to NATS at %s:%d" host_s port);
     Eio_main.run @@ fun env ->
     let net = Eio.Stdenv.net env in
     let clock = Eio.Stdenv.clock env in
     let subject = [ "benchpress"; "progress"; ">" ] in
     Eio.Switch.run @@ fun sw ->
-    Nats.with_connect ~sw ~net ~host ~port () (fun nats ->
+    Nats.with_connect ~sw ~net ~host:host_s ~port () (fun nats ->
+        Log.info (fun k -> k "subscribed to %s" (String.concat "." subject));
         let last_print = ref 0.0 in
         let _sub =
           Nats.sub nats ~sw ~subject (fun msg ->
@@ -278,6 +295,9 @@ module Cmd_listen = struct
                   (Yojson.Basic.from_string msg.payload)
               with
               | report ->
+                Log.debug (fun k ->
+                    k "progress: %s %ld/%ld" report.Api.uuid
+                      report.Api.done_tasks report.Api.total_tasks);
                 let should_print = now -. !last_print >= 10.0 in
                 if should_print then last_print := now;
                 if should_print || report.Api.finished then (
@@ -312,7 +332,20 @@ end
 
 (* ── entry point ────────────────────────────────────────────────────────── *)
 
+let get_log_level () =
+  match Sys.getenv_opt "LOG_LEVEL" with
+  | None -> Some Logs.Warning
+  | Some "debug" | Some "DEBUG" -> Some Logs.Debug
+  | Some "info" | Some "INFO" -> Some Logs.Info
+  | Some "warning" | Some "WARNING" -> Some Logs.Warning
+  | Some "error" | Some "ERROR" -> Some Logs.Error
+  | Some "app" | Some "APP" -> Some Logs.App
+  | Some s ->
+    Printf.eprintf "benchpressctl: invalid LOG_LEVEL=%S, using Warning\n%!" s;
+    Some Logs.Warning
+
 let () =
+  setup_logs (get_log_level ());
   let open Cmdliner in
   let info =
     Cmd.info "benchpressctl" ~version:"dev"
