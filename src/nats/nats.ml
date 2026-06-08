@@ -348,6 +348,14 @@ let connect ~sw ~net ?token ?user ?pass ?host ?(port = 4222) () =
 
 let close self = self.shutdown ()
 
+let resolve_host host =
+  try Unix.string_of_inet_addr (Unix.inet_addr_of_string host)
+  with Failure _ ->
+    let entry = Unix.gethostbyname host in
+    if Array.length entry.Unix.h_addr_list = 0 then
+      failwith (spf "no address for host %S" host);
+    Unix.string_of_inet_addr entry.Unix.h_addr_list.(0)
+
 let with_connect ~sw ~net ?token ?user ?pass ?host ?port () f =
   let c = connect ~sw ~net ?token ?user ?pass ?host ?port () in
   Fun.protect (fun () -> f c) ~finally:(fun () -> close c)

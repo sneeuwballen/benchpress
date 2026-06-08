@@ -96,6 +96,10 @@ val request :
 
 (** {2 Lifecycle} *)
 
+val resolve_host : string -> string
+(** Resolve a hostname or IP address to a dotted IP string. Raises [Failure] if
+    the hostname can't be resolved. *)
+
 val wait : t -> unit
 (** Await for the client to be done (exit, shutdown, etc.) *)
 
