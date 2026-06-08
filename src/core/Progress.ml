@@ -197,16 +197,15 @@ let make_terminal ~total_tasks ?(pp_results = true) () : t =
       else
         spf " !%d" !n_fail
     in
-    Misc.synchronized_sync (fun () ->
-        Format.printf "... %6d/%d%s | %3.1f%% [%6s: %s] [eta %6s]@?" !count !len
-          fail_indicator percent
-          (Misc.human_duration time_elapsed)
-          bar
-          (if eta = infinity then
-             "  --"
-           else
-             Misc.human_duration eta));
-    if !count = !len then Misc.synchronized_sync (fun () -> Format.printf "@.")
+    Format.printf "... %6d/%d%s | %3.1f%% [%6s: %s] [eta %6s]@?" !count !len
+      fail_indicator percent
+      (Misc.human_duration time_elapsed)
+      bar
+      (if eta = infinity then
+         "  --"
+       else
+         Misc.human_duration eta);
+    if !count = !len then Format.printf "@."
   in
   let pp_res ~w_prover ~w_pb res =
     if pp_results then Run_prover_problem.pp_result_progress ~w_prover ~w_pb res
