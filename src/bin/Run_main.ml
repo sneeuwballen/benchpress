@@ -10,9 +10,16 @@ module Api = Benchpress_api_proto.Benchpress_api
 (** Create a [Progress.callbacks] that publishes each report to NATS. *)
 let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
   let uuid_s = Uuidm.to_string uuid in
-  let solve_subject = [ "benchpress"; "progress"; "solve"; uuid_s ] in
-  let check_subject = [ "benchpress"; "progress"; "check"; uuid_s ] in
-  let done_subject = [ "benchpress"; "progress"; "done"; uuid_s ] in
+  let solve_bp_subject = [ "benchpress"; "progress"; "solve"; uuid_s ] in
+  let check_bp_subject = [ "benchpress"; "progress"; "check"; uuid_s ] in
+  let done_bp_subject = [ "benchpress"; "progress"; "done"; uuid_s ] in
+  let solve_user_subject =
+    [ "user"; "notify"; "benchpress"; "solve"; uuid_s ]
+  in
+  let check_user_subject =
+    [ "user"; "notify"; "benchpress"; "check"; uuid_s ]
+  in
+  let done_user_subject = [ "user"; "notify"; "benchpress"; "done"; uuid_s ] in
   let last_send = ref 0.0 in
   let sent_done = ref false in
   let publish kind report =
@@ -25,16 +32,17 @@ let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
     if should_send then (
       last_send := now;
       if finished then sent_done := true;
-      let subject =
+      let bp_subject, user_subject =
         match kind with
-        | `Solve -> solve_subject
-        | `Check -> check_subject
-        | `Done -> done_subject
+        | `Solve -> solve_bp_subject, solve_user_subject
+        | `Check -> check_bp_subject, check_user_subject
+        | `Done -> done_bp_subject, done_user_subject
       in
       let json =
         Api.encode_json_progress_report report |> Yojson.Basic.to_string
       in
-      try Nats.pub nats ~subject json with _ -> ()
+      (try Nats.pub nats ~subject:bp_subject json with _ -> ());
+      try Nats.pub nats ~subject:user_subject json with _ -> ()
     )
   in
   let make_done_report () =
