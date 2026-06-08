@@ -19,3 +19,6 @@ provers:
     cmd: "cvc5 --tlimit=${timeout}000 $file"
     unsat: "unsat"
     sat: "^sat"
+
+options:
+  nats: "localhost:4222"

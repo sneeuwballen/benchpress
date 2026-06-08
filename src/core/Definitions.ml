@@ -24,6 +24,7 @@ type t = {
   tags: string list;
   option_j: int option;
   option_progress: bool option;
+  option_nats_server: string option;
 }
 (** All known definitions *)
 
@@ -36,6 +37,7 @@ let empty : t =
     tags = [];
     option_j = None;
     option_progress = None;
+    option_nats_server = None;
     config_file = None;
     errors = [];
   }
@@ -74,15 +76,23 @@ let merge (a : t) (b : t) : t =
       (match b.option_progress with
       | Some _ -> b.option_progress
       | None -> a.option_progress);
+    option_nats_server =
+      (match b.option_nats_server with
+      | Some _ -> b.option_nats_server
+      | None -> a.option_nats_server);
   }
 
 let errors self = self.errors
 let option_j self = self.option_j
 let option_progress self = self.option_progress
+let option_nats_server self = self.option_nats_server
 let with_option_j (j : int option) (self : t) : t = { self with option_j = j }
 
 let with_option_progress (p : bool option) (self : t) : t =
   { self with option_progress = p }
+
+let with_option_nats_server (s : string option) (self : t) : t =
+  { self with option_nats_server = s }
 
 let with_cur_dir (d : string) (self : t) : t = { self with cur_dir = d }
 let custom_tags self = self.tags
@@ -128,6 +138,8 @@ let all_tasks self : _ list =
 
 let all_dirs self : Dir.t list = self.dirs
 let find self name = Str_map.get name self.defs
+let mem_def (self : t) (name : string) : bool = Str_map.mem name self.defs
+let mem_dir (self : t) (name : string) : bool = Str_map.mem ("dir:" ^ name) self.dir_vars
 
 let find_prover self name : Prover.t with_loc =
   match Str_map.get name self.defs with
@@ -260,9 +272,10 @@ let pp out
       tags;
       option_j;
       option_progress;
+      option_nats_server;
     } =
   let open Misc.Pp in
-  Fmt.fprintf out "(@[<v1>Definitions%a%a%a%a%a%a%a%a%a@])"
+  Fmt.fprintf out "(@[<v1>Definitions%a%a%a%a%a%a%a%a%a%a@])"
     (pp_f "def" (Str_map.pp Fmt.string pp_def))
     defs
     (pp_f "dirs" (pp_l Dir.pp))
@@ -281,3 +294,5 @@ let pp out
     option_j
     (pp_opt "option_progress" Fmt.bool)
     option_progress
+    (pp_opt "option_nats" Fmt.string)
+    option_nats_server

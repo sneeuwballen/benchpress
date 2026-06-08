@@ -2,6 +2,8 @@
 
 open Json_decode
 
+module Log = (val Logs.src_log (Logs.Src.create "benchpress.yaml_config"))
+
 exception Config_error of string
 
 let config_errorf fmt = Printf.ksprintf (fun s -> raise (Config_error s)) fmt
@@ -376,10 +378,9 @@ let rec resolve_expect (re : raw_expect) ~(defs : Definitions.t) : Dir.expect =
     | `Const e -> e
     | _ -> Dir.E_comment)
   | RE_run name ->
-    let p = Definitions.find_prover' defs name in
-    Dir.E_program { prover = p }
+    Dir.E_program { prover = Definitions.find_prover' defs name }
   | RE_try l ->
-    let l = List.map (fun re -> resolve_expect ~defs re) l in
+    let l = List.map (fun re -> resolve_expect re ~defs) l in
     Dir.E_try l
 
 type raw_dir = {
@@ -427,7 +428,9 @@ let resolve_dir (rd : raw_dir) ~(base : Dir.t option) ~(defs : Definitions.t)
           | None -> "dir: requires 'path' or 'extends'"))
   in
   let path =
-    path |> Misc.str_replace [ "cur_dir", cur_dir ] |> Misc.mk_abs_path
+    path
+    |> Misc.str_replace [ "cur_dir", cur_dir ]
+    |> Xdg.interpolate_home |> Misc.mk_abs_path
   in
   let pattern =
     match rd.rd_pattern with
@@ -456,9 +459,10 @@ let parse_git_fetch = function
     config_errorf
       "git_checkout.fetch_first: expected 'fetch' or 'pull', got '%s'" s
 
-let rec resolve_action (defs : Definitions.t) (action_val : Config_value.value)
-    : Action.t =
+let rec resolve_action ~(defs : Definitions.t) (action_val : Config_value.value) :
+    Action.t =
   let open Json_decode in
+  let find_prover name = Definitions.find_prover' defs name in
   match action_val.node with
   | O ((k, _) :: _) ->
     (match k with
@@ -472,7 +476,7 @@ let rec resolve_action (defs : Definitions.t) (action_val : Config_value.value)
       let memory = run_exn (field_opt "memory" int) inner in
       let j = run_exn (field_opt "j" int) inner in
       let pattern = run_exn (field_opt "pattern" string) inner in
-      let provers = List.map (Definitions.find_prover' defs) prover_names in
+      let provers = List.map find_prover prover_names in
       let dirs = List.map (Definitions.mk_subdir defs) dir_paths in
       let limits = Definitions.mk_limits ?timeout ?memory () in
       Action.Act_run_provers
@@ -492,7 +496,7 @@ let rec resolve_action (defs : Definitions.t) (action_val : Config_value.value)
       let addr_str = run_exn (field_opt "addr" string) inner in
       let port = run_exn (field_opt "port" int) inner in
       let ntasks = run_exn (field_opt "ntasks" int) inner in
-      let provers = List.map (Definitions.find_prover' defs) prover_names in
+      let provers = List.map find_prover prover_names in
       let dirs = List.map (Definitions.mk_subdir defs) dir_paths in
       let limits = Definitions.mk_limits ?timeout ?memory () in
       let nodes = CCOption.value nodes ~default:1 in
@@ -528,7 +532,7 @@ let rec resolve_action (defs : Definitions.t) (action_val : Config_value.value)
       Action.Act_git_checkout { dir; ref; fetch_first; loc = Loc.none }
     | "seq" ->
       let actions = run_exn (field "seq" (list value)) action_val in
-      Action.Act_progn (List.map (fun v -> resolve_action defs v) actions)
+      Action.Act_progn (List.map (fun v -> resolve_action ~defs v) actions)
     | "run_cmd" ->
       let cmd = run_exn (field "run_cmd" string) action_val in
       Action.Act_run_cmd { cmd; loc = Loc.none }
@@ -542,14 +546,16 @@ let decode_task_raw : (string * Config_value.value) t =
   let+ action_v = field "action" value in
   name, action_v
 
-let decode_options : (int option * bool option) t =
+let decode_options : (int option * bool option * string option) t =
   let* j = field_opt "j" int in
-  let+ progress = field_opt "progress" bool in
-  j, progress
+  let* progress = field_opt "progress" bool in
+  let+ nats = field_opt "nats" string in
+  j, progress, nats
 
 (** {2 Main Decode} *)
 
-let decode (value : Config_value.value) (cur_dir : string) : Definitions.t =
+let decode ~previous (value : Config_value.value) (cur_dir : string) :
+    Definitions.t =
   let decoder =
     let* raw_provers =
       field_or "provers" ~default:[] (list (decode_raw_prover cur_dir))
@@ -567,8 +573,13 @@ let decode (value : Config_value.value) (cur_dir : string) : Definitions.t =
   in
   match run decoder value with
   | Ok (raw_provers, checkers, raw_dirs, raw_tasks, opts) ->
-    let resolve_provers raw_provers =
+    let resolve_provers ~defs raw_provers =
       let tbl = Hashtbl.create 32 in
+      (* seed with provers from previous configs for cross-file extends *)
+      List.iter
+        (fun p ->
+          Hashtbl.add tbl (Prover.name (With_loc.view p)) (With_loc.view p))
+        (Definitions.all_provers defs);
       List.iter
         (fun (rp : raw_prover) ->
           let base =
@@ -579,8 +590,8 @@ let decode (value : Config_value.value) (cur_dir : string) : Definitions.t =
               | Some b -> Some b
               | None ->
                 config_errorf
-                  "prover '%s': extends unknown prover '%s' (must be declared \
-                   before it)"
+                  "prover '%s': extends unknown prover '%s' (must be \
+                   declared before it)"
                   rp.rp_name base_name)
           in
           let p = resolve_prover rp ~base ~cur_dir in
@@ -588,17 +599,36 @@ let decode (value : Config_value.value) (cur_dir : string) : Definitions.t =
         raw_provers;
       Hashtbl.to_seq_values tbl |> List.of_seq
     in
-    let provers = resolve_provers raw_provers in
+    let provers = resolve_provers ~defs:previous raw_provers in
     let checkers = List.map (With_loc.make ~loc:Loc.none) checkers in
-    let fold add xs defs = List.fold_left (fun defs x -> add x defs) defs xs in
     let defs =
-      Definitions.empty
-      |> fold Definitions.add_prover
-           (List.map (With_loc.make ~loc:Loc.none) provers)
-      |> fold Definitions.add_proof_checker checkers
+      List.fold_left
+        (fun defs p ->
+          if Definitions.mem_def defs (Prover.name p) then
+            Log.warn (fun k ->
+                k "duplicate definition '%s', overriding" (Prover.name p));
+          Definitions.add_prover (With_loc.make ~loc:Loc.none p) defs)
+        previous provers
     in
-    let resolve_raw_dirs raw_dirs =
+    let defs =
+      List.fold_left
+        (fun defs c ->
+          let name = (With_loc.view c).Proof_checker.name in
+          if Definitions.mem_def defs name then
+            Log.warn (fun k ->
+                k "duplicate definition '%s', overriding" name);
+          Definitions.add_proof_checker c defs)
+        defs checkers
+    in
+    let resolve_raw_dirs ~defs raw_dirs =
       let tbl = Hashtbl.create 32 in
+      (* seed with named dirs from previous configs for cross-file extends *)
+      List.iter
+        (fun (d : Dir.t) ->
+          match d.Dir.name with
+          | Some n -> Hashtbl.add tbl n d
+          | None -> ())
+        (Definitions.all_dirs defs);
       let resolved_dirs = ref [] in
       List.iter
         (fun (rd : raw_dir) ->
@@ -610,8 +640,8 @@ let decode (value : Config_value.value) (cur_dir : string) : Definitions.t =
               | Some b -> Some b
               | None ->
                 config_errorf
-                  "dir '%s': extends unknown dir '%s' (must be declared before \
-                   it)"
+                  "dir '%s': extends unknown dir '%s' (must be declared \
+                   before it)"
                   (CCOption.value rd.rd_name ~default:"<unnamed>")
                   base_name)
           in
@@ -623,13 +653,26 @@ let decode (value : Config_value.value) (cur_dir : string) : Definitions.t =
         raw_dirs;
       List.rev !resolved_dirs
     in
-    let dirs = resolve_raw_dirs raw_dirs in
-    let defs = fold Definitions.add_dir dirs defs in
+    let dirs = resolve_raw_dirs ~defs raw_dirs in
+    let defs =
+      List.fold_left
+        (fun defs d ->
+          (match d.Dir.name with
+          | Some n when Definitions.mem_dir defs n ->
+            Log.warn (fun k ->
+                k "duplicate dir '%s', overriding" n)
+          | _ -> ());
+          Definitions.add_dir d defs)
+        defs dirs
+    in
     let defs =
       List.fold_left
         (fun defs (task_name, action_v) ->
+          if Definitions.mem_def defs task_name then
+            Log.warn (fun k ->
+                k "duplicate definition '%s', overriding" task_name);
           let action =
-            try resolve_action defs action_v
+            try resolve_action ~defs action_v
             with Config_error msg ->
               config_errorf "task '%s': %s" task_name msg
           in
@@ -637,32 +680,33 @@ let decode (value : Config_value.value) (cur_dir : string) : Definitions.t =
           Definitions.add_task (With_loc.make ~loc:Loc.none task) defs)
         defs raw_tasks
     in
-    let opt_j, opt_progress =
-      match opts with
-      | Some (j, p) -> j, p
-      | None -> None, None
+    let opt_j, opt_progress, opt_nats =
+      Option.value ~default:(None, None, None) opts
     in
     defs
     |> Definitions.with_option_j opt_j
     |> Definitions.with_option_progress opt_progress
+    |> Definitions.with_option_nats_server opt_nats
     |> Definitions.with_cur_dir cur_dir
   | Error e -> config_errorf "%s" (Err.to_string e)
 
 (** {2 Loading} *)
 
-let load_yaml_string (content : string) ~(cur_dir : string) : Definitions.t =
+let load_yaml_string ~previous (content : string) ~(cur_dir : string) :
+    Definitions.t =
   let file = Filename.concat cur_dir "<config>" in
   match Parse_yaml.parse content ~file with
-  | Ok value -> decode value cur_dir
+  | Ok value -> decode ~previous value cur_dir
   | Error msg -> config_errorf "%s" msg
 
-let load_json_string (content : string) ~(cur_dir : string) : Definitions.t =
+let load_json_string ~previous (content : string) ~(cur_dir : string) :
+    Definitions.t =
   let file = Filename.concat cur_dir "<config>" in
   match Parse_json.parse content ~file with
-  | Ok value -> decode value cur_dir
+  | Ok value -> decode ~previous value cur_dir
   | Error msg -> config_errorf "%s" msg
 
-let load_file (path : string) : Definitions.t =
+let load_file ~previous (path : string) : Definitions.t =
   let content =
     match CCIO.with_in path CCIO.read_all with
     | s -> s
@@ -670,8 +714,8 @@ let load_file (path : string) : Definitions.t =
   in
   let cur_dir = Filename.dirname (Misc.mk_abs_path path) in
   match Filename.extension path with
-  | ".yaml" | ".yml" -> load_yaml_string content ~cur_dir
-  | ".json" -> load_json_string content ~cur_dir
+  | ".yaml" | ".yml" -> load_yaml_string ~previous content ~cur_dir
+  | ".json" -> load_json_string ~previous content ~cur_dir
   | ext -> config_errorf "unknown config format: %s" ext
 
 let config_template = Static_data.example_config
