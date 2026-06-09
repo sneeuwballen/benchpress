@@ -202,8 +202,7 @@ module Cmd = struct
 
       let data_dir = Misc.data_dir () in
       let meta_cache =
-        Meta_cache.create ~sw
-          ~path:(Filename.concat data_dir "meta.sqlite3")
+        Meta_cache.create ~sw ~path:(Filename.concat data_dir "meta.sqlite3")
       in
       Mirage_crypto_rng_unix.use_default ();
       let auth = Auth.create (Auth.default_path ()) in
