@@ -99,6 +99,8 @@
     (< 0.3)))
   (mirage-crypto-rng
    (>= 2.0))
+  (digestif
+   (>= 1.0))
   (twirp_tiny_httpd
    (>= 0.2))
   (opentelemetry (>= 0.90))
