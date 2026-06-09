@@ -1,6 +1,14 @@
 open Benchpress.Common
 
-type t = { database: Db.t; memory: (string, Test_metadata.t) Hashtbl.t }
+type t = {
+  database: Db.t;
+  memory: (string, Test_metadata.t) Hashtbl.t;
+      (** Mutable cache mapping a benchmark file path to its file-set hash (or
+          [None] if not yet hashed). Used to avoid repeated SQL lookups for the
+          same path's hash. Similar-run lists are re-queried from the meta table
+          on each call. *)
+  mutable file_hash_cache: (string, string option) Hashtbl.t;
+}
 
 let createdb (db : Db.t) =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.createdb" in
@@ -87,6 +95,22 @@ let set (db : Db.t) self field value =
     self field value
   |> Misc.unwrap_db (fun () -> spf "Could not write field: '%s'" field)
 
+let compute_file_hash (source_db : Db.t) : string =
+  let files =
+    Db.exec_no_params source_db
+      ~ty:Db.Ty.(p1 blob, id)
+      ~f:Db.Cursor.to_list_rev
+      {| SELECT DISTINCT file FROM prover_res ORDER BY file; |}
+    |> Misc.unwrap_db (fun () -> "listing distinct files for hash")
+  in
+  let all_files = String.concat "\n" files in
+  Digestif.SHA256.(digest_string all_files |> to_hex)
+
+let cache_file_hash (db : Db.t) self source_db =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.cache-file-hash" in
+  let hash = compute_file_hash source_db in
+  set db self "hash-file-set" (Some hash)
+
 let cache_meta (db : Db.t) self (meta : Test_metadata.t) =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.cache-meta" in
   set db self "uuid" (Some (Uuidm.to_string meta.uuid));
@@ -134,7 +158,8 @@ let importdb t (p : string) =
           |> Error.unwrap_opt' (fun () ->
                  spf "Expected an id for metadata cache")
         in
-        cache_meta t.database self meta
+        cache_meta t.database self meta;
+        cache_file_hash t.database self meta_db
       );
       meta)
 
@@ -153,9 +178,60 @@ let find t (p : string) =
 
 let find_if_loaded t p = Hashtbl.find_opt t.memory p
 
+let find_similar_runs (t : t) (file_path : string) : string list =
+  let@ _sp =
+    Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.find-similar-runs"
+  in
+  let hash =
+    match Hashtbl.find_opt t.file_hash_cache file_path with
+    | Some cached -> cached
+    | None ->
+      let h =
+        let self =
+          match
+            Db.exec t.database ~f:Db.Cursor.next
+              ~ty:Db.Ty.(p1 text, p1 int, id)
+              {| SELECT id FROM test_database WHERE path = ?; |} file_path
+            |> Misc.unwrap_db (fun () ->
+                   spf "Could not load db id for %s" file_path)
+          with
+          | Some self -> self
+          | None ->
+            let _meta = importdb t file_path in
+            Db.exec t.database ~f:Db.Cursor.next
+              ~ty:Db.Ty.(p1 text, p1 int, id)
+              {| SELECT id FROM test_database WHERE path = ?; |} file_path
+            |> Misc.unwrap_db (fun () ->
+                   spf "Could not load db id after import")
+            |> Error.unwrap_opt' (fun () -> spf "Expected an id after import")
+        in
+        get t.database self "hash-file-set"
+      in
+      Hashtbl.replace t.file_hash_cache file_path h;
+      h
+  in
+  match hash with
+  | None -> []
+  | Some h ->
+    Db.exec t.database
+      ~ty:Db.Ty.(p1 text, p1 text, id)
+      ~f:Db.Cursor.to_list_rev
+      {|
+        SELECT td.path FROM test_database td
+        JOIN test_meta tm ON td.id = tm.database_id
+        WHERE tm.key = 'hash-file-set' AND tm.value = ?
+        ORDER BY td.path;
+      |}
+      h
+    |> Misc.unwrap_db (fun () -> "finding similar runs")
+
 let create ~path =
   let db = Sqlite3.db_open ~mutex:`FULL path in
   createdb db
   |> Misc.unwrap_db (fun () ->
          spf "Could not create cache database at: %s" path);
-  { database = db; memory = Hashtbl.create ~random:true 16 }
+  {
+    database = db;
+    memory = Hashtbl.create ~random:true 16;
+    file_hash_cache = Hashtbl.create ~random:true 8;
+  }

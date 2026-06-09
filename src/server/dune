@@ -33,6 +33,7 @@
   yojson
   mirage-crypto-rng
   mirage-crypto-rng.unix
+  digestif
   trace.core
   opentelemetry
   opentelemetry.trace
