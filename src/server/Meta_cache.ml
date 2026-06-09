@@ -2,12 +2,11 @@ open Benchpress.Common
 
 type t = {
   database: Db.t;
-  memory: (string, Test_metadata.t) Hashtbl.t;
-      (** Mutable cache mapping a benchmark file path to its file-set hash (or
-          [None] if not yet hashed). Used to avoid repeated SQL lookups for the
-          same path's hash. Similar-run lists are re-queried from the meta table
-          on each call. *)
+  memory: (string, Test_metadata.t Eio.Promise.or_exn) Hashtbl.t;
+      (** Cache mapping a benchmark file path to a promise of its metadata. *)
   mutable file_hash_cache: (string, string option) Hashtbl.t;
+  mu: Eio.Mutex.t;
+  sw: Eio.Switch.t;
 }
 
 let createdb (db : Db.t) =
@@ -98,12 +97,15 @@ let set (db : Db.t) self field value =
 let compute_file_hash (source_db : Db.t) : string =
   let files =
     Db.exec_no_params source_db
-      ~ty:Db.Ty.(p1 blob, id)
+      ~ty:Db.Ty.(p1 any_str, id)
       ~f:Db.Cursor.to_list_rev
       {| SELECT DISTINCT file FROM prover_res ORDER BY file; |}
     |> Misc.unwrap_db (fun () -> "listing distinct files for hash")
   in
-  let all_files = String.concat "\n" files in
+  let files =
+    List.rev_map String.trim files |> CCList.sort_uniq ~cmp:String.compare
+  in
+  let all_files = String.concat "\x00" files in
   Digestif.SHA256.(digest_string all_files |> to_hex)
 
 let cache_file_hash (db : Db.t) self source_db =
@@ -149,12 +151,12 @@ let importdb t (p : string) =
       let meta = Test_metadata.of_db meta_db in
       (* Only cache if complete *)
       if Test_metadata.is_complete meta then (
-        Hashtbl.replace t.memory p meta;
         let self =
           Db.exec t.database ~f:Db.Cursor.next
-            ~ty:Db.Ty.(p1 text, p1 int, id)
+            ~ty:Db.Ty.(p1 any_str, p1 int, id)
             {| INSERT INTO test_database (path) VALUES (?) RETURNING id; |} p
-          |> Misc.unwrap_db (fun () -> spf "Could not create metadata cache")
+          |> Misc.unwrap_db (fun () ->
+                 spf "Could not create metadata cache for %s" p)
           |> Error.unwrap_opt' (fun () ->
                  spf "Expected an id for metadata cache")
         in
@@ -163,20 +165,34 @@ let importdb t (p : string) =
       );
       meta)
 
-let find t (p : string) =
+let find t (path : string) : Test_metadata.t =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.find" in
-  try Hashtbl.find t.memory p
-  with Not_found ->
-    (match
-       Db.exec t.database ~f:Db.Cursor.next
-         ~ty:Db.Ty.(p1 text, p1 int, id)
-         {| SELECT id FROM test_database WHERE path = ?; |} p
-       |> Misc.unwrap_db (fun () -> spf "Could not load metadata cache")
-     with
-    | None -> importdb t p
-    | Some self -> load_meta t.database self)
+  let promise =
+    Eio.Mutex.use_rw ~protect:true t.mu @@ fun () ->
+    match Hashtbl.find_opt t.memory path with
+    | Some promise -> promise
+    | None ->
+      let p =
+        Eio.Fiber.fork_promise ~sw:t.sw (fun () ->
+            match
+              Db.exec t.database ~f:Db.Cursor.next
+                ~ty:Db.Ty.(p1 any_str, p1 int, id)
+                {| SELECT id FROM test_database WHERE path = ?; |} path
+              |> Misc.unwrap_db (fun () ->
+                     spf "Could not load metadata cache for %s" path)
+            with
+            | Some self -> load_meta t.database self
+            | None -> importdb t path)
+      in
+      Hashtbl.replace t.memory path p;
+      p
+  in
+  Eio.Promise.await_exn promise
 
-let find_if_loaded t p = Hashtbl.find_opt t.memory p
+let find_if_loaded t path =
+  match Eio.Mutex.use_ro t.mu (fun () -> Hashtbl.find_opt t.memory path) with
+  | Some p when Eio.Promise.is_resolved p -> Some (Eio.Promise.await p)
+  | _ -> None
 
 let find_similar_runs (t : t) (file_path : string) : string list =
   let@ _sp =
@@ -190,22 +206,28 @@ let find_similar_runs (t : t) (file_path : string) : string list =
         let self =
           match
             Db.exec t.database ~f:Db.Cursor.next
-              ~ty:Db.Ty.(p1 text, p1 int, id)
+              ~ty:Db.Ty.(p1 any_str, p1 int, id)
               {| SELECT id FROM test_database WHERE path = ?; |} file_path
             |> Misc.unwrap_db (fun () ->
                    spf "Could not load db id for %s" file_path)
           with
           | Some self -> self
           | None ->
-            let _meta = importdb t file_path in
+            let _meta = find t file_path in
             Db.exec t.database ~f:Db.Cursor.next
-              ~ty:Db.Ty.(p1 text, p1 int, id)
+              ~ty:Db.Ty.(p1 any_str, p1 int, id)
               {| SELECT id FROM test_database WHERE path = ?; |} file_path
             |> Misc.unwrap_db (fun () ->
                    spf "Could not load db id after import")
             |> Error.unwrap_opt' (fun () -> spf "Expected an id after import")
         in
-        get t.database self "hash-file-set"
+        match get t.database self "hash-file-set" with
+        | Some h -> Some h
+        | None ->
+          (* hash was deleted or not yet cached; recompute and store *)
+          Db.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY file_path
+            (fun source_db -> cache_file_hash t.database self source_db);
+          get t.database self "hash-file-set"
       in
       Hashtbl.replace t.file_hash_cache file_path h;
       h
@@ -214,7 +236,7 @@ let find_similar_runs (t : t) (file_path : string) : string list =
   | None -> []
   | Some h ->
     Db.exec t.database
-      ~ty:Db.Ty.(p1 text, p1 text, id)
+      ~ty:Db.Ty.(p1 any_str, p1 any_str, id)
       ~f:Db.Cursor.to_list_rev
       {|
         SELECT td.path FROM test_database td
@@ -225,7 +247,7 @@ let find_similar_runs (t : t) (file_path : string) : string list =
       h
     |> Misc.unwrap_db (fun () -> "finding similar runs")
 
-let create ~path =
+let create ~sw ~path =
   let db = Sqlite3.db_open ~mutex:`FULL path in
   createdb db
   |> Misc.unwrap_db (fun () ->
@@ -234,4 +256,6 @@ let create ~path =
     database = db;
     memory = Hashtbl.create ~random:true 16;
     file_hash_cache = Hashtbl.create ~random:true 8;
+    mu = Eio.Mutex.create ();
+    sw;
   }

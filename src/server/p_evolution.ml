@@ -116,8 +116,12 @@ let handle_evolution (self : Server_common.t) : unit =
               "text", `String "Evolution of similar runs";
               ( "subtext",
                 `String
-                  (Printf.sprintf "%d runs with matching file sets"
-                     (List.length data_points)) );
+                  (let n = List.length data_points in
+                   Printf.sprintf "%d run%s with matching file sets" n
+                     (if n = 1 then
+                        ""
+                      else
+                        "s")) );
             ] );
         "tooltip", `Assoc [ "trigger", `String "axis" ];
         "legend", `Assoc [ "data", `List legend_data ];
