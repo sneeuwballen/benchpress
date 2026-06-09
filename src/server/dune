@@ -40,11 +40,27 @@
   opentelemetry-client-ocurl)
  (modules
   benchpress_server
+  Server_common
+  Logger
+  Ext_jobs
+  PB_html
+  Html
   Meta_cache
   Web_data
   Auth
   Auth_middleware
-  Api_handler)
+  Api_handler
+  P_root
+  P_show
+  P_detailed
+  P_echarts
+  P_evolution
+  P_errors
+  P_compare
+  P_provers
+  P_tasks
+  P_meta
+  P_delete)
  (preprocess
   (pps ppx_subliner))
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress -linkall))
