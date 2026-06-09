@@ -327,6 +327,7 @@ let link_show_single db_file prover path =
 
 let uri_get_file pb = spf "/get-file/%s/" (U.percent_encode pb)
 let uri_echarts pb = spf "/show-echarts/%s/" (U.percent_encode pb)
+let uri_evolution pb = spf "/evolution/%s/" (U.percent_encode pb)
 let uri_error_bad pb = spf "/show-err/%s/" (U.percent_encode pb)
 let uri_invalid pb = spf "/show-invalid/%s/" (U.percent_encode pb)
 
@@ -337,6 +338,17 @@ let echarts_cactus_div ?(height = "400px") pb =
       A.style (spf "width:100%%;height:%s" height);
       "data-chart-type", "line";
       "data-url", uri_echarts pb;
+      "data-chart-loading", "true";
+    ]
+    []
+
+let echarts_evolution_div ?(height = "400px") pb =
+  let open Html in
+  div
+    [
+      A.style (spf "width:100%%;height:%s" height);
+      "data-chart-type", "line";
+      "data-url", uri_evolution pb;
       "data-chart-loading", "true";
     ]
     []
@@ -705,7 +717,10 @@ let handle_show (self : t) : unit =
           [
             div [ A.class_ "lazy-load"; "x_src", uri_err ] [];
             div [ A.class_ "lazy-load"; "x_src", uri_invalid ] [];
+            h3 [] [ txt "cactus plot" ];
             echarts_cactus_div file;
+            h3 [] [ txt "evolution of similar runs" ];
+            echarts_evolution_div file;
           ];
         (if box_compare_l = PB.empty then
            `Nil
@@ -778,6 +793,177 @@ let handle_show_echarts (self : t) : unit =
   in
   let json = Cactus_plot.to_echarts_json plot in
   Log.debug (fun k -> k "successful reply for show-echarts/%S" q_arg);
+  H.Response.make_string
+    ~headers:H.Headers.([] |> set "content-type" "application/json")
+    (Ok json)
+
+type prover_summary = {
+  prover: string;
+  sat: int;
+  unsat: int;
+  error: int;
+  bad: int;
+}
+(** per-prover summary from a result DB *)
+
+let per_prover_summary (db : Db.t) : prover_summary list =
+  let count_res ~prover res_cond =
+    let query =
+      "select count(*) from prover_res where prover=? and " ^ res_cond ^ ";"
+    in
+    Db.exec db query prover
+      ~ty:Db.Ty.(p1 text, p1 int, id)
+      ~f:(fun c ->
+        Db.Cursor.next c |> Error.unwrap_opt' (fun () -> "expected count"))
+    |> Misc.unwrap_db (fun () -> spf "count for %s" prover)
+  in
+  let provers =
+    Db.exec_no_params_exn db "select distinct name from prover;"
+      ~ty:Db.Ty.(p1 any_str, id)
+      ~f:Db.Cursor.to_list_rev
+  in
+  List.map
+    (fun prover ->
+      let sat = count_res ~prover "res='sat'" in
+      let unsat = count_res ~prover "res='unsat'" in
+      let error = count_res ~prover "res='error'" in
+      let bad =
+        count_res ~prover
+          "res in ('sat','unsat') and res != file_expect and file_expect in \
+           ('sat','unsat')"
+      in
+      { prover; sat; unsat; error; bad })
+    provers
+
+(** ECharts JSON for evolution plot of similar runs *)
+let handle_evolution (self : t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "evolution" @/ string_urlencoded @/ return)
+  @@ fun file _req ->
+  let@ _chrono = query_wrap (Error.wrapf "serving /evolution/%s" file) in
+  Log.debug (fun k -> k "----- start evolution %s -----" file);
+  let file_full = Bin_utils.mk_file_full file in
+  let similar = Meta_cache.find_similar_runs self.meta_cache file_full in
+  Log.debug (fun k ->
+      k "found %d similar runs for %s" (List.length similar) file_full);
+  let data_points =
+    List.filter_map
+      (fun path ->
+        try
+          let meta = Meta_cache.find self.meta_cache path in
+          let summary =
+            if Bin_utils.is_sqlite_file path then
+              Db.with_db ~timeout:500 ~mode:`READONLY path per_prover_summary
+            else if Misc.is_zst_file path then
+              Bin_utils.with_decompressed_zst path (fun tmp ->
+                  Db.with_db ~timeout:500 ~mode:`READONLY tmp per_prover_summary)
+            else
+              failf 400 "unsupported file format for '%s'" path
+          in
+          Some (meta.Test_metadata.timestamp, summary)
+        with _ -> None)
+      similar
+  in
+  let data_points =
+    List.sort
+      (fun (t1, _) (t2, _) ->
+        match t1, t2 with
+        | Some t1, Some t2 -> Float.compare t1 t2
+        | Some _, None -> -1
+        | None, Some _ -> 1
+        | None, None -> 0)
+      data_points
+  in
+  let timestamps =
+    List.map
+      (fun (ts, _) ->
+        match ts with
+        | None -> "unknown"
+        | Some f ->
+          let tm = Unix.localtime f in
+          Printf.sprintf "%02d/%02d %02d:%02d" tm.Unix.tm_mon tm.Unix.tm_mday
+            tm.Unix.tm_hour tm.Unix.tm_min)
+      data_points
+  in
+  let all_provers =
+    List.fold_left
+      (fun acc (_, summary) ->
+        List.fold_left
+          (fun acc s ->
+            if List.mem s.prover acc then
+              acc
+            else
+              s.prover :: acc)
+          acc summary)
+      [] data_points
+    |> List.rev
+  in
+  let categories =
+    [
+      ("sat", fun s -> s.sat);
+      ("unsat", fun s -> s.unsat);
+      ("error", fun s -> s.error);
+      ("bad", fun s -> s.bad);
+    ]
+  in
+  let series =
+    List.concat_map
+      (fun prover ->
+        List.map
+          (fun (cat, pick) ->
+            `Assoc
+              [
+                "name", `String (prover ^ " " ^ cat);
+                "type", `String "line";
+                ( "data",
+                  `List
+                    (List.map
+                       (fun (_, summary) ->
+                         match
+                           List.find_opt
+                             (fun s -> String.equal s.prover prover)
+                             summary
+                         with
+                         | Some s -> `Int (pick s)
+                         | None -> `Int 0)
+                       data_points) );
+              ])
+          categories)
+      all_provers
+  in
+  let legend_data =
+    List.concat_map
+      (fun prover ->
+        List.map (fun (cat, _) -> `String (prover ^ " " ^ cat)) categories)
+      all_provers
+  in
+  let option =
+    `Assoc
+      [
+        ( "title",
+          `Assoc
+            [
+              "text", `String "Evolution of similar runs";
+              ( "subtext",
+                `String
+                  (Printf.sprintf "%d runs with matching file sets"
+                     (List.length data_points)) );
+            ] );
+        "tooltip", `Assoc [ "trigger", `String "axis" ];
+        "legend", `Assoc [ "data", `List legend_data ];
+        ( "xAxis",
+          `Assoc
+            [
+              "type", `String "category";
+              "data", `List (List.map (fun s -> `String s) timestamps);
+              "name", `String "run date";
+            ] );
+        "yAxis", `Assoc [ "type", `String "value"; "name", `String "count" ];
+        "series", `List series;
+      ]
+  in
+  let json = Yojson.Basic.to_string option in
+  Log.debug (fun k -> k "successful reply for evolution/%S" file);
   H.Response.make_string
     ~headers:H.Headers.([] |> set "content-type" "application/json")
     (Ok json)
@@ -2177,6 +2363,7 @@ module Cmd = struct
       handle_user_meta_post self;
       handle_user_meta_delete self;
       handle_show_echarts self;
+      handle_evolution self;
       handle_prover_in self;
       handle_show_errors self;
       handle_show_invalid self;
