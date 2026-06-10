@@ -9,6 +9,7 @@
  (libraries
   benchpress
   benchpress.mcp
+  benchpress_nats
   containers
   cmdliner
   uuidm

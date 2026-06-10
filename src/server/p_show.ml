@@ -48,6 +48,13 @@ let handle_show (self : Server_common.t) : unit =
         sub_l
           [
             mk_navigation [ uri_show file, "show", true ];
+            div
+              [
+                "hx-get", "/api/ext-jobs-status/";
+                "hx-trigger", "load, every 4s";
+                "hx-swap", "innerHTML";
+              ]
+              [];
             h3 [] [ txt file ];
             mk_row []
               (CCList.map

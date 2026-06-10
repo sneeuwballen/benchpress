@@ -69,45 +69,75 @@ let handle_ext_progress (self : Server_common.t) : unit =
         (Ok {|{"ok":true}|})
     )
 
-let handle_ext_jobs_status (self : Server_common.t) : unit =
+(** Build an HTMX fragment with progress bars from external jobs and optionally
+    from the current TaskQueue job. *)
+let build_progress_bars (self : Server_common.t) ~(now : float) : string =
   let open Server_common in
-  H.add_route_handler self.server ~meth:`GET
-    H.Route.(exact "api" @/ exact "ext-jobs-status" @/ return)
-  @@ fun _req ->
-  let now = Unix.gettimeofday () in
-  Ext_jobs.expire self.ext_jobs ~now;
-  let jobs = Ext_jobs.all_active self.ext_jobs in
   let open Html in
-  if jobs = [] then
-    div [ A.id "ext-jobs-status" ] [] |> to_string_elt |> fun html ->
-    H.Response.make_string ~headers:default_html_headers (Ok html)
-  else
-    let module Api = Benchpress_api_proto.Benchpress_api in
-    let bars =
+  let module Api = Benchpress_api_proto.Benchpress_api in
+  Ext_jobs.expire self.ext_jobs ~now;
+  (* Collect bars from external jobs *)
+  let ext_bars =
+    Ext_jobs.all_active self.ext_jobs
+    |> List.map (fun (j : Ext_jobs.job) ->
+           let r = j.report in
+           let total = Int32.to_int r.Api.total_tasks in
+           let done_ = Int32.to_int r.Api.done_tasks in
+           let pct =
+             if total > 0 then
+               done_ * 100 / total
+             else
+               0
+           in
+           let elapsed = now -. r.Api.start_ts in
+           let active_str =
+             if r.Api.active = [] then
+               ""
+             else
+               spf " \u{2014} %s"
+                 (String.concat ", "
+                    (List.map
+                       (fun a ->
+                         spf "%s on %s (%.0fs)" a.Api.prover
+                           (Filename.basename a.Api.file)
+                           a.Api.running_time)
+                       r.Api.active))
+           in
+           ( spf "Job %s\u{2026}%s" (String.sub r.Api.uuid 0 8) active_str,
+             done_,
+             total,
+             elapsed,
+             pct ))
+  in
+  (* Also include the local TaskQueue job, if any *)
+  let local_bars =
+    match Task_queue.cur_job self.task_q with
+    | None -> []
+    | Some j ->
+      let pct = Task_queue.Job.percent_completion j in
+      let elapsed = Task_queue.Job.time_elapsed j in
+      let uuid_s = Task_queue.Job.uuid j in
+      let task = Task_queue.Job.task j in
+      [
+        ( spf "Local %s\u{2026} (%s)" (String.sub uuid_s 0 8) task.Task.name,
+          pct,
+          100,
+          elapsed,
+          pct );
+      ]
+  in
+  let bars = ext_bars @ local_bars in
+  if bars = [] then
+    div [ A.id "ext-jobs-status" ] [] |> to_string_elt
+  else (
+    let bar_elts =
       List.map
-        (fun (j : Ext_jobs.job) ->
-          let r = j.report in
-          let total = Int32.to_int r.Api.total_tasks in
-          let done_ = Int32.to_int r.Api.done_tasks in
-          let pct =
+        (fun (label, done_, total, elapsed, pct) ->
+          let total_str =
             if total > 0 then
-              done_ * 100 / total
+              string_of_int total
             else
-              0
-          in
-          let elapsed = now -. r.Api.start_ts in
-          let active_str =
-            if r.Api.active = [] then
-              ""
-            else
-              spf " — %s"
-                (String.concat ", "
-                   (List.map
-                      (fun a ->
-                        spf "%s on %s (%.0fs)" a.Api.prover
-                          (Filename.basename a.Api.file)
-                          a.Api.running_time)
-                      r.Api.active))
+              "?"
           in
           div
             [ A.class_ "mb-1" ]
@@ -119,9 +149,7 @@ let handle_ext_jobs_status (self : Server_common.t) : unit =
                     [ A.class_ "text-muted" ]
                     [
                       txt
-                        (spf "Job %s…: %d/%d%s (%s)"
-                           (String.sub r.Api.uuid 0 8)
-                           done_ total active_str
+                        (spf "%s: %d/%s (%s)" label done_ total_str
                            (Human.human_duration elapsed));
                     ];
                   small [ A.class_ "text-muted" ] [ txt (spf "%d%%" pct) ];
@@ -139,7 +167,7 @@ let handle_ext_jobs_status (self : Server_common.t) : unit =
                     [];
                 ];
             ])
-        jobs
+        bars
     in
     div
       [
@@ -149,10 +177,83 @@ let handle_ext_jobs_status (self : Server_common.t) : unit =
         "hx-swap", "outerHTML";
         A.class_ "mb-2";
       ]
-      bars
+      bar_elts
     |> to_string_elt
-    |> fun html ->
-    H.Response.make_string ~headers:default_html_headers (Ok html)
+  )
+
+let handle_ext_jobs_status (self : Server_common.t) : unit =
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact "api" @/ exact "ext-jobs-status" @/ return)
+  @@ fun _req ->
+  let now = Unix.gettimeofday () in
+  let html = build_progress_bars self ~now in
+  H.Response.make_string ~headers:Server_common.default_html_headers (Ok html)
+
+(** {2 NATS progress subscription} *)
+
+(** Subscribe to NATS for benchpress.progress.> events and feed them into the
+    Ext_jobs table so they appear as progress bars in the web UI. *)
+let handle_nats_progress (self : Server_common.t) ~(sw : Eio.Switch.t) ~net :
+    unit =
+  match Definitions.option_nats_server self.Server_common.defs with
+  | None -> ()
+  | Some addr ->
+    let host, port =
+      match String.rindex_opt addr ':' with
+      | None -> addr, 4222
+      | Some i ->
+        ( String.sub addr 0 i,
+          (match
+             int_of_string_opt
+               (String.sub addr (i + 1) (String.length addr - i - 1))
+           with
+          | Some p -> p
+          | None -> 4222) )
+    in
+    let host_s =
+      try Nats.resolve_host host
+      with _ ->
+        Log.warn (fun k -> k "could not resolve NATS host %S" host);
+        ""
+    in
+    if host_s = "" then
+      ()
+    else (
+      let subject = [ "benchpress"; "progress"; ">" ] in
+      try
+        (* Use [connect] directly so the connection lives on the switch.
+           [with_connect] would close it as soon as the callback returns. *)
+        let nats = Nats.connect ~sw ~net ~host:host_s ~port () in
+        Eio.Switch.on_release sw (fun () -> Nats.close nats);
+        Log.info (fun k ->
+            k "subscribed to NATS progress on %s:%d (%s)" host_s port addr);
+        let _sub =
+          Nats.sub nats ~sw ~subject (fun (msg : Nats.msg) ->
+              let now = Unix.gettimeofday () in
+              match
+                Benchpress_api_proto.Benchpress_api.decode_json_progress_report
+                  (Yojson.Basic.from_string msg.Nats.payload)
+              with
+              | report ->
+                Server_common.Ext_jobs.apply_report self.ext_jobs ~now report;
+                let module Api = Benchpress_api_proto.Benchpress_api in
+                Log.debug (fun k ->
+                    k "nats progress: %s %ld/%ld"
+                      (match report.Api.uuid with
+                      | "" -> "?"
+                      | u -> String.sub u 0 8)
+                      report.Api.done_tasks report.Api.total_tasks)
+              | exception exn ->
+                Log.warn (fun k ->
+                    k "invalid NATS progress message: %s"
+                      (Printexc.to_string exn)))
+        in
+        ()
+      with exn ->
+        Log.warn (fun k ->
+            k "could not connect to NATS at %s:%d: %s" host_s port
+              (Printexc.to_string exn))
+    )
 
 let handle_file (self : Server_common.t) : unit =
   H.add_route_handler self.server ~meth:`GET
@@ -223,6 +324,9 @@ module Cmd = struct
       Benchpress_mcp.Mcp_tools.register_all ~reg:mcp_reg ~data_dir;
       (* fiber to execute tasks *)
       Eio.Fiber.fork ~sw (fun () -> Task_queue.loop self.task_q);
+      (* subscribe to NATS progress events if configured *)
+      let net = Eio.Stdenv.net stdenv in
+      handle_nats_progress self ~sw ~net;
       (* maybe serve the API *)
       Printf.printf "listen on http://localhost:%d/\n%!" (H.port server);
       P_root.handle_root self;
