@@ -32,16 +32,19 @@ let err_internal = -32603
 
 let mk_error (id : Yojson.Basic.t) ~code ~msg : string =
   `Assoc
-    [ "jsonrpc", `String "2.0"; "id", id;
-      "error", `Assoc [ "code", `Int code; "message", `String msg ] ]
+    [
+      "jsonrpc", `String "2.0";
+      "id", id;
+      "error", `Assoc [ "code", `Int code; "message", `String msg ];
+    ]
   |> Yojson.Basic.to_string
 
 let mk_result (id : Yojson.Basic.t) (result : Yojson.Basic.t) : string =
   `Assoc [ "jsonrpc", `String "2.0"; "id", id; "result", result ]
   |> Yojson.Basic.to_string
 
-let parse_request (body : string)
-    : (Yojson.Basic.t * string * Yojson.Basic.t) option =
+let parse_request (body : string) :
+    (Yojson.Basic.t * string * Yojson.Basic.t) option =
   try
     let j = Yojson.Basic.from_string body in
     Some
@@ -67,13 +70,13 @@ let handle_list (tbl : t) (id : Yojson.Basic.t) : string =
 
 (* -- tools/call -- *)
 
-let handle_call (tbl : t) (params : Yojson.Basic.t) (id : Yojson.Basic.t)
-    : string =
+let handle_call (tbl : t) (params : Yojson.Basic.t) (id : Yojson.Basic.t) :
+    string =
   let name = J.assoc_string_or "name" ~default:"" params in
   let args = Option.value ~default:`Null (J.assoc_field "arguments" params) in
   if name = "" then
     mk_error id ~code:err_invalid_params ~msg:"missing tool name"
-  else
+  else (
     match Hashtbl.find_opt tbl name with
     | None ->
       mk_error id ~code:err_method_not_found
@@ -92,8 +95,8 @@ let handle_call (tbl : t) (params : Yojson.Basic.t) (id : Yojson.Basic.t)
          let bt = Printexc.get_backtrace () in
          mk_error id ~code:err_internal
            ~msg:
-             (Printf.sprintf "tool error: %s\n%s"
-                (Printexc.to_string exn) bt))
+             (Printf.sprintf "tool error: %s\n%s" (Printexc.to_string exn) bt))
+  )
 
 (* -- initialize -- *)
 
