@@ -1,0 +1,17 @@
+(rule
+ (alias lint)
+ (mode promote)
+ (enabled_if %{env:FORCE_GENPROTO=false})
+ (targets benchpress_mcp_types.ml benchpress_mcp_types.mli)
+ (deps benchpress_mcp_types.proto)
+ (action
+  (run ocaml-protoc --yojson --ml_out . %{deps})))
+
+(library
+ (name benchpress_mcp)
+ (public_name benchpress.mcp)
+ (wrapped true)
+ (modes native)
+ (synopsis "MCP protocol handler for benchpress-server")
+ (libraries yojson containers pbrt pbrt_yojson benchpress)
+ (flags :standard -w -5 -warn-error -a+8 -strict-sequence -open Benchpress))

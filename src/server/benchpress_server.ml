@@ -219,6 +219,8 @@ module Cmd = struct
           ext_jobs = Server_common.Ext_jobs.create ();
         }
       in
+      let mcp_reg = Benchpress_mcp.Mcp.create () in
+      Benchpress_mcp.Mcp_tools.register_all ~reg:mcp_reg ~data_dir;
       (* fiber to execute tasks *)
       Eio.Fiber.fork ~sw (fun () -> Task_queue.loop self.task_q);
       (* maybe serve the API *)
@@ -249,6 +251,16 @@ module Cmd = struct
       P_compare.handle_compare2 self;
       if allow_delete then P_delete.handle_delete self;
       handle_file self;
+      (let mcp_handler req =
+         let body = H.Request.body req in
+         let resp_body = Benchpress_mcp.Mcp.handle_request mcp_reg body in
+         H.Response.make_string
+           ~headers:H.Headers.([] |> set "content-type" "application/json")
+           (Ok resp_body)
+       in
+       H.add_route_handler self.server ~meth:`POST
+         H.Route.(exact "mcp" @/ return)
+         mcp_handler);
       handle_ext_progress self;
       handle_ext_jobs_status self;
       Api_handler.register ~allow_localhost ~auth:self.auth ~task_q:self.task_q
