@@ -21,6 +21,7 @@ let handle_delete (self : Server_common.t) : unit =
     List.iter
       (fun file ->
         Log.info (fun k -> k "delete file %s" @@ Filename.quote file);
+        Meta_cache.remove self.meta_cache file;
         Sys.remove file)
       files;
     (* return empty html *)

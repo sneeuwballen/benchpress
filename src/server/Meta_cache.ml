@@ -5,6 +5,8 @@ type t = {
   memory: (string, Test_metadata.t Eio.Promise.or_exn) Hashtbl.t;
       (** Cache mapping a benchmark file path to a promise of its metadata. *)
   mutable file_hash_cache: (string, string option) Hashtbl.t;
+  mtime_cache: (string, float) Hashtbl.t;
+      (** Cache mapping path to file mtime at time of import. *)
   mu: Eio.Mutex.t;
   sw: Eio.Switch.t;
 }
@@ -165,13 +167,24 @@ let importdb t (p : string) =
       );
       meta)
 
+let file_mtime path =
+  try Some (Unix.LargeFile.stat path).Unix.LargeFile.st_mtime with _ -> None
+
 let find t (path : string) : Test_metadata.t =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.find" in
   let promise =
     Eio.Mutex.use_rw ~protect:true t.mu @@ fun () ->
-    match Hashtbl.find_opt t.memory path with
-    | Some promise -> promise
-    | None ->
+    let current_mtime = file_mtime path in
+    match Hashtbl.find_opt t.mtime_cache path with
+    | Some mtime when Some mtime = current_mtime ->
+      (match Hashtbl.find_opt t.memory path with
+      | Some promise -> promise
+      | None -> assert false)
+    | _ ->
+      (* file changed or deleted; invalidate all caches for this path *)
+      Hashtbl.remove t.memory path;
+      Hashtbl.remove t.file_hash_cache path;
+      Hashtbl.remove t.mtime_cache path;
       let p =
         Eio.Fiber.fork_promise ~sw:t.sw (fun () ->
             match
@@ -185,12 +198,22 @@ let find t (path : string) : Test_metadata.t =
             | None -> importdb t path)
       in
       Hashtbl.replace t.memory path p;
+      (match current_mtime with
+      | Some mtime -> Hashtbl.replace t.mtime_cache path mtime
+      | None -> ());
       p
   in
   Eio.Promise.await_exn promise
 
 let find_if_loaded t path =
-  match Eio.Mutex.use_ro t.mu (fun () -> Hashtbl.find_opt t.memory path) with
+  let current_mtime = file_mtime path in
+  match
+    Eio.Mutex.use_ro t.mu (fun () ->
+        match Hashtbl.find_opt t.mtime_cache path with
+        | Some mtime when Some mtime = current_mtime ->
+          Hashtbl.find_opt t.memory path
+        | _ -> None)
+  with
   | Some p when Eio.Promise.is_resolved p ->
     (try Some (Eio.Promise.await_exn p) with _ -> None)
   | _ -> None
@@ -212,23 +235,31 @@ let find_similar_runs (t : t) (file_path : string) : string list =
             |> Misc.unwrap_db (fun () ->
                    spf "Could not load db id for %s" file_path)
           with
-          | Some self -> self
+          | Some self -> Some self
           | None ->
             let _meta = find t file_path in
-            Db.exec t.database ~f:Db.Cursor.next
-              ~ty:Db.Ty.(p1 any_str, p1 int, id)
-              {| SELECT id FROM test_database WHERE path = ?; |} file_path
-            |> Misc.unwrap_db (fun () ->
-                   spf "Could not load db id after import")
-            |> Error.unwrap_opt' (fun () -> spf "Expected an id after import")
+            (match
+               Db.exec t.database ~f:Db.Cursor.next
+                 ~ty:Db.Ty.(p1 any_str, p1 int, id)
+                 {| SELECT id FROM test_database WHERE path = ?; |} file_path
+               |> Misc.unwrap_db (fun () ->
+                      spf "Could not load db id after import")
+             with
+            | Some self -> Some self
+            | None ->
+              (* partial run: not cached in test_database, skip *)
+              None)
         in
-        match get t.database self "hash-file-set" with
-        | Some h -> Some h
-        | None ->
-          (* hash was deleted or not yet cached; recompute and store *)
-          Db.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY file_path
-            (fun source_db -> cache_file_hash t.database self source_db);
-          get t.database self "hash-file-set"
+        match self with
+        | Some self ->
+          (match get t.database self "hash-file-set" with
+          | Some h -> Some h
+          | None ->
+            (* hash was deleted or not yet cached; recompute and store *)
+            Db.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY file_path
+              (fun source_db -> cache_file_hash t.database self source_db);
+            get t.database self "hash-file-set")
+        | None -> None
       in
       Hashtbl.replace t.file_hash_cache file_path h;
       h
@@ -248,6 +279,37 @@ let find_similar_runs (t : t) (file_path : string) : string list =
       h
     |> Misc.unwrap_db (fun () -> "finding similar runs")
 
+let remove t path =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.remove" in
+  Eio.Mutex.use_rw ~protect:true t.mu @@ fun () ->
+  Hashtbl.remove t.memory path;
+  Hashtbl.remove t.file_hash_cache path;
+  Hashtbl.remove t.mtime_cache path;
+  match
+    Db.exec t.database ~f:Db.Cursor.next
+      ~ty:Db.Ty.(p1 any_str, p1 int, id)
+      {| SELECT id FROM test_database WHERE path = ?; |} path
+    |> Misc.unwrap_db (fun () -> spf "Could not load db id for %s" path)
+  with
+  | Some self ->
+    Db.exec_no_cursor t.database
+      ~ty:Db.Ty.(p1 int)
+      {| DELETE FROM test_provers WHERE database_id = ?; |} self
+    |> Misc.unwrap_db (fun () -> spf "Could not delete provers");
+    Db.exec_no_cursor t.database
+      ~ty:Db.Ty.(p1 int)
+      {| DELETE FROM test_dirs WHERE database_id = ?; |} self
+    |> Misc.unwrap_db (fun () -> spf "Could not delete dirs");
+    Db.exec_no_cursor t.database
+      ~ty:Db.Ty.(p1 int)
+      {| DELETE FROM test_meta WHERE database_id = ?; |} self
+    |> Misc.unwrap_db (fun () -> spf "Could not delete meta");
+    Db.exec_no_cursor t.database
+      ~ty:Db.Ty.(p1 int)
+      {| DELETE FROM test_database WHERE id = ?; |} self
+    |> Misc.unwrap_db (fun () -> spf "Could not delete from database")
+  | None -> ()
+
 let create ~sw ~path =
   let db = Sqlite3.db_open ~mutex:`FULL path in
   createdb db
@@ -257,6 +319,7 @@ let create ~sw ~path =
     database = db;
     memory = Hashtbl.create ~random:true 16;
     file_hash_cache = Hashtbl.create ~random:true 8;
+    mtime_cache = Hashtbl.create ~random:true 8;
     mu = Eio.Mutex.create ();
     sw;
   }
