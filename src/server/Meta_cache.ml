@@ -191,7 +191,8 @@ let find t (path : string) : Test_metadata.t =
 
 let find_if_loaded t path =
   match Eio.Mutex.use_ro t.mu (fun () -> Hashtbl.find_opt t.memory path) with
-  | Some p when Eio.Promise.is_resolved p -> Some (Eio.Promise.await p)
+  | Some p when Eio.Promise.is_resolved p ->
+    (try Some (Eio.Promise.await_exn p) with _ -> None)
   | _ -> None
 
 let find_similar_runs (t : t) (file_path : string) : string list =
