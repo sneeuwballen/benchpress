@@ -1,4 +1,3 @@
-open Common
 module H = Tiny_httpd
 module U = Tiny_httpd.Util
 module PB = PrintBox

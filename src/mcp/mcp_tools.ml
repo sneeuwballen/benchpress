@@ -54,7 +54,7 @@ let tool_list_jobs ~data_dir : Mcp.tool_def =
           in
           let ts =
             match meta with
-            | Some m -> CCOpt.get_or ~default:0. m.timestamp
+            | Some m -> CCOption.get_or ~default:0. m.timestamp
             | None -> 0.
           in
           let n_res =
@@ -134,11 +134,11 @@ let tool_get_job_status ~data_dir : Mcp.tool_def =
       T.encode_json_job_status_result
         (T.make_job_status_result ~file
            ~uuid:(Uuidm.to_string meta.uuid)
-           ~timestamp:(CCOpt.get_or ~default:0. meta.timestamp)
-           ~total_wall_time:(CCOpt.get_or ~default:0. meta.total_wall_time)
+           ~timestamp:(CCOption.get_or ~default:0. meta.timestamp)
+           ~total_wall_time:(CCOption.get_or ~default:0. meta.total_wall_time)
            ~n_results:(Int32.of_int meta.n_results)
            ~n_bad:(Int32.of_int meta.n_bad)
-           ~is_complete:(CCOpt.is_some meta.total_wall_time)
+           ~is_complete:(CCOption.is_some meta.total_wall_time)
            ~provers ())
     )
   in
