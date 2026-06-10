@@ -544,10 +544,26 @@ let decode_task_raw : (string * Config_value.value) t =
   let+ action_v = field "action" value in
   name, action_v
 
-let decode_options : (int option * bool option * string option) t =
+type nats_config = Nats_absent | Nats_disabled | Nats_server of string
+
+let decode_nats : nats_config t =
+  let open Json_decode in
+  let* v = value in
+  match v.node with
+  | String s -> return (Nats_server s)
+  | O _ ->
+    let* enabled = field_opt "enabled" bool in
+    let+ server = field_opt "server" string in
+    (match enabled with
+    | Some false -> Nats_disabled
+    | _ -> Nats_server (Option.value ~default:"localhost:4222" server))
+  | _ -> failf "expected a string or object for nats"
+
+let decode_options : (int option * bool option * nats_config) t =
   let* j = field_opt "j" int in
   let* progress = field_opt "progress" bool in
-  let+ nats = field_opt "nats" string in
+  let+ nats_opt = field_opt "nats" decode_nats in
+  let nats = Option.value ~default:Nats_absent nats_opt in
   j, progress, nats
 
 (** {2 Main Decode} *)
@@ -677,13 +693,20 @@ let decode ~previous (value : Config_value.value) (cur_dir : string) :
         defs raw_tasks
     in
     let opt_j, opt_progress, opt_nats =
-      Option.value ~default:(None, None, None) opts
+      Option.value ~default:(None, None, Nats_absent) opts
     in
-    defs
-    |> Definitions.with_option_j opt_j
-    |> Definitions.with_option_progress opt_progress
-    |> Definitions.with_option_nats_server opt_nats
-    |> Definitions.with_cur_dir cur_dir
+    let defs =
+      defs
+      |> Definitions.with_option_j opt_j
+      |> Definitions.with_option_progress opt_progress
+    in
+    let defs =
+      match opt_nats with
+      | Nats_absent -> defs
+      | Nats_disabled -> Definitions.with_option_nats_server None defs
+      | Nats_server s -> Definitions.with_option_nats_server (Some s) defs
+    in
+    defs |> Definitions.with_cur_dir cur_dir
   | Error e -> config_errorf "%s" (Err.to_string e)
 
 (** {2 Loading} *)

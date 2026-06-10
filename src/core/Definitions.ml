@@ -37,7 +37,7 @@ let empty : t =
     tags = [];
     option_j = None;
     option_progress = None;
-    option_nats_server = None;
+    option_nats_server = Some "localhost:4222";
     config_file = None;
     errors = [];
   }
