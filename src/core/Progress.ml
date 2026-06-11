@@ -111,6 +111,21 @@ let make_state ~uuid ~start_ts ~total_tasks =
     Api.progress_report_set_active r (snapshot_active ());
     Api.progress_report_set_finished r !finished;
     Api.progress_report_set_stats r (make_stats ());
+    let stat_l =
+      let add name n acc =
+        Api.make_stat ~name ~value:(Int32.of_int n) () :: acc
+      in
+      [] |> add "sat" !stat_total_sat
+      |> add "unsat" !stat_total_unsat
+      |> add "unknown" !stat_total_unknown
+      |> add "timeout" !stat_total_timeout
+      |> add "error" !stat_total_error
+      |> add "bad" !stat_total_bad
+      |> fun l ->
+      Hashtbl.fold (fun tag cnt acc -> add tag !cnt acc) stat_total_custom l
+      |> List.rev
+    in
+    Api.progress_report_set_stat_l r stat_l;
     r
   in
   let bump_stat = function

@@ -46,6 +46,9 @@ let str_of_status = function
   | Cancelled -> "cancelled"
   | Failed -> "failed"
 
+(** Format a [stat] as "name:value". *)
+let pp_stat s = Printf.sprintf "%s:%ld" s.name s.value
+
 let json_of_new_job_resp r =
   encode_json_new_job_response r |> Yojson.Basic.to_string
 
@@ -315,8 +318,25 @@ module Cmd_listen = struct
                     else
                       "running"
                   in
-                  Printf.printf "[%s] %s %d%%  %s\n%!" report.Api.uuid status
-                    pct report.Api.stats
+                  let stat_l_str =
+                    if report.Api.stat_l <> [] then
+                      String.concat " " (List.map pp_stat report.Api.stat_l)
+                    else
+                      ""
+                  in
+                  let stats_str =
+                    if report.Api.stats <> "" then
+                      Printf.sprintf " %s" report.Api.stats
+                    else
+                      ""
+                  in
+                  Printf.printf "[%s] %s %d%%%s%s\n%!" report.Api.uuid status
+                    pct
+                    (if stat_l_str <> "" then
+                       Printf.sprintf " %s" stat_l_str
+                     else
+                       "")
+                    stats_str
                 )
               | exception exn ->
                 Printf.eprintf "warning: invalid progress message: %s\n%!"
