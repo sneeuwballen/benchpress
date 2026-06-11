@@ -69,6 +69,12 @@ type active_item = private {
   mutable running_time : float;
 }
 
+type stat = private {
+  mutable _presence: Pbrt.Bitfield.t; (** presence for 2 fields *)
+  mutable name : string;
+  mutable value : int32;
+}
+
 type progress_report = private {
   mutable _presence: Pbrt.Bitfield.t; (** presence for 6 fields *)
   mutable uuid : string;
@@ -78,6 +84,7 @@ type progress_report = private {
   mutable active : active_item list;
   mutable finished : bool;
   mutable stats : string;
+  mutable stat_l : stat list;
 }
 
 
@@ -115,6 +122,9 @@ val default_list_jobs_response : unit -> list_jobs_response
 
 val default_active_item : unit -> active_item 
 (** [default_active_item ()] is a new empty value for type [active_item] *)
+
+val default_stat : unit -> stat 
+(** [default_stat ()] is a new empty value for type [stat] *)
 
 val default_progress_report : unit -> progress_report 
 (** [default_progress_report ()] is a new empty value for type [progress_report] *)
@@ -309,6 +319,27 @@ val active_item_has_running_time : active_item -> bool
 val active_item_set_running_time : active_item -> float -> unit
   (** set field running_time in active_item *)
 
+val make_stat : 
+  ?name:string ->
+  ?value:int32 ->
+  unit ->
+  stat
+(** [make_stat … ()] is a builder for type [stat] *)
+
+val copy_stat : stat -> stat
+
+val stat_has_name : stat -> bool
+  (** presence of field "name" in [stat] *)
+
+val stat_set_name : stat -> string -> unit
+  (** set field name in stat *)
+
+val stat_has_value : stat -> bool
+  (** presence of field "value" in [stat] *)
+
+val stat_set_value : stat -> int32 -> unit
+  (** set field value in stat *)
+
 val make_progress_report : 
   ?uuid:string ->
   ?start_ts:float ->
@@ -317,6 +348,7 @@ val make_progress_report :
   ?active:active_item list ->
   ?finished:bool ->
   ?stats:string ->
+  ?stat_l:stat list ->
   unit ->
   progress_report
 (** [make_progress_report … ()] is a builder for type [progress_report] *)
@@ -362,6 +394,9 @@ val progress_report_has_stats : progress_report -> bool
 val progress_report_set_stats : progress_report -> string -> unit
   (** set field stats in progress_report *)
 
+val progress_report_set_stat_l : progress_report -> stat list -> unit
+  (** set field stat_l in progress_report *)
+
 
 (** {2 Formatters} *)
 
@@ -397,6 +432,9 @@ val pp_list_jobs_response : Format.formatter -> list_jobs_response -> unit
 
 val pp_active_item : Format.formatter -> active_item -> unit 
 (** [pp_active_item v] formats v *)
+
+val pp_stat : Format.formatter -> stat -> unit 
+(** [pp_stat v] formats v *)
 
 val pp_progress_report : Format.formatter -> progress_report -> unit 
 (** [pp_progress_report v] formats v *)
@@ -437,6 +475,9 @@ val encode_pb_list_jobs_response : list_jobs_response -> Pbrt.Encoder.t -> unit
 val encode_pb_active_item : active_item -> Pbrt.Encoder.t -> unit
 (** [encode_pb_active_item v encoder] encodes [v] with the given [encoder] *)
 
+val encode_pb_stat : stat -> Pbrt.Encoder.t -> unit
+(** [encode_pb_stat v encoder] encodes [v] with the given [encoder] *)
+
 val encode_pb_progress_report : progress_report -> Pbrt.Encoder.t -> unit
 (** [encode_pb_progress_report v encoder] encodes [v] with the given [encoder] *)
 
@@ -475,6 +516,9 @@ val decode_pb_list_jobs_response : Pbrt.Decoder.t -> list_jobs_response
 
 val decode_pb_active_item : Pbrt.Decoder.t -> active_item
 (** [decode_pb_active_item decoder] decodes a [active_item] binary value from [decoder] *)
+
+val decode_pb_stat : Pbrt.Decoder.t -> stat
+(** [decode_pb_stat decoder] decodes a [stat] binary value from [decoder] *)
 
 val decode_pb_progress_report : Pbrt.Decoder.t -> progress_report
 (** [decode_pb_progress_report decoder] decodes a [progress_report] binary value from [decoder] *)
@@ -515,6 +559,9 @@ val encode_json_list_jobs_response : list_jobs_response -> Yojson.Basic.t
 val encode_json_active_item : active_item -> Yojson.Basic.t
 (** [encode_json_active_item v encoder] encodes [v] to to json *)
 
+val encode_json_stat : stat -> Yojson.Basic.t
+(** [encode_json_stat v encoder] encodes [v] to to json *)
+
 val encode_json_progress_report : progress_report -> Yojson.Basic.t
 (** [encode_json_progress_report v encoder] encodes [v] to to json *)
 
@@ -553,6 +600,9 @@ val decode_json_list_jobs_response : Yojson.Basic.t -> list_jobs_response
 
 val decode_json_active_item : Yojson.Basic.t -> active_item
 (** [decode_json_active_item decoder] decodes a [active_item] value from [decoder] *)
+
+val decode_json_stat : Yojson.Basic.t -> stat
+(** [decode_json_stat decoder] decodes a [stat] value from [decoder] *)
 
 val decode_json_progress_report : Yojson.Basic.t -> progress_report
 (** [decode_json_progress_report decoder] decodes a [progress_report] value from [decoder] *)
