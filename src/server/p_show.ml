@@ -50,9 +50,12 @@ let handle_show (self : Server_common.t) : unit =
             mk_navigation [ uri_show file, "show", true ];
             div
               [
-                "hx-sse", "connect:/progress/sse";
+                A.id "ext-jobs-status";
+                "data-sse-progress", "";
+                "data-sse-href", "/api/ext-jobs-status/";
+                "data-sse-swap", "innerHTML";
                 "hx-get", "/api/ext-jobs-status/";
-                "hx-trigger", "load, sse:progress-refresh, every 30s";
+                "hx-trigger", "load, every 30s";
                 "hx-swap", "innerHTML";
               ]
               [];

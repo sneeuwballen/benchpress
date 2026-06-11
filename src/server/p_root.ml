@@ -59,9 +59,12 @@ let handle_root (self : Server_common.t) : unit =
         (* External jobs progress bar — SSE + 30s poll fallback *)
         div
           [
-            "hx-sse", "connect:/progress/sse";
+            A.id "ext-jobs-status";
+            "data-sse-progress", "";
+            "data-sse-href", "/api/ext-jobs-status/";
+            "data-sse-swap", "innerHTML";
             "hx-get", "/api/ext-jobs-status/";
-            "hx-trigger", "load, sse:progress-refresh, every 30s";
+            "hx-trigger", "load, every 30s";
             "hx-swap", "innerHTML";
           ]
           [];
