@@ -95,11 +95,10 @@ let make_state ~uuid ~start_ts ~total_tasks =
   in
   let snapshot_active () =
     Mutex.lock active_mutex;
-    let now = Unix.gettimeofday () in
-    active_items := List.filter (fun (ts, _) -> now -. ts <= 15.0) !active_items;
     let items =
       List.rev_map (fun (_, item) -> item) !active_items |> CCList.take 10
     in
+    active_items := [];
     Mutex.unlock active_mutex;
     items
   in

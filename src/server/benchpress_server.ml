@@ -76,8 +76,103 @@ let build_progress_bars (self : Server_common.t) ~(now : float) : string =
   let open Html in
   let module Api = Benchpress_api_proto.Benchpress_api in
   Ext_jobs.expire self.ext_jobs ~now;
-  (* Collect bars from external jobs *)
-  let ext_bars =
+  let format_start_ts_iso ts =
+    let t = Unix.gmtime ts in
+    spf "%04d-%02d-%02dT%02d:%02d:%02d" (t.tm_year + 1900) (t.tm_mon + 1)
+      t.tm_mday t.tm_hour t.tm_min t.tm_sec
+  in
+  let result_url_of_job ~uuid ~start_ts =
+    match Uuidm.of_string uuid with
+    | None -> "/"
+    | Some u ->
+      let ts_str =
+        match Ptime.of_float_s start_ts with
+        | None -> spf "<time %.1fs>" start_ts
+        | Some t -> Human.datetime_compact t
+      in
+      uri_show (spf "res-%s-%s.sqlite" ts_str (Uuidm.to_string u))
+  in
+  let pill_of_active (a : Api.active_item) =
+    span
+      [
+        A.class_ "badge pill-cream";
+        A.title
+          (spf "%s on %s (%.0fs)" a.Api.prover a.Api.file a.Api.running_time);
+      ]
+      [
+        txt
+          (spf "%s:%s (%.0fs)" a.Api.prover
+             (Filename.basename a.Api.file)
+             a.Api.running_time);
+      ]
+  in
+  let card_of_job ~uuid ~job_url ~start_ts ~done_ ~total ~elapsed ~pct ~active =
+    let uuid_short = String.sub uuid 0 8 in
+    let start_iso = format_start_ts_iso start_ts in
+    let total_str =
+      if total > 0 then
+        string_of_int total
+      else
+        "?"
+    in
+    div
+      [ A.class_ "card shadow-sm mb-1" ]
+      [
+        div
+          [ A.class_ "card-body py-1 px-2" ]
+          [
+            div
+              [ A.class_ "d-flex justify-content-between align-items-center" ]
+              [
+                a
+                  [
+                    A.class_ "fw-bold text-decoration-none";
+                    A.href job_url;
+                    "data-utc-date", start_iso;
+                    A.title (spf "started: %s" start_iso);
+                  ]
+                  [
+                    (if pct < 100 then
+                       span
+                         [
+                           A.class_ "spinner-border spinner-border-sm me-1";
+                           A.style "width:0.8em;height:0.8em";
+                         ]
+                         []
+                     else
+                       txt "");
+                    txt (spf "Job %s\u{2026}" uuid_short);
+                  ];
+                small
+                  [ A.class_ "text-muted" ]
+                  [
+                    txt
+                      (spf "%d/%s (%s)" done_ total_str
+                         (Human.human_duration elapsed));
+                  ];
+              ];
+            div
+              [ A.class_ "progress"; A.style "height: 4px" ]
+              [
+                div
+                  [
+                    A.class_
+                      "progress-bar progress-bar-striped progress-bar-animated";
+                    A.style (spf "width:%d%%" pct);
+                  ]
+                  [];
+              ];
+            (if active <> [] then
+               div
+                 [ A.class_ "d-flex flex-wrap gap-1 mt-1" ]
+                 (List.map pill_of_active active)
+             else
+               div [] []);
+          ];
+      ]
+  in
+  (* Collect cards from external jobs *)
+  let ext_cards =
     Ext_jobs.all_active self.ext_jobs
     |> List.map (fun (j : Ext_jobs.job) ->
            let r = j.report in
@@ -90,85 +185,33 @@ let build_progress_bars (self : Server_common.t) ~(now : float) : string =
                0
            in
            let elapsed = now -. r.Api.start_ts in
-           let active_str =
-             if r.Api.active = [] then
-               ""
-             else
-               spf " \u{2014} %s"
-                 (String.concat ", "
-                    (List.map
-                       (fun a ->
-                         spf "%s on %s (%.0fs)" a.Api.prover
-                           (Filename.basename a.Api.file)
-                           a.Api.running_time)
-                       r.Api.active))
+           let job_url =
+             result_url_of_job ~uuid:r.Api.uuid ~start_ts:r.Api.start_ts
            in
-           ( spf "Job %s\u{2026}%s" (String.sub r.Api.uuid 0 8) active_str,
-             done_,
-             total,
-             elapsed,
-             pct ))
+           card_of_job ~uuid:r.Api.uuid ~job_url ~start_ts:r.Api.start_ts ~done_
+             ~total ~elapsed ~pct ~active:r.Api.active)
   in
   (* Also include the local TaskQueue job, if any *)
-  let local_bars =
+  let local_cards =
     match Task_queue.cur_job self.task_q with
     | None -> []
     | Some j ->
       let pct = Task_queue.Job.percent_completion j in
       let elapsed = Task_queue.Job.time_elapsed j in
-      let uuid_s = Task_queue.Job.uuid j in
-      let task = Task_queue.Job.task j in
+      let uuid_local = Task_queue.Job.uuid j in
+      let start_ts_local = now -. elapsed in
+      let job_url =
+        result_url_of_job ~uuid:uuid_local ~start_ts:start_ts_local
+      in
       [
-        ( spf "Local %s\u{2026} (%s)" (String.sub uuid_s 0 8) task.Task.name,
-          pct,
-          100,
-          elapsed,
-          pct );
+        card_of_job ~uuid:uuid_local ~job_url ~start_ts:start_ts_local
+          ~done_:pct ~total:100 ~elapsed ~pct ~active:[];
       ]
   in
-  let bars = ext_bars @ local_bars in
-  if bars = [] then
+  let cards = ext_cards @ local_cards in
+  if cards = [] then
     div [ A.id "ext-jobs-status" ] [] |> to_string_elt
-  else (
-    let bar_elts =
-      List.map
-        (fun (label, done_, total, elapsed, pct) ->
-          let total_str =
-            if total > 0 then
-              string_of_int total
-            else
-              "?"
-          in
-          div
-            [ A.class_ "mb-1" ]
-            [
-              div
-                [ A.class_ "d-flex justify-content-between align-items-center" ]
-                [
-                  small
-                    [ A.class_ "text-muted" ]
-                    [
-                      txt
-                        (spf "%s: %d/%s (%s)" label done_ total_str
-                           (Human.human_duration elapsed));
-                    ];
-                  small [ A.class_ "text-muted" ] [ txt (spf "%d%%" pct) ];
-                ];
-              div
-                [ A.class_ "progress"; A.style "height: 4px" ]
-                [
-                  div
-                    [
-                      A.class_
-                        "progress-bar progress-bar-striped \
-                         progress-bar-animated";
-                      A.style (spf "width:%d%%" pct);
-                    ]
-                    [];
-                ];
-            ])
-        bars
-    in
+  else
     div
       [
         A.id "ext-jobs-status";
@@ -177,9 +220,8 @@ let build_progress_bars (self : Server_common.t) ~(now : float) : string =
         "hx-swap", "outerHTML";
         A.class_ "mb-2";
       ]
-      bar_elts
+      cards
     |> to_string_elt
-  )
 
 let handle_ext_jobs_status (self : Server_common.t) : unit =
   H.add_route_handler self.server ~meth:`GET
