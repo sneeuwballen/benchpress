@@ -6,7 +6,12 @@ type t = { path: string; inside: Dir.t; loc: Loc.t }
 
 let pp out (self : t) =
   let open Misc.Pp in
-  Fmt.fprintf out "(@[%a@ :in %a@])" pp_str self.path Dir.pp self.inside
+  pp_record "dir" out
+    [
+      field "path" pp_str self.path;
+      field_opt "name" Fmt.string self.inside.Dir.name;
+      field_opt "pattern" pp_regex self.inside.Dir.pattern;
+    ]
 
 let pattern self = self.inside.Dir.pattern
 let expect self = self.inside.Dir.expect

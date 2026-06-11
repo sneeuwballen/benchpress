@@ -20,14 +20,21 @@ type t = {
 }
 
 let rec pp_expect out = function
-  | E_comment -> Fmt.string out "comments"
-  | E_const r -> Fmt.fprintf out "(@[const %a@])" Res.pp r
-  | E_program { prover } -> Fmt.fprintf out "(@[run %a@])" Prover.pp_name prover
-  | E_try l -> Fmt.fprintf out "(@[try@ %a@])" (Misc.pp_list pp_expect) l
+  | E_comment -> Fmt.string out "comment"
+  | E_const r -> Fmt.fprintf out "const: %a" Res.pp r
+  | E_program { prover } -> Fmt.fprintf out "run: %s" (Prover.name prover)
+  | E_try [] -> Fmt.string out "try: []"
+  | E_try l ->
+    Format.fprintf out "@[<v2>try:";
+    List.iter (fun e -> Format.fprintf out "@,- %a" pp_expect e) l;
+    Format.fprintf out "@]"
 
 let pp out { name; path; expect; pattern; loc = _ } : unit =
   let open Misc.Pp in
-  Fmt.fprintf out "(@[<v1>dir%a%a%a%a@])" (pp_opt "name" Fmt.string) name
-    (pp_f "path" Fmt.string) path (pp_f "expect" pp_expect) expect
-    (pp_opt "pattern" pp_regex)
-    pattern
+  pp_record "dir" out
+    [
+      field_opt "name" Fmt.string name;
+      field "path" Fmt.string path;
+      field "expect" pp_expect expect;
+      field_opt "pattern" pp_regex pattern;
+    ]

@@ -262,6 +262,7 @@ end = struct
         n_results = 0;
         dirs = [];
         provers = [];
+        prover_versions = [];
       };
     ( Error.guard (Error.wrap "inserting provers into DB") @@ fun () ->
       List.iter (Prover.to_db db) provers );
@@ -503,6 +504,8 @@ end = struct
         dirs = [];
         n_bad = 0;
         provers = List.map Prover.name self.provers;
+        prover_versions =
+          List.map (fun p -> Prover.name p, p.Prover.version) self.provers;
       }
     in
     Logs.debug (fun k -> k "saving metadata…");
@@ -816,6 +819,8 @@ end = struct
         dirs = [];
         n_bad = 0;
         provers = List.map Prover.name self.provers;
+        prover_versions =
+          List.map (fun p -> Prover.name p, p.Prover.version) self.provers;
       }
     in
     Logs.debug (fun k -> k "saving metadata…");

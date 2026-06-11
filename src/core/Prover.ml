@@ -101,22 +101,23 @@ let pp out self =
   } =
     self
   in
-  Fmt.fprintf out "(@[<hv1>prover%a%a%a%a%a%a%a%a%a%a%a%a%a%a@])"
-    (pp_f "name" pp_str) name
-    (pp_f "version" Version.pp)
-    version (pp_f "cmd" pp_str) cmd (pp_f "binary" pp_str) binary
-    (pp_f "ulimit" Ulimit.pp) ulimits (pp_opt "sat" pp_regex) sat
-    (pp_opt "unsat" pp_regex) unsat (pp_opt "memory" pp_regex) memory
-    (pp_opt "timeout" pp_regex)
-    timeout
-    (pp_opt "unknown" pp_regex)
-    unknown
-    (pp_f "produces_proof" Fmt.bool)
-    produces_proof
-    (pp_opt "proof_ext" pp_str)
-    proof_ext
-    (pp_l1 (pp_pair pp_str pp_regex))
-    custom (pp_l1 pp_str) static_labels
+  pp_record "prover" out
+    [
+      field "name" pp_str name;
+      field "version" Version.pp version;
+      field "cmd" pp_str cmd;
+      field "binary" pp_str binary;
+      field "ulimit" Ulimit.pp ulimits;
+      field_opt "sat" pp_regex sat;
+      field_opt "unsat" pp_regex unsat;
+      field_opt "memory" pp_regex memory;
+      field_opt "timeout" pp_regex timeout;
+      field_opt "unknown" pp_regex unknown;
+      field "produces_proof" Fmt.bool produces_proof;
+      field_opt "proof_ext" pp_str proof_ext;
+      field_list "custom" (pp_pair pp_str pp_regex) custom;
+      field_list "static_labels" pp_str static_labels;
+    ]
 
 exception Subst_not_found of string
 exception Missing_subst_value of string

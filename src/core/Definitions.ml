@@ -277,24 +277,38 @@ let pp out
       option_nats_server;
     } =
   let open Misc.Pp in
-  Fmt.fprintf out "(@[<v1>Definitions%a%a%a%a%a%a%a%a%a%a@])"
-    (pp_f "def" (Str_map.pp Fmt.string pp_def))
-    defs
-    (pp_f "dirs" (pp_l Dir.pp))
-    dirs
-    (pp_f "dir_vars" (Str_map.pp Fmt.string Fmt.string))
-    dir_vars
-    (pp_f "dirs" (pp_l Error.pp))
-    errors
-    (pp_f "cur_dir" Fmt.string)
-    cur_dir
-    (pp_opt "config_file" Fmt.string)
-    config_file
-    (pp_f "tags" (pp_l Fmt.string))
-    tags
-    (pp_opt "option_j" Fmt.int)
-    option_j
-    (pp_opt "option_progress" Fmt.bool)
-    option_progress
-    (pp_opt "option_nats" Fmt.string)
-    option_nats_server
+  let pp_def_map out defs =
+    let first = ref true in
+    Str_map.iter
+      (fun key def ->
+        if !first then
+          first := false
+        else
+          Format.fprintf out "@,";
+        Format.fprintf out "%s:@\n  %a" key pp_def def)
+      defs
+  in
+  let pp_str_map out m =
+    let first = ref true in
+    Str_map.iter
+      (fun key v ->
+        if !first then
+          first := false
+        else
+          Format.fprintf out "@,";
+        Format.fprintf out "%s: %s" key v)
+      m
+  in
+  pp_record "Definitions" out
+    [
+      field "def" pp_def_map defs;
+      field_list "dirs" Dir.pp dirs;
+      field "dir_vars" pp_str_map dir_vars;
+      field_list "errors" Error.pp errors;
+      field "cur_dir" Fmt.string cur_dir;
+      field_opt "config_file" Fmt.string config_file;
+      field_list "tags" Fmt.string tags;
+      field_opt "option_j" Fmt.int option_j;
+      field_opt "option_progress" Fmt.bool option_progress;
+      field_opt "option_nats" Fmt.string option_nats_server;
+    ]

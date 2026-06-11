@@ -16,7 +16,7 @@ let pp out t =
   if (not t.time) && (not t.memory) && not t.stack then
     CCFormat.fprintf out "none"
   else
-    CCFormat.fprintf out "(%a%a%a)" CCFormat.string
+    CCFormat.fprintf out "%a%a%a" CCFormat.string
       (if t.time then
          "time "
        else

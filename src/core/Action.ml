@@ -58,19 +58,16 @@ type t =
 let pp_run_provers out (self : run_provers) =
   let open Misc.Pp in
   let ({ dirs; provers; limits; j; pattern; loc = _ } : run_provers) = self in
-  Fmt.fprintf out "(@[<v1>run_provers%a%a%a%a%a%a%a@])"
-    (pp_f "dirs" (pp_l Subdir.pp))
-    dirs
-    (pp_f "provers" (pp_l Prover.pp_name))
-    provers
-    (pp_opt "pattern" pp_regex)
-    pattern
-    (pp_opt "timeout" Limit.Time.pp)
-    limits.time
-    (pp_opt "memory" Limit.Memory.pp)
-    limits.memory
-    (pp_opt "stack" Limit.Stack.pp)
-    limits.stack (pp_opt "j" Fmt.int) j
+  pp_record "run_provers" out
+    [
+      field_list "dirs" Subdir.pp dirs;
+      field_list "provers" Prover.pp_name provers;
+      field_opt "pattern" pp_regex pattern;
+      field_opt "timeout" Limit.Time.pp limits.time;
+      field_opt "memory" Limit.Memory.pp limits.memory;
+      field_opt "stack" Limit.Stack.pp limits.stack;
+      field_opt "j" Fmt.int j;
+    ]
 
 let pp_run_provers_slurm out (self : run_provers_slurm_submission) =
   let open Misc.Pp in
@@ -89,24 +86,21 @@ let pp_run_provers_slurm out (self : run_provers_slurm_submission) =
   } =
     self
   in
-  Fmt.fprintf out "(@[<v1>run_provers.Slurm%a%a%a%a%a%a%a%a%a%a%a%a@])"
-    (pp_opt "partition" Fmt.string)
-    partition (pp_f "nodes" Fmt.int) nodes
-    (pp_f "addr" Misc.pp_inet_addr)
-    addr (pp_f "port" Fmt.int) port (pp_f "ntasks" Fmt.int) ntasks
-    (pp_opt "j" Fmt.int) j
-    (pp_f "dirs" (pp_l Subdir.pp))
-    dirs
-    (pp_f "provers" (pp_l Prover.pp_name))
-    provers
-    (pp_opt "pattern" pp_regex)
-    pattern
-    (pp_opt "timeout" Limit.Time.pp)
-    limits.time
-    (pp_opt "memory" Limit.Memory.pp)
-    limits.memory
-    (pp_opt "stack" Limit.Stack.pp)
-    limits.stack
+  pp_record "run_provers_slurm" out
+    [
+      field_opt "partition" Fmt.string partition;
+      field "nodes" Fmt.int nodes;
+      field "addr" Misc.pp_inet_addr addr;
+      field "port" Fmt.int port;
+      field "ntasks" Fmt.int ntasks;
+      field_opt "j" Fmt.int j;
+      field_list "dirs" Subdir.pp dirs;
+      field_list "provers" Prover.pp_name provers;
+      field_opt "pattern" pp_regex pattern;
+      field_opt "timeout" Limit.Time.pp limits.time;
+      field_opt "memory" Limit.Memory.pp limits.memory;
+      field_opt "stack" Limit.Stack.pp limits.stack;
+    ]
 
 let pp_git_fetch out = function
   | Git_fetch -> Fmt.string out "fetch"
@@ -115,15 +109,21 @@ let pp_git_fetch out = function
 let pp_git_checkout out (self : git_checkout) =
   let open Misc.Pp in
   let { dir; ref; fetch_first; loc = _ } = self in
-  Fmt.fprintf out "(@[<v1>git-checkout%a%a%a@])" (pp_f "dir" pp_regex) dir
-    (pp_f "ref" pp_regex) ref
-    (pp_opt "fetch-first" pp_git_fetch)
-    fetch_first
+  pp_record "git-checkout" out
+    [
+      field "dir" pp_regex dir;
+      field "ref" pp_regex ref;
+      field_opt "fetch-first" pp_git_fetch fetch_first;
+    ]
 
 let rec pp out (self : t) : unit =
   match self with
   | Act_run_provers a -> pp_run_provers out a
   | Act_run_slurm_submission a -> pp_run_provers_slurm out a
   | Act_git_checkout g -> pp_git_checkout out g
-  | Act_run_cmd { cmd = s; loc = _ } -> Fmt.fprintf out "(run-cmd %S)" s
-  | Act_progn l -> Fmt.fprintf out "(@[%a@])" (Misc.Pp.pp_l pp) l
+  | Act_run_cmd { cmd = s; loc = _ } ->
+    let open Misc.Pp in
+    pp_record "run_cmd" out [ field "cmd" pp_str s ]
+  | Act_progn l ->
+    let open Misc.Pp in
+    pp_record "progn" out [ field "actions" (pp_l pp) l ]

@@ -81,8 +81,29 @@ let load_meta (db : Db.t) self =
       {| SELECT prover FROM test_provers WHERE database_id = ?; |} self
     |> Misc.unwrap_db (fun () -> spf "Could not load provers")
   in
+  let prover_versions_str = get db self "prover_versions" in
+  let prover_versions =
+    match prover_versions_str with
+    | Some s ->
+      CCString.split ~by:"," s
+      |> List.filter_map (fun pair ->
+             match CCString.Split.left ~by:"=" pair with
+             | Some (name, version) ->
+               Some (String.trim name, String.trim version)
+             | None -> None)
+    | None -> List.map (fun n -> n, "<unknown>") provers
+  in
   Test_metadata.
-    { uuid; timestamp; total_wall_time; n_results; n_bad; dirs; provers }
+    {
+      uuid;
+      timestamp;
+      total_wall_time;
+      n_results;
+      n_bad;
+      dirs;
+      provers;
+      prover_versions;
+    }
 
 let set (db : Db.t) self field value =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.set" in
@@ -123,6 +144,10 @@ let cache_meta (db : Db.t) self (meta : Test_metadata.t) =
     (CCOption.map string_of_float meta.total_wall_time);
   set db self "n_results" (Some (string_of_int meta.n_results));
   set db self "n_bad" (Some (string_of_int meta.n_bad));
+  set db self "prover_versions"
+    (Some
+       (String.concat ","
+          (List.map (fun (n, v) -> spf "%s=%s" n v) meta.prover_versions)));
   Db.exec_no_cursor db
     ~ty:Db.Ty.(p1 int)
     {| DELETE FROM test_dirs WHERE database_id = ?; |} self
