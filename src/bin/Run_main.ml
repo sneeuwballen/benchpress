@@ -21,6 +21,7 @@ let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
   in
   let done_user_subject = [ "user"; "notify"; "benchpress"; "done"; uuid_s ] in
   let last_send = ref 0.0 in
+  let last_user_notify = ref 0.0 in
   let sent_done = ref false in
   let publish kind report =
     let now = Unix.gettimeofday () in
@@ -42,7 +43,14 @@ let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
         Api.encode_json_progress_report report |> Yojson.Basic.to_string
       in
       (try Nats.pub nats ~subject:bp_subject json with _ -> ());
-      try Nats.pub nats ~subject:user_subject json with _ -> ()
+      let should_user_notify =
+        (* first notification, done notification, or ~15 min since last *)
+        !last_user_notify = 0.0 || finished || now -. !last_user_notify >= 900.0
+      in
+      if should_user_notify then (
+        last_user_notify := now;
+        try Nats.pub nats ~subject:user_subject json with _ -> ()
+      )
     )
   in
   let make_done_report () =
