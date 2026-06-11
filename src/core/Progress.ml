@@ -74,14 +74,15 @@ let make_state ~uuid ~start_ts ~total_tasks =
   let stat_total_unknown = ref 0 in
   let stat_total_timeout = ref 0 in
   let stat_total_error = ref 0 in
+  let stat_total_bad = ref 0 in
   let stat_total_custom : (string, int ref) Hashtbl.t = Hashtbl.create 8 in
   let finished = ref false in
   let make_stats () =
     let buf = Buffer.create 128 in
     Buffer.add_string buf
-      (spf "sat:%d unsat:%d unknown:%d timeout:%d error:%d" !stat_total_sat
-         !stat_total_unsat !stat_total_unknown !stat_total_timeout
-         !stat_total_error);
+      (spf "sat:%d unsat:%d unknown:%d timeout:%d error:%d bad:%d"
+         !stat_total_sat !stat_total_unsat !stat_total_unknown
+         !stat_total_timeout !stat_total_error !stat_total_bad);
     Hashtbl.iter
       (fun tag cnt -> Buffer.add_string buf (spf " %s:%d" tag !cnt))
       stat_total_custom;
@@ -127,10 +128,11 @@ let make_state ~uuid ~start_ts ~total_tasks =
         incr r;
         Hashtbl.add stat_total_custom tag r)
   in
-  done_tasks, add_active, bump_stat, build_report, finished
+  done_tasks, add_active, bump_stat, build_report, finished, stat_total_bad
 
 let make ~uuid ~start_ts ~total_tasks ~(callbacks : callbacks) : t =
-  let done_tasks, add_active, bump_stat, build_report, finished =
+  let done_tasks, add_active, bump_stat, build_report, finished, stat_total_bad
+      =
     make_state ~uuid ~start_ts ~total_tasks
   in
   let emit () =
@@ -141,6 +143,7 @@ let make ~uuid ~start_ts ~total_tasks ~(callbacks : callbacks) : t =
     method on_res (res : Run_prover_problem.job_res) =
       incr done_tasks;
       bump_stat res.Run_result.res;
+      if Run_prover_problem.is_bad res then incr stat_total_bad;
       let prover = Run_result.program res in
       let file = (Run_result.problem res).Problem.name in
       let running_time = res.Run_result.raw.Run_proc_result.rtime in
