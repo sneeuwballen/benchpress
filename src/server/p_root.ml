@@ -56,11 +56,12 @@ let handle_root (self : Server_common.t) : unit =
                    ];
                  ];
           ];
-        (* External jobs progress bar — polls every 4s, takes no space when empty *)
+        (* External jobs progress bar — SSE + 30s poll fallback *)
         div
           [
+            "hx-sse", "connect:/progress/sse";
             "hx-get", "/api/ext-jobs-status/";
-            "hx-trigger", "load, every 4s";
+            "hx-trigger", "sse:progress-refresh, every 30s";
             "hx-swap", "innerHTML";
           ]
           [];

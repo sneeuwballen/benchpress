@@ -45,6 +45,7 @@
   Server_common
   Logger
   Ext_jobs
+  Eio_signal
   PB_html
   Html
   Meta_cache

@@ -231,6 +231,30 @@ let handle_ext_jobs_status (self : Server_common.t) : unit =
   let html = build_progress_bars self ~now in
   H.Response.make_string ~headers:Server_common.default_html_headers (Ok html)
 
+(** {2 SSE endpoint for live progress updates} *)
+
+let handle_progress_sse (self : Server_common.t) : unit =
+  let module S = H.Server in
+  H.add_route_server_sent_handler self.server
+    H.Route.(exact "progress" @/ exact "sse" @/ return)
+    (fun _req (module EV : S.SERVER_SENT_GENERATOR) ->
+      EV.set_headers [];
+      Eio.Switch.run (fun sw ->
+          let disconnected, wake = Eio.Promise.create () in
+          let h =
+            Eio_signal.subscribe_sync
+              self.Server_common.ext_jobs.Ext_jobs.signal (fun jobs ->
+                try
+                  let n = List.length jobs in
+                  EV.send_event ~event:"progress-refresh"
+                    ~data:(string_of_int n) ()
+                with _ -> Eio.Promise.resolve wake ())
+          in
+          Eio.Switch.on_release sw (fun () ->
+              Eio_signal.unsubscribe self.Server_common.ext_jobs.Ext_jobs.signal
+                h);
+          Eio.Promise.await disconnected))
+
 (** {2 NATS progress subscription} *)
 
 (** Subscribe to NATS for benchpress.progress.> events and feed them into the
@@ -409,6 +433,7 @@ module Cmd = struct
          mcp_handler);
       handle_ext_progress self;
       handle_ext_jobs_status self;
+      handle_progress_sse self;
       Api_handler.register ~allow_localhost ~auth:self.auth ~task_q:self.task_q
         ~defs:self.defs ~data_dir:self.data_dir ~http_server:self.server;
       H.run server |> CCResult.map_err Error.of_exn
