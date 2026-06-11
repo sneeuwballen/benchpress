@@ -212,16 +212,7 @@ let build_progress_bars (self : Server_common.t) ~(now : float) : string =
   if cards = [] then
     div [ A.id "ext-jobs-status" ] [] |> to_string_elt
   else
-    div
-      [
-        A.id "ext-jobs-status";
-        "hx-get", "/api/ext-jobs-status/";
-        "hx-trigger", "every 4s";
-        "hx-swap", "outerHTML";
-        A.class_ "mb-2";
-      ]
-      cards
-    |> to_string_elt
+    div [ A.id "ext-jobs-status"; A.class_ "mb-2" ] cards |> to_string_elt
 
 let handle_ext_jobs_status (self : Server_common.t) : unit =
   H.add_route_handler self.server ~meth:`GET

@@ -61,7 +61,7 @@ let handle_root (self : Server_common.t) : unit =
           [
             "hx-sse", "connect:/progress/sse";
             "hx-get", "/api/ext-jobs-status/";
-            "hx-trigger", "sse:progress-refresh, every 30s";
+            "hx-trigger", "load, sse:progress-refresh, every 30s";
             "hx-swap", "innerHTML";
           ]
           [];
