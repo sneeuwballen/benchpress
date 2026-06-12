@@ -6,7 +6,8 @@
 (rule
  (targets fake_yaml.out)
  (deps
-  (source_tree .))
+  (source_tree .)
+  (package benchpress))
  (action
   (with-stdout-to
    %{targets}
@@ -16,7 +17,8 @@
 (rule
  (targets check_config_rich.out)
  (deps
-  (source_tree .))
+  (source_tree .)
+  (package benchpress))
  (action
   (with-stdout-to
    %{targets}
@@ -26,7 +28,8 @@
 (rule
  (targets check_config_actions.out)
  (deps
-  (source_tree .))
+  (source_tree .)
+  (package benchpress))
  (action
   (with-stdout-to
    %{targets}
