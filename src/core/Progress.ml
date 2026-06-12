@@ -11,11 +11,12 @@ module Api = Benchpress_api_proto.Benchpress_api
 
 type report = Api.progress_report
 
-type t =
-  < on_res : Run_prover_problem.job_res -> unit
-  ; on_start_proof_check : unit
-  ; on_proof_check_res : Test.proof_check_result -> unit
-  ; on_done : unit >
+class type t = object
+  method on_res : Run_prover_problem.job_res -> unit
+  method on_start_proof_check : unit
+  method on_proof_check_res : Test.proof_check_result -> unit
+  method on_done : unit
+end
 
 type callbacks = {
   on_report: report -> unit;
@@ -48,7 +49,7 @@ let summarize (r : report) : summary =
   in
   { percent; eta }
 
-let nil : t =
+class nil : t =
   object
     method on_res _ = ()
     method on_start_proof_check = ()

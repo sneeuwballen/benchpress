@@ -17,11 +17,12 @@ type summary = { percent: int; eta: float }
 val summarize : report -> summary
 (** Extract percent complete and estimated time remaining. *)
 
-type t =
-  < on_res : Run_prover_problem.job_res -> unit
-  ; on_start_proof_check : unit
-  ; on_proof_check_res : Test.proof_check_result -> unit
-  ; on_done : unit >
+class type t = object
+  method on_res : Run_prover_problem.job_res -> unit
+  method on_start_proof_check : unit
+  method on_proof_check_res : Test.proof_check_result -> unit
+  method on_done : unit
+end
 
 type callbacks = {
   on_report: report -> unit;
@@ -29,7 +30,7 @@ type callbacks = {
   on_res: Run_prover_problem.job_res -> unit;
 }
 
-val nil : t
+class nil : t
 (** No-op tracker. *)
 
 val fanout : t list -> t

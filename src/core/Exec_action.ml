@@ -943,7 +943,7 @@ let rec run ?output ?(save = true) ?interrupted ?progress_cb
     in
     let progress =
       match progress_components with
-      | [] -> Progress.nil
+      | [] -> new Progress.nil
       | [ t ] -> t
       | l -> Progress.fanout l
     in
@@ -1000,7 +1000,7 @@ let rec run ?output ?(save = true) ?interrupted ?progress_cb
     in
     let progress =
       match progress_components with
-      | [] -> Progress.nil
+      | [] -> new Progress.nil
       | [ t ] -> t
       | l -> Progress.fanout l
     in

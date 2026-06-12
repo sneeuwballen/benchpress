@@ -102,7 +102,7 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
   in
   let progress : Progress.t =
     match progress_components with
-    | [] -> Progress.nil
+    | [] -> new Progress.nil
     | [ t ] -> t
     | l -> Progress.fanout l
   in
@@ -153,7 +153,7 @@ let execute_submit_job_action ?j ?timestamp ?dyn ?limits ?proof_dir ?output
   in
   let progress =
     match progress_components with
-    | [] -> Progress.nil
+    | [] -> new Progress.nil
     | [ t ] -> t
     | l -> Progress.fanout l
   in
