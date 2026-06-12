@@ -14,7 +14,39 @@
     "../src/bin/benchpress_bin.exe run --save=false -q -c conf_prover1.yaml --task runall | sed -E '/^total_time/s/[0-9.]+s/--s/'"))))
 
 (rule
+ (targets check_config_rich.out)
+ (deps
+  (source_tree .))
+ (action
+  (with-stdout-to
+   %{targets}
+   (bash
+    "../src/bin/benchpress_bin.exe check-config -q conf_rich.yaml | sed 's|'$(pwd)'|<ROOT>|g'"))))
+
+(rule
+ (targets check_config_actions.out)
+ (deps
+  (source_tree .))
+ (action
+  (with-stdout-to
+   %{targets}
+   (bash
+    "../src/bin/benchpress_bin.exe check-config -q conf_actions.yaml | sed 's|'$(pwd)'|<ROOT>|g'"))))
+
+(rule
  (alias runtest)
  (package benchpress)
  (action
   (diff fake_yaml.expected fake_yaml.out)))
+
+(rule
+ (alias runtest)
+ (package benchpress)
+ (action
+  (diff check_config_rich.expected check_config_rich.out)))
+
+(rule
+ (alias runtest)
+ (package benchpress)
+ (action
+  (diff check_config_actions.expected check_config_actions.out)))
