@@ -77,9 +77,9 @@ let build_progress_bars (self : Server_common.t) ~(now : float) : string =
   let module Api = Benchpress_api_proto.Benchpress_api in
   Ext_jobs.expire self.ext_jobs ~now;
   let format_start_ts_iso ts =
-    let t = Unix.gmtime ts in
-    spf "%04d-%02d-%02dT%02d:%02d:%02d" (t.tm_year + 1900) (t.tm_mon + 1)
-      t.tm_mday t.tm_hour t.tm_min t.tm_sec
+    match Ptime.of_float_s ts with
+    | None -> spf "<invalid ts %.1f>" ts
+    | Some t -> Ptime.to_rfc3339 ~space:false t
   in
   let result_url_of_job ~uuid ~start_ts =
     match Uuidm.of_string uuid with
