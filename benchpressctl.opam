@@ -11,6 +11,8 @@ depends: [
   "dune" {>= "3.2"}
   "ocaml" {>= "5.1"}
   "cmdliner" {>= "1.1.0"}
+  "eio"
+  "eio_posix"
   "curly"
   "twirp_core" {>= "0.2"}
   "ppx_subliner"

@@ -282,7 +282,7 @@ module Cmd_listen = struct
         Unix.string_of_inet_addr entry.Unix.h_addr_list.(0)
     in
     Log.info (fun k -> k "connecting to NATS at %s:%d" host_s port);
-    Eio_main.run @@ fun env ->
+    Eio_posix.run @@ fun env ->
     let net = Eio.Stdenv.net env in
     let clock = Eio.Stdenv.clock env in
     let subject = [ "benchpress"; "progress"; ">" ] in

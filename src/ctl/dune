@@ -10,7 +10,7 @@
   curly
   eio
   eio.unix
-  eio_main
+  eio_posix
   logs
   twirp_core)
  (preprocess

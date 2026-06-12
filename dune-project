@@ -17,7 +17,8 @@
 
 (package
  (name benchpress)
- (synopsis "Tool to run one or more logic programs, on a set of files, and collect the results")
+ (synopsis
+  "Tool to run one or more logic programs, on a set of files, and collect the results")
  (depends
   (ocaml
    (>= 4.14))
@@ -27,8 +28,10 @@
    (and
     (>= 3.6)
     (< 4.0)))
-  (eio (>= 1.0))
-  (eio_posix (>= 1.0))
+  (eio
+   (>= 1.0))
+  (eio_posix
+   (>= 1.0))
   (re
    (and
     (>= 1.8)
@@ -52,7 +55,8 @@
    (and
     (>= 0.4)
     (< 0.6)))
-  (trace (>= 0.12))
+  (trace
+   (>= 0.12))
   trace-tef
   (printbox
    (>= 0.6))
@@ -85,10 +89,13 @@
    (and
     (>= 0.4)
     (< 0.5)))
-  (tiny_httpd (>= 0.17))
+  (tiny_httpd
+   (>= 0.17))
   tiny_httpd_eio
-  (eio (>= 1.0))
-  (eio_posix (>= 1.0))
+  (eio
+   (>= 1.0))
+  (eio_posix
+   (>= 1.0))
   (printbox
    (>= 0.12))
   (printbox-text
@@ -103,8 +110,10 @@
    (>= 1.0))
   (twirp_tiny_httpd
    (>= 0.2))
-  (opentelemetry (>= 0.90))
-  (opentelemetry-client-ocurl (>= 0.90))
+  (opentelemetry
+   (>= 0.90))
+  (opentelemetry-client-ocurl
+   (>= 0.90))
   (pbrt
    (>= 4.0))
   (pbrt_services
@@ -154,6 +163,8 @@
    (>= 5.1))
   (cmdliner
    (>= 1.1.0))
+  eio
+  eio_posix
   curly
   (twirp_core
    (>= 0.2))
