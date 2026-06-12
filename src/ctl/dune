@@ -7,7 +7,7 @@
   benchpress_nats
   benchpress_api_proto
   cmdliner
-  curly
+  curly_eio
   eio
   eio.unix
   eio_posix

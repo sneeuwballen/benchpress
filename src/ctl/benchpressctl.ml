@@ -3,12 +3,14 @@
 open Printf
 module Log = (val Logs.src_log (Logs.Src.create "benchpressctl"))
 
+let ( let@ ) = ( @@ )
+
 let setup_logs (lvl : Logs.level option) =
   Logs.set_reporter (Logs.format_reporter ());
   Logs.set_level ~all:true lvl;
   Log.info (fun k -> k "logging initialized")
 
-(* ── Twirp client transport via curly ──────────────────────────────────── *)
+(* ── Twirp client transport via curly-eio ────────────────────────────── *)
 
 module Curly_transport = struct
   module IO = struct
@@ -20,17 +22,20 @@ module Curly_transport = struct
 
   type client = { api_key: string option }
 
-  let http_post ~headers ~url ~body (c : client) () =
+  let http_post ~headers ~url ~body (c : client) () : _ IO.t =
     let headers =
       match c.api_key with
       | Some key -> ("authorization", "Bearer " ^ key) :: headers
       | None -> headers
     in
-    let req = Curly.Request.make ~meth:`POST ~url ~headers ~body () in
-    match Curly.run req with
+    let req = Curly_eio.Request.make ~meth:`POST ~url ~headers ~body () in
+    match Curly_eio.run req with
     | Ok r ->
-      Ok (r.Curly.Response.body, r.Curly.Response.code, r.Curly.Response.headers)
-    | Error e -> Error (Format.asprintf "%a" Curly.Error.pp e)
+      Ok
+        ( r.Curly_eio.Response.body,
+          r.Curly_eio.Response.code,
+          r.Curly_eio.Response.headers )
+    | Error e -> Error (Format.asprintf "%a" Curly_eio.Error.pp e)
 end
 
 module Client = Twirp_core.Client.Make (Curly_transport)
@@ -284,65 +289,63 @@ module Cmd_listen = struct
     Log.info (fun k -> k "connecting to NATS at %s:%d" host_s port);
     Eio_posix.run @@ fun env ->
     let net = Eio.Stdenv.net env in
-    let clock = Eio.Stdenv.clock env in
     let subject = [ "benchpress"; "progress"; ">" ] in
     Eio.Switch.run @@ fun sw ->
-    Nats.with_connect ~sw ~net ~host:host_s ~port () (fun nats ->
-        Log.info (fun k -> k "subscribed to %s" (String.concat "." subject));
-        let last_print = ref 0.0 in
-        let _sub =
-          Nats.sub nats ~sw ~subject (fun msg ->
-              let now = Unix.gettimeofday () in
-              match
-                Api.decode_json_progress_report
-                  (Yojson.Basic.from_string msg.payload)
-              with
-              | report ->
-                Log.debug (fun k ->
-                    k "progress: %s %ld/%ld" report.Api.uuid
-                      report.Api.done_tasks report.Api.total_tasks);
-                let should_print = now -. !last_print >= 10.0 in
-                if should_print then last_print := now;
-                if should_print || report.Api.finished then (
-                  let pct =
-                    if report.Api.total_tasks = 0l then
-                      0
-                    else
-                      Int32.to_int report.Api.done_tasks
-                      * 100
-                      / Int32.to_int report.Api.total_tasks
-                  in
-                  let status =
-                    if report.Api.finished then
-                      "done"
-                    else
-                      "running"
-                  in
-                  let stat_l_str =
-                    if report.Api.stat_l <> [] then
-                      String.concat " " (List.map pp_stat report.Api.stat_l)
-                    else
-                      ""
-                  in
-                  let stats_str =
-                    if report.Api.stats <> "" then
-                      Printf.sprintf " %s" report.Api.stats
-                    else
-                      ""
-                  in
-                  Printf.printf "[%s] %s %d%%%s%s\n%!" report.Api.uuid status
-                    pct
-                    (if stat_l_str <> "" then
-                       Printf.sprintf " %s" stat_l_str
-                     else
-                       "")
-                    stats_str
-                )
-              | exception exn ->
-                Printf.eprintf "warning: invalid progress message: %s\n%!"
-                  (Printexc.to_string exn))
-        in
-        Eio.Time.sleep clock infinity)
+    let@ nats = Nats.with_connect ~sw ~net ~host:host_s ~port () in
+    Log.info (fun k -> k "subscribed to %s" (String.concat "." subject));
+    let last_print = ref 0.0 in
+    let _sub =
+      Nats.sub nats ~sw ~subject (fun msg ->
+          let now = Unix.gettimeofday () in
+          match
+            Api.decode_json_progress_report
+              (Yojson.Basic.from_string msg.payload)
+          with
+          | report ->
+            Log.debug (fun k ->
+                k "progress: %s %ld/%ld" report.Api.uuid report.Api.done_tasks
+                  report.Api.total_tasks);
+            let should_print = now -. !last_print >= 10.0 in
+            if should_print then last_print := now;
+            if should_print || report.Api.finished then (
+              let pct =
+                if report.Api.total_tasks = 0l then
+                  0
+                else
+                  Int32.to_int report.Api.done_tasks
+                  * 100
+                  / Int32.to_int report.Api.total_tasks
+              in
+              let status =
+                if report.Api.finished then
+                  "done"
+                else
+                  "running"
+              in
+              let stat_l_str =
+                if report.Api.stat_l <> [] then
+                  String.concat " " (List.map pp_stat report.Api.stat_l)
+                else
+                  ""
+              in
+              let stats_str =
+                if report.Api.stats <> "" then
+                  Printf.sprintf " %s" report.Api.stats
+                else
+                  ""
+              in
+              Printf.printf "[%s] %s %d%%%s%s\n%!" report.Api.uuid status pct
+                (if stat_l_str <> "" then
+                   Printf.sprintf " %s" stat_l_str
+                 else
+                   "")
+                stats_str
+            )
+          | exception exn ->
+            Printf.eprintf "warning: invalid progress message: %s\n%!"
+              (Printexc.to_string exn))
+    in
+    Nats.wait nats
 
   let cmd =
     let open Cmdliner in
@@ -375,6 +378,9 @@ let () =
     Term.(ret (const (fun () -> `Help (`Pager, None)) $ const ()))
   in
   exit
-    (Cmd.eval
-       (Cmd.group info ~default
-          [ Cmd_run.cmd; Cmd_status.cmd; Cmd_cancel.cmd; Cmd_listen.cmd ]))
+    ( Eio_posix.run @@ fun env ->
+      let proc_mgr = Eio.Stdenv.process_mgr env in
+      Curly_eio.with_proc_mgr proc_mgr @@ fun () ->
+      Cmd.eval
+        (Cmd.group info ~default
+           [ Cmd_run.cmd; Cmd_status.cmd; Cmd_cancel.cmd; Cmd_listen.cmd ]) )

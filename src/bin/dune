@@ -12,7 +12,6 @@
   benchpress_api_proto
   containers
   cmdliner
-  curly
   uuidm
   logs
   logs.cli
