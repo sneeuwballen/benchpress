@@ -1,0 +1,6 @@
+(ocamllex http)
+
+(library
+ (name curly_eio)
+ (package benchpress)
+ (libraries eio eio.unix eio_posix))
