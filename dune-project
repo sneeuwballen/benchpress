@@ -37,7 +37,7 @@
     (>= 1.8)
     (< 2.0)))
   csv
-  curly
+  curly_eio
   (cmdliner
    (>= 1.1.0))
   ppx_subliner
@@ -165,7 +165,7 @@
    (>= 1.1.0))
   eio
   eio_posix
-  curly
+  curly_eio
   (twirp_core
    (>= 0.2))
   ppx_subliner
