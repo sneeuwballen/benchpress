@@ -226,6 +226,7 @@ let handle_ext_jobs_status (self : Server_common.t) : unit =
 
 let handle_progress_sse (self : Server_common.t) : unit =
   let module S = H.Server in
+  let module Api = Benchpress_api_proto.Benchpress_api in
   H.add_route_server_sent_handler self.server
     H.Route.(exact "progress" @/ exact "sse" @/ return)
     (fun _req (module EV : S.SERVER_SENT_GENERATOR) ->
@@ -238,7 +239,15 @@ let handle_progress_sse (self : Server_common.t) : unit =
                 try
                   let n = List.length jobs in
                   EV.send_event ~event:"progress-refresh"
-                    ~data:(string_of_int n) ()
+                    ~data:(string_of_int n) ();
+                  (* Send per-job events so the page can reload specific file
+                     summaries *)
+                  List.iter
+                    (fun (j : Server_common.Ext_jobs.job) ->
+                      let uuid = j.report.Api.uuid in
+                      if uuid <> "" then
+                        EV.send_event ~event:"progress-update" ~data:uuid ())
+                    jobs
                 with _ -> Eio.Promise.resolve wake ())
           in
           Eio.Switch.on_release sw (fun () ->

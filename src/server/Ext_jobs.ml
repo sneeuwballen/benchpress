@@ -10,6 +10,11 @@ let all_active t : job list =
   |> List.filter (fun j -> not j.report.Api.finished)
   |> List.sort (fun a b -> compare a.report.Api.start_ts b.report.Api.start_ts)
 
+let find_opt t uuid =
+  match Hashtbl.find_opt t.jobs uuid with
+  | Some j when not j.report.Api.finished -> Some j
+  | _ -> None
+
 let notify_signal t = Eio_signal.publish t.signal (all_active t)
 
 let apply_report t ~now (r : Api.progress_report) =

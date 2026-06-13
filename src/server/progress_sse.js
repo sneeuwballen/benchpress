@@ -9,6 +9,12 @@
         es.addEventListener('progress-refresh', function () {
             htmx.ajax('GET', href, { target: target, swap: swap });
         });
+        es.addEventListener('progress-update', function (e) {
+            var uuid = e.data;
+            if (!uuid) return;
+            // Dispatch a custom DOM event so HTMX can trigger per-job reloads
+            document.body.dispatchEvent(new CustomEvent('job-update-' + uuid));
+        });
     }
     if (document.readyState !== 'loading') {
         document.querySelectorAll('[data-sse-progress]').forEach(connectSse);

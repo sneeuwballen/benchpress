@@ -109,7 +109,22 @@ let handle_file_summary (self : Server_common.t) : unit =
     let open Html in
     try
       let m = Meta_cache.find self.meta_cache file_full in
-      div [] (mk_file_summary fname m)
+      let uuid_str = Uuidm.to_string m.Test_metadata.uuid in
+      let is_active =
+        Option.is_some (Server_common.Ext_jobs.find_opt self.ext_jobs uuid_str)
+      in
+      if is_active then (
+        let url_meta = Printf.sprintf "/file-sum/%s" (U.percent_encode fname) in
+        let trigger =
+          spf "job-update-%s from:body throttle:5s, every 300s" uuid_str
+        in
+        (* Return a container that reloads itself on SSE events *)
+        div
+          [ "hx-get", url_meta; "hx-trigger", trigger; "hx-swap", "outerHTML" ]
+          (mk_file_summary fname m)
+      ) else
+        (* Job finished: plain static summary, no HTMX triggers *)
+        div [] (mk_file_summary fname m)
     with Error.E e | E (e, _) ->
       let title = [ A.title @@ "<no metadata>: " ^ Error.show e ] in
       mk_a (A.href (uri_show fname) :: title) [ txt fname ]

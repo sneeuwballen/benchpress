@@ -458,7 +458,29 @@ let html_of_files (self : t) ~off ~limit : Html.elt list =
 
     let descr =
       match meta with
-      | Some meta -> mk_file_summary file_basename meta
+      | Some m ->
+        let uuid_str = Uuidm.to_string m.Test_metadata.uuid in
+        let is_active =
+          Option.is_some (Ext_jobs.find_opt self.ext_jobs uuid_str)
+        in
+        if is_active then (
+          let url_meta =
+            Printf.sprintf "/file-sum/%s" (U.percent_encode file_basename)
+          in
+          let trigger =
+            spf "job-update-%s from:body throttle:5s, every 300s" uuid_str
+          in
+          [
+            div
+              [
+                "hx-get", url_meta;
+                "hx-trigger", trigger;
+                "hx-swap", "outerHTML";
+              ]
+              (mk_file_summary file_basename m);
+          ]
+        ) else
+          mk_file_summary file_basename m
       | None ->
         [
           div
