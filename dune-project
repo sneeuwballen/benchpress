@@ -47,6 +47,7 @@
   base64
   ptime
   processor
+  (benchpress-proto (= :version))
   jsonm
   (sqlite3
    (>= 5.0.3))
