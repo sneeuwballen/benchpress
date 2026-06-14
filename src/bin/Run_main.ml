@@ -1,7 +1,7 @@
 open Common
 module T = Test
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.run-main"))
-module Api = Benchpress_api_proto.Benchpress_api
+module Api = Benchpress_proto
 
 [@@@alert "-unstable"]
 

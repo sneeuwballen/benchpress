@@ -1,7 +1,7 @@
 
-(** Code for benchpress_api.proto *)
+(** Code for benchpress_proto.proto *)
 
-(* generated from "benchpress_api.proto", do not edit *)
+(* generated from "benchpress_proto.proto", do not edit *)
 
 
 

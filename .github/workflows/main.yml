@@ -32,7 +32,7 @@ jobs:
       - run: opam pin .#HEAD -y -n
       - run: opam install -t . --deps-only
       - run: opam exec -- dune build @all --ignore-promoted-rules
-      - run: opam exec -- dune runtest -p benchpress
+      - run: opam exec -- dune runtest -p benchpress-proto,benchpress
       # API integration tests: only on 5.4 (behaviour, not OCaml-version-sensitive)
       - if: matrix.container == 'ghcr.io/c-cube/c-cube-commmon/ci-5.4:latest'
         name: Run API integration tests

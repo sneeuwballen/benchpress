@@ -49,7 +49,7 @@ let handle_ext_progress (self : Server_common.t) : unit =
   let report =
     try
       Some
-        (Benchpress_api_proto.Benchpress_api.decode_json_progress_report
+        (Benchpress_proto.decode_json_progress_report
            (Yojson.Basic.from_string body))
     with _ -> None
   in
@@ -58,7 +58,7 @@ let handle_ext_progress (self : Server_common.t) : unit =
     H.Response.make_string ~code:400 ~headers:json_headers
       (Ok {|{"error":"invalid json"}|})
   | Some r ->
-    let module Api = Benchpress_api_proto.Benchpress_api in
+    let module Api = Benchpress_proto in
     if r.Api.uuid = "" then
       H.Response.make_string ~code:400 ~headers:json_headers
         (Ok {|{"error":"missing uuid"}|})
@@ -74,7 +74,7 @@ let handle_ext_progress (self : Server_common.t) : unit =
 let build_progress_bars (self : Server_common.t) ~(now : float) : string =
   let open Server_common in
   let open Html in
-  let module Api = Benchpress_api_proto.Benchpress_api in
+  let module Api = Benchpress_proto in
   Ext_jobs.expire self.ext_jobs ~now;
   let format_start_ts_iso ts =
     match Ptime.of_float_s ts with
@@ -226,7 +226,7 @@ let handle_ext_jobs_status (self : Server_common.t) : unit =
 
 let handle_progress_sse (self : Server_common.t) : unit =
   let module S = H.Server in
-  let module Api = Benchpress_api_proto.Benchpress_api in
+  let module Api = Benchpress_proto in
   H.add_route_server_sent_handler self.server
     H.Route.(exact "progress" @/ exact "sse" @/ return)
     (fun _req (module EV : S.SERVER_SENT_GENERATOR) ->
@@ -297,12 +297,12 @@ let handle_nats_progress (self : Server_common.t) ~(sw : Eio.Switch.t) ~net :
           Nats.sub nats ~sw ~subject (fun (msg : Nats.msg) ->
               let now = Unix.gettimeofday () in
               match
-                Benchpress_api_proto.Benchpress_api.decode_json_progress_report
+                Benchpress_proto.decode_json_progress_report
                   (Yojson.Basic.from_string msg.Nats.payload)
               with
               | report ->
                 Server_common.Ext_jobs.apply_report self.ext_jobs ~now report;
-                let module Api = Benchpress_api_proto.Benchpress_api in
+                let module Api = Benchpress_proto in
                 Log.debug (fun k ->
                     k "nats progress: %s %ld/%ld"
                       (match report.Api.uuid with

@@ -3,7 +3,7 @@
     HTTP request (and thus req.meta, where auth stores the user_id). *)
 
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.api"))
-module Api = Benchpress_api_proto.Benchpress_api
+module Api = Benchpress_proto
 module H = Tiny_httpd
 
 type state = {

@@ -9,7 +9,7 @@
  (libraries
   benchpress
   benchpress_nats
-  benchpress_api_proto
+  benchpress-proto
   containers
   cmdliner
   uuidm

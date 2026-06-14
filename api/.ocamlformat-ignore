@@ -1,2 +1,2 @@
-benchpress_api.ml
-benchpress_api.mli
+benchpress_proto.ml
+benchpress_proto.mli

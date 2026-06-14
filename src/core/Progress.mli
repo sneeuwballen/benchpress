@@ -6,7 +6,7 @@
     Multiple handlers can be composed with {!fanout} (e.g. terminal bar + NATS
     publisher + HTTP callback). *)
 
-module Api = Benchpress_api_proto.Benchpress_api
+module Api = Benchpress_proto
 
 type report = Api.progress_report
 (** Full progress snapshot for a job. *)

@@ -7,7 +7,7 @@
     Multiple handlers can be composed with {!fanout}. *)
 
 open Common
-module Api = Benchpress_api_proto.Benchpress_api
+module Api = Benchpress_proto
 
 type report = Api.progress_report
 

@@ -42,7 +42,7 @@ module Client = Twirp_core.Client.Make (Curly_transport)
 
 (* ── Helpers ────────────────────────────────────────────────────────────── *)
 
-open Benchpress_api_proto.Benchpress_api
+open Benchpress_proto
 
 let str_of_status = function
   | Queued -> "queued"
@@ -257,7 +257,7 @@ end
 (* ── listen subcommand ──────────────────────────────────────────────────── *)
 
 module Cmd_listen = struct
-  module Api = Benchpress_api_proto.Benchpress_api
+  module Api = Benchpress_proto
 
   type params = {
     server: string; [@default "localhost:4222"] [@docv "HOST:PORT"]

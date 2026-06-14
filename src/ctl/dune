@@ -5,7 +5,7 @@
  (modes native)
  (libraries
   benchpress_nats
-  benchpress_api_proto
+  benchpress_proto
   cmdliner
   curly_eio
   eio

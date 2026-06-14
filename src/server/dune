@@ -27,7 +27,7 @@
   jemalloc
   ptime
   ptime.clock.os
-  benchpress_api_proto
+  benchpress_proto
   twirp_tiny_httpd
   pbrt
   pbrt_services

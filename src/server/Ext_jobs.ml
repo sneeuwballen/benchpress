@@ -1,4 +1,4 @@
-module Api = Benchpress_api_proto.Benchpress_api
+module Api = Benchpress_proto
 
 type job = { report: Api.progress_report; mutable last_seen: float }
 type t = { jobs: (string, job) Hashtbl.t; signal: job list Eio_signal.t }
