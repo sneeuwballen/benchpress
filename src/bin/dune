@@ -8,6 +8,8 @@
   (until-clean))
  (libraries
   benchpress
+  benchpress_nats
+  benchpress-proto
   containers
   cmdliner
   uuidm
@@ -19,7 +21,8 @@
   eio.unix
   eio_posix
   trace.core
-  trace-tef)
+  trace-tef
+  yojson)
  (preprocess
   (pps ppx_subliner))
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress))

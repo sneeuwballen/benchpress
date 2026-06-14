@@ -122,14 +122,17 @@ let loop self =
     Log.info (fun k -> k "run job for task %s" job.j_task.Task.name);
     let defs = self.defs in
     (* run the job *)
-    let cb_progress =
-      object
-        method on_progress ~percent ~elapsed_time:_ ~eta =
-          job.j_percent_completion <- percent;
-          job.j_eta <- eta
-
-        method on_done = ()
-      end
+    let progress_cb =
+      let open Progress in
+      {
+        on_report =
+          (fun r ->
+            let s = summarize r in
+            job.j_percent_completion <- s.percent;
+            job.j_eta <- s.eta);
+        on_done = (fun () -> ());
+        on_res = (fun _ -> ());
+      }
     in
     (* Derive output path from the job's own UUID so we can report it. *)
     let output_file =
@@ -147,7 +150,7 @@ let loop self =
          [
            (fun () -> Eio.Promise.await job.j_interrupt_promise);
            (fun () ->
-             Exec_action.run defs job.j_action ~output:output_file ~cb_progress
+             Exec_action.run defs job.j_action ~output:output_file ~progress_cb
                ~interrupted:(fun () -> Job.interrupted job);
              completed := not (Atomic.get job.j_interrupted));
          ]

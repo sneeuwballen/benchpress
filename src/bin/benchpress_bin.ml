@@ -6,6 +6,9 @@ open Common
 module T = Test
 module Db = Sqlite3_utils
 
+(** Eio environment for creating NATS connections, set at startup. *)
+let eio_env : Obj.t option ref = ref None
+
 let catch_err f =
   try
     f ();
@@ -93,6 +96,8 @@ module Run = struct
         (** if the output file already exists, overwrite it with the new one. *)
     compress: bool;
         (** compress output database with zstd after the run is complete *)
+    server: string option; [@names [ "server" ]]
+        (** report progress to benchpress server (HOST:PORT) *)
   }
   [@@deriving subliner]
 
@@ -106,12 +111,53 @@ module Run = struct
       else
         None
     in
-    Run_main.main ~pp_results:p.progress ?dyn ~j:p.j ?cpus ?timeout:p.timeout
-      ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
-      ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
-      ?output:p.output ~save:p.save ~wal_mode:p.wal_mode ~compress:p.compress
-      ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
-      ~update:p.update defs p.paths ()
+    let call_main nats =
+      Run_main.main ~pp_results:p.progress ?dyn ~j:p.j ?cpus ?timeout:p.timeout
+        ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
+        ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
+        ?output:p.output ~save:p.save ~wal_mode:p.wal_mode ~compress:p.compress
+        ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
+        ~update:p.update ?nats defs p.paths ()
+    in
+    let nats_server =
+      match p.server with
+      | Some _ -> p.server (* CLI flag overrides everything *)
+      | None -> Definitions.option_nats_server defs
+    in
+    match nats_server with
+    | None -> call_main None
+    | Some server ->
+      let host, port =
+        match String.rindex_opt server ':' with
+        | None -> server, 4222
+        | Some i ->
+          ( String.sub server 0 i,
+            (match
+               int_of_string_opt
+                 (String.sub server (i + 1) (String.length server - i - 1))
+             with
+            | Some p -> p
+            | None -> 4222) )
+      in
+      let host_s = Nats.resolve_host host in
+      (match !eio_env with
+      | None -> call_main None
+      | Some env ->
+        let net = Eio.Stdenv.net (Obj.obj env) in
+        (match
+           Eio.Switch.run (fun sw ->
+               match Nats.connect ~sw ~net ~host:host_s ~port () with
+               | nats -> call_main (Some nats)
+               | exception e ->
+                 Format.eprintf
+                   "warning: could not connect to NATS at %s:%d: %s\n%!" host
+                   port (Printexc.to_string e);
+                 call_main None)
+         with
+        | () -> ()
+        | exception e ->
+          Format.eprintf "warning: NATS shutdown error: %s\n%!"
+            (Printexc.to_string e)))
 
   let cmd =
     let doc =
@@ -545,15 +591,23 @@ module Convert_config = struct
     let value =
       match Filename.extension p.input with
       | ".json" ->
-        Ezjsonm.value_from_string (CCIO.with_in p.input CCIO.read_all)
+        (match
+           Parse_json.parse (CCIO.with_in p.input CCIO.read_all) ~file:p.input
+         with
+        | Ok v -> v
+        | Error msg -> Error.failf "%s" msg)
       | ".yaml" | ".yml" ->
-        Yaml.of_string_exn (CCIO.with_in p.input CCIO.read_all)
+        (match
+           Parse_yaml.parse (CCIO.with_in p.input CCIO.read_all) ~file:p.input
+         with
+        | Ok v -> v
+        | Error msg -> Error.failf "%s" msg)
       | ext -> Error.failf "unsupported input format: %s" ext
     in
     let output_str =
       match format with
-      | `json -> Ezjsonm.value_to_string ~minify:false value
-      | `yaml -> Yaml.to_string_exn value
+      | `json -> Config_value.to_json value
+      | `yaml -> Config_value.to_yaml value |> Yaml.to_string_exn
     in
     if p.output = "-" then
       print_string output_str
@@ -617,6 +671,7 @@ let () =
 
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   let proc_mgr = Eio.Stdenv.process_mgr env in
+  eio_env := Some (Obj.repr env);
   Run_proc.with_proc_mgr proc_mgr @@ fun () ->
   match parse_opt () with
   | Error (`Parse | `Term | `Exn) -> exit 2

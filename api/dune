@@ -2,8 +2,8 @@
  (alias lint)
  (mode promote)
  (enabled_if %{env:FORCE_GENPROTO=false})
- (targets benchpress_api.ml benchpress_api.mli)
- (deps benchpress_api.proto)
+ (targets benchpress_proto.ml benchpress_proto.mli)
+ (deps benchpress_proto.proto)
  (action
   (run
    ocaml-protoc
@@ -17,6 +17,6 @@
    %{deps})))
 
 (library
- (name benchpress_api_proto)
- (package benchpress-proto)
+ (name benchpress_proto)
+ (public_name benchpress-proto)
  (libraries pbrt pbrt_services pbrt_yojson yojson))

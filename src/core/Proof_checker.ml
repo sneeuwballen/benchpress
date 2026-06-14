@@ -12,9 +12,13 @@ type t = {
 let pp out self =
   let open Misc.Pp in
   let { name; cmd; valid; invalid } = self in
-  Fmt.fprintf out "(@[<hv1>proof-checker%a%a%a%a@])" (pp_f "name" pp_str) name
-    (pp_f "cmd" pp_str) cmd (pp_f "valid" pp_regex) valid
-    (pp_f "invalid" pp_regex) invalid
+  pp_record "proof-checker" out
+    [
+      field "name" pp_str name;
+      field "cmd" pp_str cmd;
+      field "valid" pp_regex valid;
+      field "invalid" pp_regex invalid;
+    ]
 
 module Res = Proof_check_res
 

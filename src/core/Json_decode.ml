@@ -1,6 +1,6 @@
 (* This file is free software. See file "license" for more details. *)
 
-type value = Ezjsonm.value
+type value = Config_value.value
 type path = Root | Field of string * path | Index of int * path
 
 let path_to_string =
@@ -73,8 +73,8 @@ let string : string t =
   {
     run =
       (fun path value ->
-        match value with
-        | `String s -> Ok s
+        match value.node with
+        | String s -> Ok s
         | _ -> Error { msg = "expected a string"; path; value; ctx_of = None });
   }
 
@@ -82,8 +82,8 @@ let int : int t =
   {
     run =
       (fun path value ->
-        match value with
-        | `Float f ->
+        match value.node with
+        | Float f ->
           let i = int_of_float f in
           if float_of_int i = f then
             Ok i
@@ -96,8 +96,8 @@ let bool : bool t =
   {
     run =
       (fun path value ->
-        match value with
-        | `Bool b -> Ok b
+        match value.node with
+        | Bool b -> Ok b
         | _ -> Error { msg = "expected a boolean"; path; value; ctx_of = None });
   }
 
@@ -105,8 +105,8 @@ let option (d : 'a t) : 'a option t =
   {
     run =
       (fun path value ->
-        match value with
-        | `Null -> Ok None
+        match value.node with
+        | Null -> Ok None
         | _ ->
           (match d.run path value with
           | Ok x -> Ok (Some x)
@@ -117,8 +117,8 @@ let list (d : 'a t) : 'a list t =
   {
     run =
       (fun path value ->
-        match value with
-        | `A items ->
+        match value.node with
+        | A items ->
           let exception E of err in
           (try
              Ok
@@ -136,8 +136,8 @@ let field (name : string) (d : 'a t) : 'a t =
   {
     run =
       (fun path value ->
-        match value with
-        | `O fields ->
+        match value.node with
+        | O fields ->
           (match List.find_opt (fun (k, _) -> k = name) fields with
           | Some (_, v) -> d.run (Field (name, path)) v
           | None ->
@@ -155,8 +155,8 @@ let field_opt (name : string) (d : 'a t) : 'a option t =
   {
     run =
       (fun path value ->
-        match value with
-        | `O fields ->
+        match value.node with
+        | O fields ->
           (match List.find_opt (fun (k, _) -> k = name) fields with
           | None -> Ok None
           | Some (_, v) ->
@@ -188,7 +188,10 @@ module Err = struct
   type t = err
 
   let rec to_string (e : t) : string =
-    let base = Printf.sprintf "%s: %s" (path_to_string e.path) e.msg in
+    let base =
+      Printf.sprintf "line %d: %s: %s" e.value.Config_value.pos.line
+        (path_to_string e.path) e.msg
+    in
     match e.ctx_of with
     | None -> base
     | Some inner -> base ^ "\n  caused by: " ^ to_string inner

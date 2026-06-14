@@ -1,6 +1,15 @@
 open Benchpress.Common
 
-type t = { database: Db.t; memory: (string, Test_metadata.t) Hashtbl.t }
+type t = {
+  database: Db.t;
+  memory: (string, Test_metadata.t Eio.Promise.or_exn) Hashtbl.t;
+      (** Cache mapping a benchmark file path to a promise of its metadata. *)
+  mutable file_hash_cache: (string, string option) Hashtbl.t;
+  mtime_cache: (string, float) Hashtbl.t;
+      (** Cache mapping path to file mtime at time of import. *)
+  mu: Eio.Mutex.t;
+  sw: Eio.Switch.t;
+}
 
 let createdb (db : Db.t) =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.createdb" in
@@ -72,8 +81,29 @@ let load_meta (db : Db.t) self =
       {| SELECT prover FROM test_provers WHERE database_id = ?; |} self
     |> Misc.unwrap_db (fun () -> spf "Could not load provers")
   in
+  let prover_versions_str = get db self "prover_versions" in
+  let prover_versions =
+    match prover_versions_str with
+    | Some s ->
+      CCString.split ~by:"," s
+      |> List.filter_map (fun pair ->
+             match CCString.Split.left ~by:"=" pair with
+             | Some (name, version) ->
+               Some (String.trim name, String.trim version)
+             | None -> None)
+    | None -> List.map (fun n -> n, "<unknown>") provers
+  in
   Test_metadata.
-    { uuid; timestamp; total_wall_time; n_results; n_bad; dirs; provers }
+    {
+      uuid;
+      timestamp;
+      total_wall_time;
+      n_results;
+      n_bad;
+      dirs;
+      provers;
+      prover_versions;
+    }
 
 let set (db : Db.t) self field value =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.set" in
@@ -87,6 +117,25 @@ let set (db : Db.t) self field value =
     self field value
   |> Misc.unwrap_db (fun () -> spf "Could not write field: '%s'" field)
 
+let compute_file_hash (source_db : Db.t) : string =
+  let files =
+    Db.exec_no_params source_db
+      ~ty:Db.Ty.(p1 any_str, id)
+      ~f:Db.Cursor.to_list_rev
+      {| SELECT DISTINCT file FROM prover_res ORDER BY file; |}
+    |> Misc.unwrap_db (fun () -> "listing distinct files for hash")
+  in
+  let files =
+    List.rev_map String.trim files |> CCList.sort_uniq ~cmp:String.compare
+  in
+  let all_files = String.concat "\x00" files in
+  Digestif.SHA256.(digest_string all_files |> to_hex)
+
+let cache_file_hash (db : Db.t) self source_db =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.cache-file-hash" in
+  let hash = compute_file_hash source_db in
+  set db self "hash-file-set" (Some hash)
+
 let cache_meta (db : Db.t) self (meta : Test_metadata.t) =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.cache-meta" in
   set db self "uuid" (Some (Uuidm.to_string meta.uuid));
@@ -95,6 +144,10 @@ let cache_meta (db : Db.t) self (meta : Test_metadata.t) =
     (CCOption.map string_of_float meta.total_wall_time);
   set db self "n_results" (Some (string_of_int meta.n_results));
   set db self "n_bad" (Some (string_of_int meta.n_bad));
+  set db self "prover_versions"
+    (Some
+       (String.concat ","
+          (List.map (fun (n, v) -> spf "%s=%s" n v) meta.prover_versions)));
   Db.exec_no_cursor db
     ~ty:Db.Ty.(p1 int)
     {| DELETE FROM test_dirs WHERE database_id = ?; |} self
@@ -125,37 +178,173 @@ let importdb t (p : string) =
       let meta = Test_metadata.of_db meta_db in
       (* Only cache if complete *)
       if Test_metadata.is_complete meta then (
-        Hashtbl.replace t.memory p meta;
         let self =
           Db.exec t.database ~f:Db.Cursor.next
-            ~ty:Db.Ty.(p1 text, p1 int, id)
+            ~ty:Db.Ty.(p1 any_str, p1 int, id)
             {| INSERT INTO test_database (path) VALUES (?) RETURNING id; |} p
-          |> Misc.unwrap_db (fun () -> spf "Could not create metadata cache")
+          |> Misc.unwrap_db (fun () ->
+                 spf "Could not create metadata cache for %s" p)
           |> Error.unwrap_opt' (fun () ->
                  spf "Expected an id for metadata cache")
         in
-        cache_meta t.database self meta
+        cache_meta t.database self meta;
+        cache_file_hash t.database self meta_db
       );
       meta)
 
-let find t (p : string) =
+let file_mtime path =
+  try Some (Unix.LargeFile.stat path).Unix.LargeFile.st_mtime with _ -> None
+
+let find t (path : string) : Test_metadata.t =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.find" in
-  try Hashtbl.find t.memory p
-  with Not_found ->
-    (match
-       Db.exec t.database ~f:Db.Cursor.next
-         ~ty:Db.Ty.(p1 text, p1 int, id)
-         {| SELECT id FROM test_database WHERE path = ?; |} p
-       |> Misc.unwrap_db (fun () -> spf "Could not load metadata cache")
-     with
-    | None -> importdb t p
-    | Some self -> load_meta t.database self)
+  let promise =
+    Eio.Mutex.use_rw ~protect:true t.mu @@ fun () ->
+    let current_mtime = file_mtime path in
+    match Hashtbl.find_opt t.mtime_cache path with
+    | Some mtime when Some mtime = current_mtime ->
+      (match Hashtbl.find_opt t.memory path with
+      | Some promise -> promise
+      | None -> assert false)
+    | _ ->
+      (* file changed or deleted; invalidate all caches for this path *)
+      Hashtbl.remove t.memory path;
+      Hashtbl.remove t.file_hash_cache path;
+      Hashtbl.remove t.mtime_cache path;
+      let p =
+        Eio.Fiber.fork_promise ~sw:t.sw (fun () ->
+            match
+              Db.exec t.database ~f:Db.Cursor.next
+                ~ty:Db.Ty.(p1 any_str, p1 int, id)
+                {| SELECT id FROM test_database WHERE path = ?; |} path
+              |> Misc.unwrap_db (fun () ->
+                     spf "Could not load metadata cache for %s" path)
+            with
+            | Some self -> load_meta t.database self
+            | None -> importdb t path)
+      in
+      Hashtbl.replace t.memory path p;
+      (match current_mtime with
+      | Some mtime -> Hashtbl.replace t.mtime_cache path mtime
+      | None -> ());
+      p
+  in
+  Eio.Promise.await_exn promise
 
-let find_if_loaded t p = Hashtbl.find_opt t.memory p
+let find_if_loaded t path =
+  let current_mtime = file_mtime path in
+  match
+    Eio.Mutex.use_ro t.mu (fun () ->
+        match Hashtbl.find_opt t.mtime_cache path with
+        | Some mtime when Some mtime = current_mtime ->
+          Hashtbl.find_opt t.memory path
+        | _ -> None)
+  with
+  | Some p when Eio.Promise.is_resolved p ->
+    (try Some (Eio.Promise.await_exn p) with _ -> None)
+  | _ -> None
 
-let create ~path =
+let find_similar_runs (t : t) (file_path : string) : string list =
+  let@ _sp =
+    Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.find-similar-runs"
+  in
+  let hash =
+    match Hashtbl.find_opt t.file_hash_cache file_path with
+    | Some cached -> cached
+    | None ->
+      let h =
+        let self =
+          match
+            Db.exec t.database ~f:Db.Cursor.next
+              ~ty:Db.Ty.(p1 any_str, p1 int, id)
+              {| SELECT id FROM test_database WHERE path = ?; |} file_path
+            |> Misc.unwrap_db (fun () ->
+                   spf "Could not load db id for %s" file_path)
+          with
+          | Some self -> Some self
+          | None ->
+            let _meta = find t file_path in
+            (match
+               Db.exec t.database ~f:Db.Cursor.next
+                 ~ty:Db.Ty.(p1 any_str, p1 int, id)
+                 {| SELECT id FROM test_database WHERE path = ?; |} file_path
+               |> Misc.unwrap_db (fun () ->
+                      spf "Could not load db id after import")
+             with
+            | Some self -> Some self
+            | None ->
+              (* partial run: not cached in test_database, skip *)
+              None)
+        in
+        match self with
+        | Some self ->
+          (match get t.database self "hash-file-set" with
+          | Some h -> Some h
+          | None ->
+            (* hash was deleted or not yet cached; recompute and store *)
+            Db.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY file_path
+              (fun source_db -> cache_file_hash t.database self source_db);
+            get t.database self "hash-file-set")
+        | None -> None
+      in
+      Hashtbl.replace t.file_hash_cache file_path h;
+      h
+  in
+  match hash with
+  | None -> []
+  | Some h ->
+    Db.exec t.database
+      ~ty:Db.Ty.(p1 any_str, p1 any_str, id)
+      ~f:Db.Cursor.to_list_rev
+      {|
+        SELECT td.path FROM test_database td
+        JOIN test_meta tm ON td.id = tm.database_id
+        WHERE tm.key = 'hash-file-set' AND tm.value = ?
+        ORDER BY td.path;
+      |}
+      h
+    |> Misc.unwrap_db (fun () -> "finding similar runs")
+
+let remove t path =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.remove" in
+  Eio.Mutex.use_rw ~protect:true t.mu @@ fun () ->
+  Hashtbl.remove t.memory path;
+  Hashtbl.remove t.file_hash_cache path;
+  Hashtbl.remove t.mtime_cache path;
+  match
+    Db.exec t.database ~f:Db.Cursor.next
+      ~ty:Db.Ty.(p1 any_str, p1 int, id)
+      {| SELECT id FROM test_database WHERE path = ?; |} path
+    |> Misc.unwrap_db (fun () -> spf "Could not load db id for %s" path)
+  with
+  | Some self ->
+    Db.exec_no_cursor t.database
+      ~ty:Db.Ty.(p1 int)
+      {| DELETE FROM test_provers WHERE database_id = ?; |} self
+    |> Misc.unwrap_db (fun () -> spf "Could not delete provers");
+    Db.exec_no_cursor t.database
+      ~ty:Db.Ty.(p1 int)
+      {| DELETE FROM test_dirs WHERE database_id = ?; |} self
+    |> Misc.unwrap_db (fun () -> spf "Could not delete dirs");
+    Db.exec_no_cursor t.database
+      ~ty:Db.Ty.(p1 int)
+      {| DELETE FROM test_meta WHERE database_id = ?; |} self
+    |> Misc.unwrap_db (fun () -> spf "Could not delete meta");
+    Db.exec_no_cursor t.database
+      ~ty:Db.Ty.(p1 int)
+      {| DELETE FROM test_database WHERE id = ?; |} self
+    |> Misc.unwrap_db (fun () -> spf "Could not delete from database")
+  | None -> ()
+
+let create ~sw ~path =
   let db = Sqlite3.db_open ~mutex:`FULL path in
   createdb db
   |> Misc.unwrap_db (fun () ->
          spf "Could not create cache database at: %s" path);
-  { database = db; memory = Hashtbl.create ~random:true 16 }
+  {
+    database = db;
+    memory = Hashtbl.create ~random:true 16;
+    file_hash_cache = Hashtbl.create ~random:true 8;
+    mtime_cache = Hashtbl.create ~random:true 8;
+    mu = Eio.Mutex.create ();
+    sw;
+  }

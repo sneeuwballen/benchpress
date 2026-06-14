@@ -21,6 +21,8 @@ val find_checker : t -> string -> Proof_checker.t with_loc
 val find_task : t -> string -> Task.t with_loc
 val find_task' : t -> string -> Task.t
 val find : t -> string -> def option
+val mem_def : t -> string -> bool
+val mem_dir : t -> string -> bool
 val errors : t -> Error.t list
 val to_iter : t -> (string * def) Iter.t
 val all_provers : t -> Prover.t with_loc list
@@ -39,8 +41,10 @@ end
 
 val option_j : t -> int option
 val option_progress : t -> bool option
+val option_nats_server : t -> string option
 val with_option_j : int option -> t -> t
 val with_option_progress : bool option -> t -> t
+val with_option_nats_server : string option -> t -> t
 val with_cur_dir : string -> t -> t
 val add_prover : Prover.t with_loc -> t -> t
 val add_dir : Dir.t -> t -> t

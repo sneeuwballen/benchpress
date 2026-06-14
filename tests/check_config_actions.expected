@@ -1,0 +1,82 @@
+Definitions:
+  def: base-prover:
+    prover:
+      name: "base-prover"
+      version: <unknown>
+      cmd: "$binary $file"
+      binary: "base-prover"
+      ulimit: time memory 
+      sat: "^SAT"
+      unsat: "^UNSAT"
+      produces_proof: false
+  cvc5:
+    prover:
+      name: "cvc5"
+      version: <unknown>
+      cmd: "cvc5 --tlimit=$timeout000 $file"
+      binary: "cvc5"
+      ulimit: time memory 
+      sat: "^sat"
+      unsat: "unsat"
+      produces_proof: false
+  git-task:
+    task:
+      name: "git-task"
+      action: progn:
+                actions: git-checkout:
+                           dir: "/tmp/repo"
+                           ref: "main"
+                           fetch-first: fetch 
+                run_provers:
+                  dirs: 
+                    - dir:
+                        path: "<ROOT>/fake_files/"
+                        name: mixed-dir
+                        pattern: ".*\\.fake"
+                  provers: 
+                    - base-prover
+                  timeout: 30s
+  minisat:
+    prover:
+      name: "minisat"
+      version: <unknown>
+      cmd: "minisat -cpu-lim=$timeout $file"
+      binary: "minisat"
+      ulimit: time memory 
+      sat: "^SATISFIABLE"
+      unsat: "UNSATISFIABLE"
+      produces_proof: false
+  smtlib-read-status:
+    prover:
+      name: "smtlib-read-status"
+      version: <unknown>
+      cmd: "grep :status $file"
+      binary: "smtlib-read-status"
+      ulimit: time memory 
+      sat: ":status sat"
+      unsat: ":status unsat"
+      unknown: ":status unknown"
+      produces_proof: false
+  z3:
+    prover:
+      name: "z3"
+      version: <unknown>
+      cmd: "z3 -T:$timeout -memory:$memory $file"
+      binary: "z3"
+      ulimit: time memory 
+      sat: "(^sat)|(s SATISFIABLE)"
+      unsat: "unsat|(s UNSATISFIABLE)"
+      produces_proof: false
+  dirs: 
+    - dir:
+        name: mixed-dir
+        path: <ROOT>/fake_files/
+        expect: try:
+                  - comment
+                  - const: unknown
+        pattern: ".*\\.fake"
+  dir_vars: dir:mixed-dir: <ROOT>/fake_files/
+  cur_dir: <ROOT>
+  option_j: 8
+  option_progress: true
+  option_nats: localhost:4222

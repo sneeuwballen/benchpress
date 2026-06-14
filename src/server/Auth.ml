@@ -175,3 +175,31 @@ let get_job_completed (self : t) ~(job_id : string) : string option =
   match r with
   | Some (1, f) -> Some (Option.value f ~default:"")
   | _ -> None
+
+type job_info = {
+  job_id: string;
+  cancelled: bool;
+  completed: bool;
+  result_file: string;
+  created_at: string;
+}
+
+let list_user_jobs (self : t) ~(user_id : string) : job_info list =
+  let@ () = Eio.Mutex.use_ro self.mu in
+  let rows =
+    Db.exec self.db
+      {|SELECT id, cancelled, completed, COALESCE(result_file,''), created_at FROM job WHERE user_id=? ORDER BY created_at DESC|}
+      ~ty:Db.Ty.(p1 text, p5 text int int text text, mkp5)
+      user_id ~f:Db.Cursor.to_list_rev
+    |> Misc.unwrap_db (fun () -> "auth.list_user_jobs")
+  in
+  List.map
+    (fun (id, cancelled, completed, result_file, created_at) ->
+      {
+        job_id = id;
+        cancelled = cancelled = 1;
+        completed = completed = 1;
+        result_file;
+        created_at;
+      })
+    rows

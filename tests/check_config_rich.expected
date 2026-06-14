@@ -1,0 +1,108 @@
+Definitions:
+  def: cvc5:
+    prover:
+      name: "cvc5"
+      version: <unknown>
+      cmd: "cvc5 --tlimit=$timeout000 $file"
+      binary: "cvc5"
+      ulimit: time memory 
+      sat: "^sat"
+      unsat: "unsat"
+      produces_proof: false
+  full-prover:
+    prover:
+      name: "full-prover"
+      version: 4.8.0
+      cmd: "$binary --timeout=$timeout --mem=$memory $file"
+      binary: "z3"
+      ulimit: time memory 
+      sat: "^sat"
+      unsat: "^unsat"
+      memory: "^memory"
+      timeout: "^timeout"
+      unknown: "^unknown"
+      produces_proof: true
+      proof_ext: "proof"
+      static_labels: 
+        - "logic:QF_UF"
+        - "source:SMT-LIB"
+  minimal-prover:
+    prover:
+      name: "minimal-prover"
+      version: <unknown>
+      cmd: "$binary $file"
+      binary: "minimal-prover"
+      ulimit: time memory 
+      sat: "^SAT"
+      unsat: "^UNSAT"
+      produces_proof: false
+  minisat:
+    prover:
+      name: "minisat"
+      version: <unknown>
+      cmd: "minisat -cpu-lim=$timeout $file"
+      binary: "minisat"
+      ulimit: time memory 
+      sat: "^SATISFIABLE"
+      unsat: "UNSATISFIABLE"
+      produces_proof: false
+  my-checker:
+    proof-checker:
+      name: "my-checker"
+      cmd: "<ROOT>/drat-trim $file $proof_file"
+      valid: "s VERIFIED$"
+      invalid: "s NOT VERIFIED$"
+  partial-prover:
+    prover:
+      name: "partial-prover"
+      version: <unknown>
+      cmd: "checker $file"
+      binary: "partial-prover"
+      ulimit: time memory 
+      unsat: "^UNSAT"
+      produces_proof: false
+  run-all:
+    task:
+      name: "run-all"
+      action: run_provers:
+                dirs: 
+                  - dir:
+                      path: "<ROOT>/fake_files/"
+                      name: sat-only
+                      pattern: ".*\\.fake"
+                provers: 
+                  - full-prover
+                  - minimal-prover
+                timeout: 60s
+                memory: 2G48M
+                j: 2
+  smtlib-read-status:
+    prover:
+      name: "smtlib-read-status"
+      version: <unknown>
+      cmd: "grep :status $file"
+      binary: "smtlib-read-status"
+      ulimit: time memory 
+      sat: ":status sat"
+      unsat: ":status unsat"
+      unknown: ":status unknown"
+      produces_proof: false
+  z3:
+    prover:
+      name: "z3"
+      version: <unknown>
+      cmd: "z3 -T:$timeout -memory:$memory $file"
+      binary: "z3"
+      ulimit: time memory 
+      sat: "(^sat)|(s SATISFIABLE)"
+      unsat: "unsat|(s UNSATISFIABLE)"
+      produces_proof: false
+  dirs: 
+    - dir:
+        name: sat-only
+        path: <ROOT>/fake_files/
+        expect: const: sat
+        pattern: ".*\\.fake"
+  dir_vars: dir:sat-only: <ROOT>/fake_files/
+  cur_dir: <ROOT>
+  option_nats: localhost:4222

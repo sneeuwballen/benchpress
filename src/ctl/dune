@@ -3,7 +3,16 @@
  (public_name benchpressctl)
  (package benchpressctl)
  (modes native)
- (libraries benchpress_api_proto cmdliner curly twirp_core unix)
+ (libraries
+  benchpress_nats
+  benchpress_proto
+  cmdliner
+  curly_eio
+  eio
+  eio.unix
+  eio_posix
+  logs
+  twirp_core)
  (preprocess
   (pps ppx_subliner))
  (flags :standard -warn-error -a+8 -safe-string))

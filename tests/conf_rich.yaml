@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../data/config-schema.json
+# Rich config exercising all record combinator paths
+
+provers:
+  # Full-featured prover: all optional fields + custom tags + static labels
+  - name: full-prover
+    cmd: "$binary --timeout=$timeout --mem=$memory $file"
+    binary: z3
+    sat: "^sat"
+    unsat: "^unsat"
+    unknown: "^unknown"
+    timeout: "^timeout"
+    memory: "^memory"
+    produces_proof: true
+    proof_ext: "proof"
+    version: "4.8.0"
+    custom_tags:
+      - name: "proof-size"
+        pattern: "^proof-size: ([0-9]+)"
+    static_labels: ["logic:QF_UF", "source:SMT-LIB"]
+
+  # Minimal prover: only required fields
+  - name: minimal-prover
+    cmd: "$binary $file"
+    sat: "^SAT"
+    unsat: "^UNSAT"
+
+  # Prover with only unsat regex (partial)
+  - name: partial-prover
+    cmd: "checker $file"
+    unsat: "^UNSAT"
+
+proof_checkers:
+  - name: my-checker
+    cmd: "$cur_dir/drat-trim $file $proof_file"
+    valid: "s VERIFIED$"
+    invalid: "s NOT VERIFIED$"
+
+dirs:
+  # Directory with const expect
+  - name: sat-only
+    path: "$cur_dir/fake_files/"
+    expect: sat
+    pattern: ".*\\.fake"
+
+tasks:
+  # Task with run_provers action
+  - name: run-all
+    synopsis: "Run all provers on all problems"
+    action:
+      run_provers:
+        provers: [full-prover, minimal-prover]
+        dirs: ["$cur_dir/fake_files/"]
+        timeout: 60
+        memory: 2048
+        j: 2

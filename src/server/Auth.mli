@@ -47,3 +47,14 @@ val get_job_cancelled : t -> job_id:string -> bool
 val get_job_completed : t -> job_id:string -> string option
 (** Returns [Some result_file] if the job was marked completed, [None]
     otherwise. *)
+
+type job_info = {
+  job_id: string;
+  cancelled: bool;
+  completed: bool;
+  result_file: string;
+  created_at: string;
+}
+
+val list_user_jobs : t -> user_id:string -> job_info list
+(** Returns all jobs for the given user, most recent first. *)

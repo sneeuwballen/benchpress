@@ -76,3 +76,33 @@ lazyLoadAll();
 document.addEventListener('change', function () {
     lazyLoadAll();
 });
+// rsjs: localise UTC dates to browser timezone on hover
+(function () {
+    function localiseDates() {
+        document.querySelectorAll('[data-utc-date]').forEach(function (el) {
+            var utcStr = el.getAttribute('data-utc-date');
+            if (!utcStr)
+                return;
+            var d = new Date(utcStr + 'Z');
+            if (isNaN(d.getTime()))
+                return;
+            var localStr = d.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            el.setAttribute('title', 'started: ' + localStr);
+        });
+    }
+    if (document.readyState !== 'loading') {
+        localiseDates();
+    }
+    else {
+        document.addEventListener('DOMContentLoaded', localiseDates);
+    }
+    // re-run after htmx swaps
+    document.addEventListener('htmx:afterSwap', localiseDates);
+})();

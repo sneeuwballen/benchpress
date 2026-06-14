@@ -1,0 +1,7 @@
+.pill-cream {
+  --bs-badge-bg: #fff8e7;
+  background-color: #fff8e7 !important;
+  color: #5a4a3a !important;
+  border: 1px solid #e8dcc8;
+  font-weight: 500;
+}

@@ -25,14 +25,14 @@ depends: [
   "base64"
   "ptime"
   "processor"
-  "pp_loc" {>= "2.0" & < "3.0"}
+  "benchpress-proto" {= version}
+  "jsonm"
   "sqlite3" {>= "5.0.3"}
   "sqlite3_utils" {>= "0.4" & < "0.6"}
   "trace" {>= "0.12"}
   "trace-tef"
   "printbox" {>= "0.6"}
   "printbox-text" {>= "0.6"}
-  "ezjsonm"
   "yaml"
   "odoc" {with-doc}
 ]

@@ -8,6 +8,8 @@
   (until-clean))
  (libraries
   benchpress
+  benchpress.mcp
+  benchpress_nats
   containers
   cmdliner
   uuidm
@@ -25,7 +27,7 @@
   jemalloc
   ptime
   ptime.clock.os
-  benchpress_api_proto
+  benchpress_proto
   twirp_tiny_httpd
   pbrt
   pbrt_services
@@ -33,17 +35,35 @@
   yojson
   mirage-crypto-rng
   mirage-crypto-rng.unix
+  digestif
   trace.core
   opentelemetry
   opentelemetry.trace
   opentelemetry-client-ocurl)
  (modules
   benchpress_server
+  Server_common
+  Logger
+  Ext_jobs
+  Eio_signal
+  PB_html
+  Html
   Meta_cache
   Web_data
   Auth
   Auth_middleware
-  Api_handler)
+  Api_handler
+  P_root
+  P_show
+  P_detailed
+  P_echarts
+  P_evolution
+  P_errors
+  P_compare
+  P_provers
+  P_tasks
+  P_meta
+  P_delete)
  (preprocess
   (pps ppx_subliner))
  (flags :standard -warn-error -a+8 -safe-string -open Benchpress -linkall))
@@ -52,7 +72,9 @@
  (targets web_data.ml)
  (deps
   (:css bootstrap.min.css)
+  (:ccss benchpress.css)
   (:js embed.js)
+  (:psse progress_sse.js)
   (:icon ../../data/favicon.png.b64)
   (:echarts echarts.min.js)
   (:htmx_echarts htmx-echarts.min.js)
@@ -63,9 +85,13 @@
    (progn
     (echo "let css = {css|")
     (cat %{css})
+    (echo "\n")
+    (cat %{ccss})
     (echo "|css}")
     (echo "let js = {j|")
     (cat %{js})
+    (echo "\n")
+    (cat %{psse})
     (echo "|j}")
     (echo "let favicon = Base64.decode_exn @@ String.trim @@ {fav|")
     (cat %{icon})

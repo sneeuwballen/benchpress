@@ -117,11 +117,11 @@ let db_to_table ?(offset = 0) ?(page_size = max_int) ?provers ?(filter_pb = "")
         ~f:Db.Cursor.to_list_rev
       |> Misc.unwrap_db (fun () -> spf "listing files matching '%s'" filter_pb)
     in
-    Log.info (fun k ->
+    Log.debug (fun k ->
         k "to_table: found %d files in %.3fs" (List.length files)
           (Misc.Chrono.since_last c));
     let tags = Prover.tags_of_db db in
-    Log.info (fun k -> k "to_table: found tags [%s]" (String.concat "," tags));
+    Log.debug (fun k -> k "to_table: found tags [%s]" (String.concat "," tags));
     let t_rows =
       List.rev_map
         (fun file ->

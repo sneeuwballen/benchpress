@@ -6,6 +6,7 @@
   "Benchpress core library, with all the data structures and functions")
  (wrapped true)
  (libraries
+  benchpress_proto
   containers
   containers.unix
   eio
@@ -24,11 +25,10 @@
   sqlite3
   sqlite3_utils
   cmdliner
-  pp_loc
   processor
   trace.core
   yojson
-  ezjsonm
+  jsonm
   yaml)
  (flags :standard -w -5 -warn-error -a+8 -strict-sequence))
 

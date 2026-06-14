@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../data/config-schema.json
+# Config exercising diverse Action types and Dir expect forms
+
+options:
+  j: 8
+  progress: true
+
+provers:
+  - name: base-prover
+    cmd: "$binary $file"
+    sat: "^SAT"
+    unsat: "^UNSAT"
+    custom_tags:
+      - name: "iterations"
+        pattern: "^iters: ([0-9]+)"
+
+dirs:
+  # Directory with try expect (try comment then const)
+  - name: mixed-dir
+    path: "$cur_dir/fake_files/"
+    expect:
+      try:
+        - comment
+        - unknown
+    pattern: ".*\\.fake"
+
+tasks:
+  - name: git-task
+    synopsis: "Checkout and run"
+    action:
+      seq:
+        - git_checkout:
+            dir: /tmp/repo
+            ref: main
+            fetch_first: fetch
+        - run_provers:
+            provers: [base-prover]
+            dirs: ["$cur_dir/fake_files/"]
+            timeout: 30

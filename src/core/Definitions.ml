@@ -24,6 +24,7 @@ type t = {
   tags: string list;
   option_j: int option;
   option_progress: bool option;
+  option_nats_server: string option;
 }
 (** All known definitions *)
 
@@ -36,6 +37,7 @@ let empty : t =
     tags = [];
     option_j = None;
     option_progress = None;
+    option_nats_server = Some "localhost:4222";
     config_file = None;
     errors = [];
   }
@@ -74,15 +76,23 @@ let merge (a : t) (b : t) : t =
       (match b.option_progress with
       | Some _ -> b.option_progress
       | None -> a.option_progress);
+    option_nats_server =
+      (match b.option_nats_server with
+      | Some _ -> b.option_nats_server
+      | None -> a.option_nats_server);
   }
 
 let errors self = self.errors
 let option_j self = self.option_j
 let option_progress self = self.option_progress
+let option_nats_server self = self.option_nats_server
 let with_option_j (j : int option) (self : t) : t = { self with option_j = j }
 
 let with_option_progress (p : bool option) (self : t) : t =
   { self with option_progress = p }
+
+let with_option_nats_server (s : string option) (self : t) : t =
+  { self with option_nats_server = s }
 
 let with_cur_dir (d : string) (self : t) : t = { self with cur_dir = d }
 let custom_tags self = self.tags
@@ -128,6 +138,10 @@ let all_tasks self : _ list =
 
 let all_dirs self : Dir.t list = self.dirs
 let find self name = Str_map.get name self.defs
+let mem_def (self : t) (name : string) : bool = Str_map.mem name self.defs
+
+let mem_dir (self : t) (name : string) : bool =
+  Str_map.mem ("dir:" ^ name) self.dir_vars
 
 let find_prover self name : Prover.t with_loc =
   match Str_map.get name self.defs with
@@ -260,24 +274,41 @@ let pp out
       tags;
       option_j;
       option_progress;
+      option_nats_server;
     } =
   let open Misc.Pp in
-  Fmt.fprintf out "(@[<v1>Definitions%a%a%a%a%a%a%a%a%a@])"
-    (pp_f "def" (Str_map.pp Fmt.string pp_def))
-    defs
-    (pp_f "dirs" (pp_l Dir.pp))
-    dirs
-    (pp_f "dir_vars" (Str_map.pp Fmt.string Fmt.string))
-    dir_vars
-    (pp_f "dirs" (pp_l Error.pp))
-    errors
-    (pp_f "cur_dir" Fmt.string)
-    cur_dir
-    (pp_opt "config_file" Fmt.string)
-    config_file
-    (pp_f "tags" (pp_l Fmt.string))
-    tags
-    (pp_opt "option_j" Fmt.int)
-    option_j
-    (pp_opt "option_progress" Fmt.bool)
-    option_progress
+  let pp_def_map out defs =
+    let first = ref true in
+    Str_map.iter
+      (fun key def ->
+        if !first then
+          first := false
+        else
+          Format.fprintf out "@,";
+        Format.fprintf out "%s:@\n  %a" key pp_def def)
+      defs
+  in
+  let pp_str_map out m =
+    let first = ref true in
+    Str_map.iter
+      (fun key v ->
+        if !first then
+          first := false
+        else
+          Format.fprintf out "@,";
+        Format.fprintf out "%s: %s" key v)
+      m
+  in
+  pp_record "Definitions" out
+    [
+      field "def" pp_def_map defs;
+      field_list "dirs" Dir.pp dirs;
+      field "dir_vars" pp_str_map dir_vars;
+      field_list "errors" Error.pp errors;
+      field "cur_dir" Fmt.string cur_dir;
+      field_opt "config_file" Fmt.string config_file;
+      field_list "tags" Fmt.string tags;
+      field_opt "option_j" Fmt.int option_j;
+      field_opt "option_progress" Fmt.bool option_progress;
+      field_opt "option_nats" Fmt.string option_nats_server;
+    ]

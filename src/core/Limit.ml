@@ -134,13 +134,13 @@ module All = struct
 
   (* Printing *)
   let pp out t =
-    CCFormat.fprintf out "(@[<v 1>limits%a%a%a@])"
-      (Misc.Pp.pp_opt "timeout" Time.pp)
-      t.time
-      (Misc.Pp.pp_opt "memory" Memory.pp)
-      t.memory
-      (Misc.Pp.pp_opt "stack" Stack.pp)
-      t.stack
+    let open Misc.Pp in
+    pp_record "limits" out
+      [
+        field_opt "timeout" Time.pp t.time;
+        field_opt "memory" Memory.pp t.memory;
+        field_opt "stack" Stack.pp t.stack;
+      ]
 
   (* Creation *)
   let mk ?time ?memory ?stack () = { time; memory; stack }
