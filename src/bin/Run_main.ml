@@ -7,6 +7,37 @@ module Api = Benchpress_proto
 
 (* ── NATS progress publishing ───────────────────────────────────────────── *)
 
+(** Format a [progress_report] as compact human-readable text for user.notify.
+*)
+let format_user_notify_text (report : Api.progress_report) : string =
+  let now = Unix.gettimeofday () in
+  let elapsed = now -. report.Api.start_ts in
+  let total = Int32.to_int report.Api.total_tasks in
+  let done_ = Int32.to_int report.Api.done_tasks in
+  let percent =
+    if total > 0 then
+      done_ * 100 / total
+    else
+      0
+  in
+  let buf = Buffer.create 256 in
+  let uuid_short =
+    try String.sub report.Api.uuid 0 8 with _ -> report.Api.uuid
+  in
+  Printf.bprintf buf "Job: %s  (%s elapsed)\n" uuid_short
+    (Misc.human_duration elapsed);
+  Printf.bprintf buf "Total: %d  Done: %d  (%d%%)\n" total done_ percent;
+  if report.Api.stats <> "" then Printf.bprintf buf "%s\n" report.Api.stats;
+  if report.Api.active <> [] then (
+    Buffer.add_string buf "Active:\n";
+    List.iter
+      (fun (item : Api.active_item) ->
+        Printf.bprintf buf "  %s — %s  (%.1fs)\n" item.Api.prover item.Api.file
+          item.Api.running_time)
+      report.Api.active
+  );
+  Buffer.contents buf
+
 (** Create a [Progress.callbacks] that publishes each report to NATS. *)
 let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
   let uuid_s = Uuidm.to_string uuid in
@@ -49,7 +80,8 @@ let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
       in
       if should_user_notify then (
         last_user_notify := now;
-        try Nats.pub nats ~subject:user_subject json with _ -> ()
+        let text = format_user_notify_text report in
+        try Nats.pub nats ~subject:user_subject text with _ -> ()
       )
     )
   in
