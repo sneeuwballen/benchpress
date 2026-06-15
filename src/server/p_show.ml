@@ -74,6 +74,28 @@ let handle_show (self : Server_common.t) : unit =
                      [ A.href (uri_show_table file) ]
                      [ txt "show table of results" ];
                  ]);
+            (if self.allow_delete then
+               mk_row []
+                 [
+                   mk_col ~cls:"col-auto" []
+                     [
+                       mk_button ~cls:"btn-danger btn-sm"
+                         [
+                           ( "hx-delete",
+                             "/delete1/" ^ U.percent_encode file ^ "/" );
+                           ( "hx-confirm",
+                             "Delete this benchmark result file? This cannot \
+                              be undone." );
+                           ( "hx-on::after-request",
+                             "if(event.detail.successful) \
+                              window.location.href='/';" );
+                           A.title "delete this file";
+                         ]
+                         [ txt "Delete this file" ];
+                     ];
+                 ]
+             else
+               div [] []);
             h3 [] [ txt "Summary" ];
             div [] [ pb_html box_meta ];
             h3 [] [ txt "User Metadata" ];
