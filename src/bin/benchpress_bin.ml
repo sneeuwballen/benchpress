@@ -630,6 +630,46 @@ module Convert_config = struct
       Cmdliner.Term.(const run $ params_cmdliner_term () $ Logs_cli.level ())
 end
 
+(** {2 strip-proofs: remove stored proofs from a result DB} *)
+
+module Strip_proofs = struct
+  type params = {
+    files: string list; [@pos_all] [@docv "FILE"]
+        (** result DB files to strip proofs from *)
+  }
+  [@@deriving subliner]
+
+  let run (p : params) (log_lvl, _defs) =
+    Misc.setup_logs log_lvl;
+    let@ () = catch_err in
+    List.iter
+      (fun file ->
+        Format.printf "stripping proofs from %s...%!" file;
+        let file_full =
+          if Sys.file_exists file then
+            file
+          else (
+            let dir = Filename.concat (Xdg.data_dir ()) !Xdg.name_of_project in
+            Filename.concat dir file
+          )
+        in
+        try
+          Bin_utils.with_file_as_db
+            ~map_err:(Error.wrapf "processing '%s'" file_full) file_full
+            (fun db ->
+              Run_event.delete_proofs db;
+              Format.printf " done.\n%!")
+        with Error.E e -> Format.printf "\n  error: %a\n%!" Error.pp e)
+      p.files
+
+  let cmd =
+    let doc = "remove stored proofs from result DB file(s)" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "strip-proofs")
+      Cmdliner.Term.(
+        const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
+end
+
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -667,6 +707,7 @@ let parse_opt () =
       Task_list.cmd;
       Task_show.cmd;
       Slurm.cmd;
+      Strip_proofs.cmd;
     ]
   in
   Cmd.eval_value (Cmd.group info ~default cmds)

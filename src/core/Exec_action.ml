@@ -30,6 +30,43 @@ let compress_proof_files dir =
   in
   List.iter (fun src -> compress_file_to_zst ~src ~dst:(src ^ ".zst")) files
 
+(** Read proof files from [dir] and store their contents as blobs in [db].
+    Matches files to entries in [proof_check_res] by filename pattern. *)
+let store_proof_blobs_from_dir ~(db : Sqlite3.db) dir =
+  (* Get all (prover, file) pairs that have proof checks *)
+  let entries =
+    try
+      Db.exec_no_params_exn db
+        {|select distinct prover, file from proof_check_res;|}
+        ~ty:Db.Ty.([ any_str; any_str ], fun p f -> p, f)
+        ~f:Db.Cursor.to_list_rev
+    with _ -> []
+  in
+  let dir_files = try Sys.readdir dir |> Array.to_list with _ -> [] in
+  List.iter
+    (fun (prover, pb_file) ->
+      let pb_basename = Filename.basename pb_file in
+      let prefix = spf "proof-%s-%s" prover pb_basename in
+      match
+        List.find_opt
+          (fun f -> CCString.prefix ~pre:prefix f && Filename.extension f <> "")
+          dir_files
+      with
+      | None -> ()
+      | Some fname ->
+        let path = Filename.concat dir fname in
+        (try
+           let content =
+             let ic = open_in path in
+             let len = in_channel_length ic in
+             let buf = really_input_string ic len in
+             close_in ic;
+             buf
+           in
+           Run_event.store_proof_blob db ~prover ~file:pb_file ~content
+         with _ -> ()))
+    entries
+
 module Exec_run_provers : sig
   type t = Action.run_provers
   type jobs = Bounded of int | Cpus of int list
@@ -515,6 +552,13 @@ end = struct
     (* batch compress remaining proof files with zstd *)
     if self.compress_proofs then CCOpt.iter compress_proof_files self.proof_dir;
 
+    (* store proof blobs in the result DB *)
+    CCOpt.iter
+      (fun dir ->
+        Eio.Mutex.use_rw ~protect:false db_mu (fun () ->
+            store_proof_blobs_from_dir ~db:raw_db dir))
+      self.proof_dir;
+
     if interrupted () then Error.fail "run.interrupted";
     let total_wall_time = Misc.now_s () -. start in
     let uuid = uuid in
@@ -671,7 +715,7 @@ end = struct
           (fun ev ->
             (match ev with
             | Run_event.Prover_run r -> on_solve r
-            | Checker_run r -> on_proof_check r);
+            | Run_event.Checker_run r -> on_proof_check r);
             Run_event.to_db db ev)
           evl;
         Mutex.unlock resps_lock
@@ -833,6 +877,9 @@ end = struct
 
     (* batch compress remaining proof files with zstd *)
     if self.compress_proofs then CCOpt.iter compress_proof_files self.proof_dir;
+
+    (* store proof blobs in the result DB *)
+    CCOpt.iter (fun dir -> store_proof_blobs_from_dir ~db dir) self.proof_dir;
 
     if interrupted () then Error.fail "run.interrupted";
     let total_wall_time = Misc.now_s () -. start in

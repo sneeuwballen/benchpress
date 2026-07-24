@@ -155,6 +155,10 @@ let enc_params ?(params = []) s =
 let uri_prover_in file prover =
   spf "/prover-in/%s/%s/" (U.percent_encode file) (U.percent_encode prover)
 
+let uri_proof_content db_file prover pb_file =
+  spf "/proof_content/%s/%s/%s/" (U.percent_encode db_file)
+    (U.percent_encode prover) (U.percent_encode pb_file)
+
 let uri_show_table ?params ?(offset = 0) file =
   spf "/show_table/%s/?offset=%d" (U.percent_encode file) offset
   |> enc_params ?params

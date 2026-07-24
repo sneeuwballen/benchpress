@@ -12,6 +12,8 @@ type key = {
   res: Res.t;
   file_expect: Res.t;
   rtime: float;
+  proof_check_res: string option;
+      (** proof check result ("valid"/"invalid"/"unknown:...") *)
 }
 (** Summary of a result *)
 
