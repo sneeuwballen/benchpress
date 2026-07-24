@@ -22,3 +22,4 @@ provers:
 
 options:
   nats: "localhost:4222"
+  compress_proofs: true

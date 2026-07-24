@@ -559,12 +559,13 @@ let decode_nats : nats_config t =
     | _ -> Nats_server (Option.value ~default:"localhost:4222" server))
   | _ -> failf "expected a string or object for nats"
 
-let decode_options : (int option * bool option * nats_config) t =
+let decode_options : (int option * bool option * nats_config * bool) t =
   let* j = field_opt "j" int in
   let* progress = field_opt "progress" bool in
+  let* compress_proofs = field_opt "compress_proofs" bool in
   let+ nats_opt = field_opt "nats" decode_nats in
   let nats = Option.value ~default:Nats_absent nats_opt in
-  j, progress, nats
+  j, progress, nats, Option.value ~default:true compress_proofs
 
 (** {2 Main Decode} *)
 
@@ -692,13 +693,14 @@ let decode ~previous (value : Config_value.value) (cur_dir : string) :
           Definitions.add_task (With_loc.make ~loc:Loc.none task) defs)
         defs raw_tasks
     in
-    let opt_j, opt_progress, opt_nats =
-      Option.value ~default:(None, None, Nats_absent) opts
+    let opt_j, opt_progress, opt_nats, opt_compress_proofs =
+      Option.value ~default:(None, None, Nats_absent, true) opts
     in
     let defs =
       defs
       |> Definitions.with_option_j opt_j
       |> Definitions.with_option_progress opt_progress
+      |> Definitions.with_option_compress_proofs opt_compress_proofs
     in
     let defs =
       match opt_nats with

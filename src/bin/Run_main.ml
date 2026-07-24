@@ -101,18 +101,23 @@ let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
     ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update ?(compress = false)
-    ?progress_cb ~total_tasks_ref (defs : Definitions.t)
-    (r : Action.run_provers) : Test_top_result.t lazy_t * Test_compact_result.t
-    =
+    ?(compress_proofs = None) ?progress_cb ~total_tasks_ref
+    (defs : Definitions.t) (r : Action.run_provers) :
+    Test_top_result.t lazy_t * Test_compact_result.t =
   let@ () =
     Error.guard
       (Error.wrapf "run prover action@ `@[%a@]`" Action.pp_run_provers r)
   in
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-prover" in
   let interrupted = Atomic.make false in
+  let compress_proofs =
+    match compress_proofs with
+    | Some v -> v
+    | None -> Definitions.option_compress_proofs defs
+  in
   let r =
-    Exec_action.Exec_run_provers.expand ?dyn ?j ?cpus ?proof_dir ?limits defs
-      r.limits r.j r.pattern r.dirs r.provers
+    Exec_action.Exec_run_provers.expand ?dyn ?j ?cpus ?proof_dir ?limits
+      ~compress_proofs defs r.limits r.j r.pattern r.dirs r.provers
   in
   let len = List.length r.problems in
   let total_tasks = len * List.length r.provers in
@@ -153,8 +158,9 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
 
 let execute_submit_job_action ?j ?timestamp ?dyn ?limits ?proof_dir ?output
     ~notify ~(uuid : Uuidm.t) ~(save : bool) ~wal_mode ~update
-    ?(compress = false) ?progress_cb (defs : Definitions.t)
-    (r : Action.run_provers_slurm_submission) : _ * Test_compact_result.t =
+    ?(compress = false) ?(compress_proofs = None) ?progress_cb
+    (defs : Definitions.t) (r : Action.run_provers_slurm_submission) :
+    _ * Test_compact_result.t =
   let@ _sp =
     Error.guard
       (Error.wrapf "run provers with slurm action@ `@[%a@]`"
@@ -162,9 +168,14 @@ let execute_submit_job_action ?j ?timestamp ?dyn ?limits ?proof_dir ?output
   in
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-submit-job-action" in
   let interrupted = Atomic.make false in
+  let compress_proofs =
+    match compress_proofs with
+    | Some v -> v
+    | None -> Definitions.option_compress_proofs defs
+  in
   let exp_r =
     Exec_action.Exec_run_provers.expand ~slurm:true ?dyn ?j ?proof_dir ?limits
-      defs r.limits r.j r.pattern r.dirs r.provers
+      ~compress_proofs defs r.limits r.j r.pattern r.dirs r.provers
   in
   let len = List.length exp_r.problems in
   let total_tasks = len * List.length r.provers in
@@ -212,9 +223,9 @@ type top_task =
 
 let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     ?summary ?task ?(dir_files = []) ?proof_dir ?output ?(save = true)
-    ?(wal_mode = false) ?(compress = false) ~desktop_notification ~no_failure
-    ~update ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks ?nats
-    (defs : Definitions.t) paths () : unit =
+    ?(wal_mode = false) ?(compress = false) ?(compress_proofs = None)
+    ~desktop_notification ~no_failure ~update ?(sbatch = false) ?partition
+    ?nodes ?addr ?port ?ntasks ?nats (defs : Definitions.t) paths () : unit =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   Log.info (fun k ->
       k "run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
@@ -337,8 +348,8 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     let top_res, (results : Test_compact_result.t) =
       execute_run_prover_action ~uuid ?pp_results ?proof_dir ?dyn:progress
         ~limits ?j ?cpus ?output ~notify ~timestamp ~save ~wal_mode ~update
-        ~compress ?progress_cb:server_progress_cb ~total_tasks_ref defs
-        run_provers_action
+        ~compress ~compress_proofs ?progress_cb:server_progress_cb
+        ~total_tasks_ref defs run_provers_action
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in
@@ -369,8 +380,8 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
 
     let top_res, (results : Test_compact_result.t) =
       execute_submit_job_action ~uuid ?proof_dir ?dyn:progress ~limits ?j
-        ?output ~notify ~timestamp ~save ~wal_mode ~update ~compress defs
-        run_provers_action_sbatch
+        ?output ~notify ~timestamp ~save ~wal_mode ~update ~compress
+        ~compress_proofs defs run_provers_action_sbatch
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in

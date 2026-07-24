@@ -96,6 +96,9 @@ module Run = struct
         (** if the output file already exists, overwrite it with the new one. *)
     compress: bool;
         (** compress output database with zstd after the run is complete *)
+    compress_proofs: bool option; [@names [ "compress-proofs"; "cp" ]]
+        (** compress proof files with zstd after checking (default: from config)
+        *)
     server: string option; [@names [ "server" ]]
         (** report progress to benchpress server (HOST:PORT) *)
   }
@@ -116,6 +119,7 @@ module Run = struct
         ?memory:p.memory ?csv:p.csv ~provers:p.provers ~meta:p.meta ?task:p.task
         ?summary:p.summary ~dir_files:p.dir_files ?proof_dir:p.proof_dir
         ?output:p.output ~save:p.save ~wal_mode:p.wal_mode ~compress:p.compress
+        ~compress_proofs:p.compress_proofs
         ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
         ~update:p.update ?nats defs p.paths ()
     in
@@ -206,6 +210,9 @@ module Slurm = struct
         (** if the output file already exists, overwrite it with the new one. *)
     compress: bool;
         (** compress output database with zstd after the run is complete *)
+    compress_proofs: bool option; [@names [ "compress-proofs"; "cp" ]]
+        (** compress proof files with zstd after checking (default: from config)
+        *)
     partition: string option;
         (** partition to which the allocated nodes should belong *)
     nodes: int option; [@names [ "n"; "nodes" ]]
@@ -240,10 +247,10 @@ module Slurm = struct
       ?timeout:p.timeout ?memory:p.memory ?csv:p.csv ~provers:p.provers
       ~meta:p.meta ?task:p.task ?summary:p.summary ~dir_files:p.dir_files
       ?proof_dir:p.proof_dir ?output:p.output ~wal_mode:p.wal_mode
-      ~compress:p.compress ~desktop_notification:p.desktop_notification
-      ~no_failure:p.no_failure ~update:p.update ~save:p.save
-      ?partition:p.partition ?nodes:p.nodes ?addr ?port:p.port ?ntasks:p.ntasks
-      defs p.paths ()
+      ~compress:p.compress ~compress_proofs:p.compress_proofs
+      ~desktop_notification:p.desktop_notification ~no_failure:p.no_failure
+      ~update:p.update ~save:p.save ?partition:p.partition ?nodes:p.nodes ?addr
+      ?port:p.port ?ntasks:p.ntasks defs p.paths ()
 
   let cmd =
     let doc =

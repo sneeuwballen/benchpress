@@ -25,6 +25,7 @@ type t = {
   option_j: int option;
   option_progress: bool option;
   option_nats_server: string option;
+  option_compress_proofs: bool;
 }
 (** All known definitions *)
 
@@ -38,6 +39,7 @@ let empty : t =
     option_j = None;
     option_progress = None;
     option_nats_server = Some "localhost:4222";
+    option_compress_proofs = true;
     config_file = None;
     errors = [];
   }
@@ -80,6 +82,7 @@ let merge (a : t) (b : t) : t =
       (match b.option_nats_server with
       | Some _ -> b.option_nats_server
       | None -> a.option_nats_server);
+    option_compress_proofs = b.option_compress_proofs;
   }
 
 let errors self = self.errors
@@ -93,6 +96,11 @@ let with_option_progress (p : bool option) (self : t) : t =
 
 let with_option_nats_server (s : string option) (self : t) : t =
   { self with option_nats_server = s }
+
+let option_compress_proofs self = self.option_compress_proofs
+
+let with_option_compress_proofs (v : bool) (self : t) : t =
+  { self with option_compress_proofs = v }
 
 let with_cur_dir (d : string) (self : t) : t = { self with cur_dir = d }
 let custom_tags self = self.tags
@@ -275,6 +283,7 @@ let pp out
       option_j;
       option_progress;
       option_nats_server;
+      option_compress_proofs;
     } =
   let open Misc.Pp in
   let pp_def_map out defs =
@@ -311,4 +320,5 @@ let pp out
       field_opt "option_j" Fmt.int option_j;
       field_opt "option_progress" Fmt.bool option_progress;
       field_opt "option_nats" Fmt.string option_nats_server;
+      field "option_compress_proofs" Fmt.bool option_compress_proofs;
     ]

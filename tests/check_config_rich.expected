@@ -106,3 +106,4 @@ Definitions:
   dir_vars: dir:sat-only: <ROOT>/fake_files/
   cur_dir: <ROOT>
   option_nats: localhost:4222
+  option_compress_proofs: true

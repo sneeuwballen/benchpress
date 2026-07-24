@@ -3,18 +3,32 @@
 open Common
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.runexec-action"))
 
-let compress_sqlite_to_zst ~src ~dst =
+(** Compress [src] into [dst] (a [.zst] file) with zstd. The source is removed
+    on success ([--rm]); on failure the source is kept and a warning logged. *)
+let compress_file_to_zst ~src ~dst =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "zstd.compress" in
+  Trace.add_data_to_span _sp [ "src", `String src; "dst", `String dst ];
   let rc =
-    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "zstd.compress" in
-    Trace.add_data_to_span _sp [ "src", `String src; "dst", `String dst ];
     Sys.command
-      (Printf.sprintf "zstd -q %s -o %s" (Filename.quote src)
+      (Printf.sprintf "zstd -q -f --rm %s -o %s" (Filename.quote src)
          (Filename.quote dst))
   in
-  if rc = 0 then (
-    try Sys.remove src with _ -> ()
-  ) else
+  if rc <> 0 then
     Logs.warn (fun k -> k "zstd compression of '%s' failed (exit %d)" src rc)
+
+(** Compress every proof file in [dir] with zstd. Files already ending in [.zst]
+    and extensionless files (the [pb-*] problem copies) are skipped. *)
+let compress_proof_files dir =
+  let files =
+    try
+      Sys.readdir dir |> Array.to_list
+      |> List.filter (fun f ->
+             let ext = Filename.extension f in
+             ext <> ".zst" && ext <> "")
+      |> List.map (Filename.concat dir)
+    with _ -> []
+  in
+  List.iter (fun src -> compress_file_to_zst ~src ~dst:(src ^ ".zst")) files
 
 module Exec_run_provers : sig
   type t = Action.run_provers
@@ -27,6 +41,7 @@ module Exec_run_provers : sig
     checkers: Proof_checker.t Misc.Str_map.t;
     limits: Limit.All.t;
     proof_dir: string option; (* directory in which to store proofs *)
+    compress_proofs: bool; (* compress proof files with zstd after checking *)
   }
 
   val expand :
@@ -36,6 +51,7 @@ module Exec_run_provers : sig
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?proof_dir:string ->
+    ?compress_proofs:bool ->
     ?interrupted:(unit -> bool) ->
     Definitions.t ->
     Limit.All.t ->
@@ -108,6 +124,7 @@ end = struct
     checkers: Proof_checker.t Misc.Str_map.t;
     limits: Limit.All.t;
     proof_dir: string option; (* directory in which to store proofs *)
+    compress_proofs: bool; (* compress proof files with zstd after checking *)
   }
 
   let filter_regex_ = function
@@ -153,8 +170,8 @@ end = struct
 
   (* Expand options into concrete choices *)
   let expand ?(slurm = false) ?j ?cpus ?(dyn = false) ?limits ?proof_dir
-      ?interrupted (defs : Definitions.t) s_limits s_j s_pattern s_dirs
-      s_provers : expanded =
+      ?(compress_proofs = true) ?interrupted (defs : Definitions.t) s_limits s_j
+      s_pattern s_dirs s_provers : expanded =
     let limits =
       match limits with
       | None -> s_limits
@@ -186,7 +203,15 @@ end = struct
              c.Proof_checker.name, c)
       |> Misc.Str_map.of_list
     in
-    { j; limits; problems; checkers; proof_dir; provers = s_provers }
+    {
+      j;
+      limits;
+      problems;
+      checkers;
+      proof_dir;
+      compress_proofs;
+      provers = s_provers;
+    }
 
   let _nop _ = ()
 
@@ -487,6 +512,9 @@ end = struct
 
     let res_l = !res_l in
 
+    (* batch compress remaining proof files with zstd *)
+    if self.compress_proofs then CCOpt.iter compress_proof_files self.proof_dir;
+
     if interrupted () then Error.fail "run.interrupted";
     let total_wall_time = Misc.now_s () -. start in
     let uuid = uuid in
@@ -520,7 +548,7 @@ end = struct
     Logs.debug (fun k -> k "closing db…");
     ignore (Sqlite3.db_close db : bool);
     (match compress_to, effective_output with
-    | Some dst, Some src -> compress_sqlite_to_zst ~src ~dst
+    | Some dst, Some src -> compress_file_to_zst ~src ~dst
     | _ -> ());
     top_res, r
 
@@ -572,6 +600,7 @@ end = struct
         self.provers
     in
     on_start self;
+
     let jobs =
       CCList.flat_map
         (fun pb ->
@@ -802,6 +831,9 @@ end = struct
     Log.debug (fun k ->
         k "Deleted the generated config_file and linux socket file.");
 
+    (* batch compress remaining proof files with zstd *)
+    if self.compress_proofs then CCOpt.iter compress_proof_files self.proof_dir;
+
     if interrupted () then Error.fail "run.interrupted";
     let total_wall_time = Misc.now_s () -. start in
     let uuid = uuid in
@@ -842,7 +874,7 @@ end = struct
     Logs.debug (fun k -> k "closing db…");
     ignore (Sqlite3.db_close db : bool);
     (match compress_to, effective_output with
-    | Some dst, Some src -> compress_sqlite_to_zst ~src ~dst
+    | Some dst, Some src -> compress_file_to_zst ~src ~dst
     | _ -> ());
     top_res, r
 end
