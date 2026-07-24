@@ -24,3 +24,15 @@ val db_prepare : Db.t -> unit
 val to_db_prover_result : Db.t -> (Prover.name, Res.t) Run_result.t -> unit
 val to_db : Db.t -> t -> unit
 val of_db_l : Db.t -> t list
+
+(** {2 Persistent proof blob storage} *)
+
+val store_proof_blob :
+  Db.t -> prover:string -> file:string -> content:string -> unit
+(** Store proof file content as a blob in the [proofs] table. *)
+
+val get_proof_blob : Db.t -> prover:string -> file:string -> string option
+(** Retrieve proof blob. [None] means no proof stored. *)
+
+val delete_proofs : Db.t -> unit
+(** Delete all stored proof blobs from the DB. *)

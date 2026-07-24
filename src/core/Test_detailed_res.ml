@@ -9,6 +9,8 @@ type key = {
   res: Res.t;
   file_expect: Res.t;
   rtime: float;
+  proof_check_res: string option;
+      (** proof check result ("valid"/"invalid"/"unknown:...") *)
 }
 
 type expect_filter =
@@ -98,15 +100,38 @@ let list_keys ?(offset = 0) ?(page_size = 500) ?(filter_prover = "")
           ( [ text; text; text; int; int ],
             [ text; any_str; text; text; float ],
             fun prover file res file_expect rtime ->
-              let res = Res.of_string ~tags res in
-              let file_expect = Res.of_string ~tags file_expect in
-              { prover; file; res; file_expect; rtime } ))
+              prover, file, res, file_expect, rtime ))
       ~f:Db.Cursor.to_list_rev filter_prover filter_res filter_pb
       (page_size + 1) offset
     |> Misc.unwrap_db (fun () ->
            spf "listing %d results of '%s' with '%s'" (page_size + 1)
              filter_prover filter_res)
   in
+  (* embed proof check results into each key *)
+  let has_pc_table = Misc.db_has_table db "proof_check_res" in
+  let enrich_key (prover, file, res, file_expect, rtime) =
+    let res = Res.of_string ~tags res in
+    let file_expect = Res.of_string ~tags file_expect in
+    let proof_check_res =
+      if not has_pc_table then
+        None
+      else (
+        try
+          let pc_res_s =
+            Db.exec db
+              {|select res from proof_check_res where prover=? and file=? limit 1;|}
+              ~ty:Db.Ty.([ text; text ], [ text ], fun x -> x)
+              ~f:Db.Cursor.next prover file
+            |> Misc.unwrap_db (fun () -> "getting proof check res")
+            |> Error.unwrap_opt "no proof check res"
+          in
+          Some pc_res_s
+        with _ -> None
+      )
+    in
+    { prover; file; res; file_expect; rtime; proof_check_res }
+  in
+  let l = List.map enrich_key l in
   if List.length l > page_size then
     ( (* there are more result, cut the last one *)
       CCList.take page_size l,

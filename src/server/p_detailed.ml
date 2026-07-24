@@ -211,24 +211,27 @@ let handle_show_detailed (self : Server_common.t) : unit =
                                  A.name "prover";
                                  A.class_ "form-control form-control-sm m-1 p-1";
                                  A.value filter_prover;
-                                 A.placeholder "prover";
+                                 A.placeholder "prover (autocomplete)";
                                  A.type_ "text";
+                                 A.list "prover-list";
                                ];
                              input
                                [
                                  A.name "pb";
                                  A.class_ "form-control form-control-sm m-1 p-1";
                                  A.value filter_pb;
-                                 A.placeholder "problem";
+                                 A.placeholder "problem (autocomplete)";
                                  A.type_ "text";
+                                 A.list "pb-list";
                                ];
                              input
                                [
                                  A.name "res";
                                  A.class_ "form-control form-control-sm m-1 p-1";
                                  A.value filter_res;
-                                 A.placeholder "result";
+                                 A.placeholder "result (autocomplete)";
                                  A.type_ "text";
+                                 A.list "res-list";
                                ];
                              input
                                [
@@ -248,6 +251,35 @@ let handle_show_detailed (self : Server_common.t) : unit =
                            (List.map
                               (fun v -> option [ A.value v ] [ txt v ])
                               l_all_expect);
+                         datalist
+                           [
+                             A.id "prover-list";
+                             ( "hx-get",
+                               spf "/search_prover/%s/"
+                                 (U.percent_encode db_file) );
+                             "hx-trigger", "load";
+                             "hx-swap", "innerHTML";
+                           ]
+                           [ option [ A.value "" ] [ txt "Loading..." ] ];
+                         datalist
+                           [
+                             A.id "pb-list";
+                             ( "hx-get",
+                               spf "/search_pb/%s/" (U.percent_encode db_file) );
+                             "hx-trigger", "load";
+                             "hx-swap", "innerHTML";
+                           ]
+                           [ option [ A.value "" ] [ txt "Loading..." ] ];
+                         datalist
+                           [
+                             A.id "res-list";
+                             ( "hx-get",
+                               spf "/search_res/%s/" (U.percent_encode db_file)
+                             );
+                             "hx-trigger", "load";
+                             "hx-swap", "innerHTML";
+                           ]
+                           [ option [ A.value "" ] [ txt "Loading..." ] ];
                        ];
                   ];
              ];
@@ -259,6 +291,7 @@ let handle_show_detailed (self : Server_common.t) : unit =
                        res;
                        file_expect;
                        rtime;
+                       proof_check_res;
                      } ->
                   let url_file_res = uri_show_single db_file prover pb_file in
                   let url_file = uri_get_file pb_file in
@@ -277,13 +310,27 @@ let handle_show_detailed (self : Server_common.t) : unit =
                       td [] [ txt (Res.to_string res) ];
                       td [] [ txt (Res.to_string file_expect) ];
                       td [] [ txt (Misc.human_duration rtime) ];
+                      (match proof_check_res with
+                      | None -> td [] [ txt "-" ]
+                      | Some "valid" ->
+                        td []
+                          [ span [ A.class_ "text-success" ] [ txt "valid" ] ]
+                      | Some "invalid" ->
+                        td []
+                          [ span [ A.class_ "text-danger" ] [ txt "invalid" ] ]
+                      | Some s when CCString.prefix ~pre:"unknown:" s ->
+                        let msg =
+                          try String.sub s 8 (String.length s - 8) with _ -> s
+                        in
+                        td [] [ span [ A.class_ "text-warning" ] [ txt msg ] ]
+                      | Some s -> td [] [ txt s ]);
                     ])
                 l
             in
             let thead =
               CCList.map
                 (fun x -> th [] [ txt x ])
-                [ "prover"; "file"; "res"; "expected"; "time" ]
+                [ "prover"; "file"; "res"; "expected"; "time"; "proof" ]
               |> tr [] |> CCList.return |> thead []
             in
             table [ A.class_ "framed table table-striped" ] (thead :: rows));
@@ -360,6 +407,19 @@ let handle_show_single (self : Server_common.t) : unit =
                    [ txt "proof checker stdout" ];
                  pre [] [ txt s ];
                ]);
+           details []
+             [
+               summary
+                 [ A.class_ "alert alert-info" ]
+                 [ txt "proof content (click to load)" ];
+               div
+                 [
+                   "hx-get", uri_proof_content db_file prover pb_file;
+                   "hx-trigger", "revealed";
+                   "hx-swap", "innerHTML";
+                 ]
+                 [ txt "Loading..." ];
+             ];
          ]
      in
      Log.debug (fun k -> k "render page in %.3fs" (Misc.Chrono.elapsed chrono));
@@ -398,3 +458,129 @@ let handle_show_csv (self : Server_common.t) : unit =
         "Content-Disposition", "attachment; filename=\"results.csv\"";
       ]
     (Ok csv)
+
+(** {2 HTMX autocomplete endpoints} *)
+
+(** Generic handler returning a datalist for [column] in [table], filtered by
+    [query]. *)
+let handle_search_column ~route ~tbl ~column ~list_id (self : Server_common.t) :
+    unit =
+  let open Server_common in
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(exact route @/ string_urlencoded @/ return)
+  @@ fun db_file req ->
+  let query =
+    try List.assoc "query" (H.Request.query req) with Not_found -> ""
+  in
+  let open Html in
+  H.Response.make_string ~headers:default_html_headers
+  @@ let@ db =
+       Bin_utils.with_file_as_db
+         ~map_err:(Error.wrapf "using DB '%s'" db_file)
+         db_file
+     in
+     let values =
+       try
+         let raw =
+           Db.exec db
+             (Printf.sprintf
+                {|select distinct %s from %s where %s like ? || '%%' order by %s limit 50;|}
+                column tbl column column)
+             query
+             ~ty:Db.Ty.(p1 text, p1 text, fun x -> x)
+             ~f:Db.Cursor.to_list_rev
+         in
+         match raw with
+         | Ok l -> List.sort String.compare l
+         | Error _ -> []
+       with _ -> []
+     in
+     let opts = List.map (fun v -> option [ A.value v ] [ txt v ]) values in
+     let empty =
+       if opts = [] then
+         [ option [ A.value "" ] [ txt "(no matches)" ] ]
+       else
+         []
+     in
+     Ok (Html.to_string_elt (datalist [ A.id list_id ] (opts @ empty)))
+
+let handle_search_prover =
+  handle_search_column ~route:"search_prover" ~tbl:"prover_res" ~column:"prover"
+    ~list_id:"prover-list"
+
+let handle_search_pb =
+  handle_search_column ~route:"search_pb" ~tbl:"prover_res" ~column:"file"
+    ~list_id:"pb-list"
+
+let handle_search_res =
+  handle_search_column ~route:"search_res" ~tbl:"prover_res" ~column:"res"
+    ~list_id:"res-list"
+
+(** {2 Proof content lazy-load} *)
+
+(** Serve proof file content (lazy-loaded via HTMX). Reads from the [proofs]
+    table in the result DB. Decompresses .zst on the fly if the stored content
+    has a .zst extension. *)
+let handle_proof_content (self : Server_common.t) : unit =
+  let open Server_common in
+  H.add_route_handler self.server ~meth:`GET
+    H.Route.(
+      exact "proof_content" @/ string_urlencoded @/ string_urlencoded
+      @/ string_urlencoded @/ return)
+  @@ fun db_file prover pb_file _req ->
+  let@ _chrono =
+    query_wrap
+      (Error.wrapf "serving proof_content db=%s prover=%s pb=%s" db_file prover
+         pb_file)
+  in
+  let open Html in
+  H.Response.make_string ~headers:default_html_headers
+  @@ let@ db =
+       Bin_utils.with_file_as_db
+         ~map_err:(Error.wrapf "using DB '%s'" db_file)
+         db_file
+     in
+     if not (Misc.db_has_table db "proofs") then
+       Ok
+         (Html.to_string_elt
+            (pre
+               [ A.class_ "text-danger" ]
+               [ txt "No proofs table in this database." ]))
+     else (
+       match Run_event.get_proof_blob db ~prover ~file:pb_file with
+       | None ->
+         Ok
+           (Html.to_string_elt
+              (pre
+                 [ A.class_ "text-danger" ]
+                 [ txt "Proof not stored for this problem." ]))
+       | Some content ->
+         (* Try to decompress with zstd; if it fails, show raw content *)
+         let tmp = Filename.temp_file "benchproof" ".zst" in
+         let result =
+           Fun.protect ~finally:(fun () -> try Sys.remove tmp with _ -> ())
+           @@ fun () ->
+           let oc = open_out tmp in
+           output_string oc content;
+           close_out oc;
+           let cmd =
+             Printf.sprintf "zstd -d -q -f %s -o /dev/stdout 2>/dev/null"
+               (Filename.quote tmp)
+           in
+           let stdout_str = Misc.get_cmd_out cmd in
+           if stdout_str = "" then
+             (* zstd failed or content wasn't .zst — show raw *)
+             Ok
+               (Html.to_string_elt
+                  (pre
+                     [ A.style "max-height:500px;overflow:auto" ]
+                     [ txt content ]))
+           else
+             Ok
+               (Html.to_string_elt
+                  (pre
+                     [ A.style "max-height:500px;overflow:auto" ]
+                     [ txt stdout_str ]))
+         in
+         result
+     )

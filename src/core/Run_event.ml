@@ -42,7 +42,7 @@ let db_prepare (db : Db.t) : unit =
         utime float,
         stime float,
         unique (prover, file) on conflict fail
-      );
+      ) strict;
 
     create table if not exists
       proof_check_res (
@@ -53,7 +53,15 @@ let db_prepare (db : Db.t) : unit =
         rtime float,
         stdout text,
         stderr text
-    );
+    ) strict;
+
+    create table if not exists
+      proofs (
+        prover text not null,
+        file text not null,
+        content blob not null,
+        primary key (prover, file)
+    ) strict;
 
     create index if not exists pr_prover_res on prover_res(prover,res,file_expect);
     create index if not exists pr_file on prover_res(file);
@@ -88,6 +96,31 @@ let to_db_check_result (db : Db.t) (self : _ Run_result.t) : _ =
     (Proof_check_res.to_string self.res)
     self.raw.rtime self.raw.stdout self.raw.stderr
   |> Misc.unwrap_db (fun () -> "run-event.to-db-checker-result")
+
+let store_proof_blob (db : Db.t) ~prover ~file ~content : unit =
+  Db.exec_no_cursor db
+    {|insert or replace into proofs (prover, file, content)
+      values (?, ?, ?); |}
+    ~ty:Db.Ty.[ text; text; blob ]
+    prover file content
+  |> Misc.unwrap_db (fun () -> "run-event.store-proof-blob")
+
+let get_proof_blob (db : Db.t) ~prover ~file : string option =
+  try
+    Db.exec db {|select content from proofs where prover=? and file=?;|}
+      ~ty:Db.Ty.([ text; text ], [ blob ], fun x -> x)
+      ~f:Db.Cursor.next prover file
+    |> Misc.unwrap_db (fun () -> "run-event.get-proof-blob")
+    |> CCOpt.map (fun s ->
+           if s = "" then
+             None
+           else
+             Some s)
+    |> CCOpt.get_or ~default:None
+  with _ -> None
+
+let delete_proofs (db : Db.t) : unit =
+  try ignore (Db.exec0 db "DELETE FROM proofs") with _ -> ()
 
 let to_db db self : _ =
   match self with

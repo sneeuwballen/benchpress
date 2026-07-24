@@ -413,6 +413,10 @@ module Cmd = struct
       P_detailed.handle_show_detailed self;
       P_detailed.handle_show_single self;
       P_detailed.handle_show_csv self;
+      P_detailed.handle_search_prover self;
+      P_detailed.handle_search_pb self;
+      P_detailed.handle_search_res self;
+      P_detailed.handle_proof_content self;
       P_tasks.handle_tasks self;
       P_provers.handle_provers self;
       P_tasks.handle_run self;
