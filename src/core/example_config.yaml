@@ -99,3 +99,4 @@ tasks:
 # options:
 #   j: 4
 #   progress: true
+#   compress_proofs: true   # compress proof files with zstd after checking (default: true)

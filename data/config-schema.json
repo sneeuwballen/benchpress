@@ -227,8 +227,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "j":        { "type": "integer", "minimum": 1 },
-        "progress": { "type": "boolean" }
+        "j":               { "type": "integer", "minimum": 1 },
+        "progress":        { "type": "boolean" },
+        "compress_proofs": { "type": "boolean", "default": true, "description": "compress proof files with zstd after checking (default: true)" }
       }
     }
   }

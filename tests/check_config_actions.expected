@@ -80,3 +80,4 @@ Definitions:
   option_j: 8
   option_progress: true
   option_nats: localhost:4222
+  option_compress_proofs: true

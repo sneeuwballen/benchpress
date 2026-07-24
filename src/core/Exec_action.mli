@@ -13,6 +13,7 @@ module Exec_run_provers : sig
     checkers: Proof_checker.t Misc.Str_map.t;
     limits: Limit.All.t;
     proof_dir: string option;
+    compress_proofs: bool; (* compress proof files with zstd after checking *)
   }
 
   val expand :
@@ -22,6 +23,7 @@ module Exec_run_provers : sig
     ?dyn:bool ->
     ?limits:Limit.All.t ->
     ?proof_dir:string ->
+    ?compress_proofs:bool ->
     ?interrupted:(unit -> bool) ->
     Definitions.t ->
     Limit.All.t ->

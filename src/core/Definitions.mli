@@ -42,9 +42,11 @@ end
 val option_j : t -> int option
 val option_progress : t -> bool option
 val option_nats_server : t -> string option
+val option_compress_proofs : t -> bool
 val with_option_j : int option -> t -> t
 val with_option_progress : bool option -> t -> t
 val with_option_nats_server : string option -> t -> t
+val with_option_compress_proofs : bool -> t -> t
 val with_cur_dir : string -> t -> t
 val add_prover : Prover.t with_loc -> t -> t
 val add_dir : Dir.t -> t -> t
