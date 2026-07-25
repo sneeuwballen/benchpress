@@ -38,9 +38,9 @@ let db_prepare (db : Db.t) : unit =
         errcode int not null,
         stdout blob,
         stderr blob,
-        rtime float,
-        utime float,
-        stime float,
+        rtime real,
+        utime real,
+        stime real,
         unique (prover, file) on conflict fail
       ) strict;
 
@@ -50,7 +50,7 @@ let db_prepare (db : Db.t) : unit =
         file text not null,
         checker text not null,
         res text not null,
-        rtime float,
+        rtime real,
         stdout text,
         stderr text
     ) strict;
