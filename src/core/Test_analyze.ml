@@ -89,7 +89,7 @@ let int1_cursor ~ctx c =
 
 let get1_int db ~ctx q ~ty p =
   Db.exec db q ~ty p ~f:(int1_cursor ~ctx)
-  |> Misc.unwrap_db (fun () -> "expected integer")
+  |> Misc.unwrap_db ~db (fun () -> "expected integer")
 
 let of_db_for ?(full = false) (db : Db.t) ~prover : t =
   let tags = Prover.tags_of_db db in
@@ -144,7 +144,7 @@ let of_db_for ?(full = false) (db : Db.t) ~prover : t =
                   Res.of_string ~tags res,
                   t ) ))
         ~f:Db.Cursor.to_list_rev
-      |> Misc.unwrap_db (fun () -> "reading full list of bad results")
+      |> Misc.unwrap_db ~db (fun () -> "reading full list of bad results")
   and errors =
     get1_int ~ctx:"get errors results" db
       ~ty:Db.Ty.(p1 text, p1 int, id)
@@ -167,7 +167,7 @@ let of_db_for ?(full = false) (db : Db.t) ~prover : t =
         {| select file, res, file_expect, rtime from prover_res where prover=?
               and res = 'error' ; |}
         prover ~f:Db.Cursor.to_list_rev
-      |> Misc.unwrap_db (fun () -> "reading full list of erroneous results")
+      |> Misc.unwrap_db ~db (fun () -> "reading full list of erroneous results")
   and valid_proof =
     match
       Db.exec db
@@ -250,7 +250,7 @@ let of_db_n_bad (db : Db.t) : int =
               where res in ('sat','unsat')
               and res != file_expect
               and file_expect in ('sat','unsat'); |}
-  |> Misc.unwrap_db (fun () -> "counting bad results")
+  |> Misc.unwrap_db ~db (fun () -> "counting bad results")
 
 let of_db_dirs (db : Db.t) : string list =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "test.analyze.dirs" in
@@ -262,7 +262,7 @@ let of_db_dirs (db : Db.t) : string list =
       {| select distinct file from prover_res; |}
       ~f:(fun c ->
         Db.Cursor.iter c ~f:(fun d -> r := Summarize_dirs.merge_path1 !r d))
-    |> Misc.unwrap_db (fun () -> "listing distinct files")
+    |> Misc.unwrap_db ~db (fun () -> "listing distinct files")
   in
   match !r with
   | None -> []

@@ -11,14 +11,17 @@ let has_table db (tbl : string) : bool =
     @@ Sqlite3.prepare db (Printf.sprintf "select count(*) from %s" tbl)
   with _ -> false
 
-let err_of (e : Db.Rc.t) : Error.t =
-  Error.makef "DB error: %s" @@ Db.Rc.to_string e
+let err_of ?db (e : Db.Rc.t) : Error.t =
+  match db with
+  | Some db ->
+    Error.makef "DB error (%s): %s" (Db.Rc.to_string e) (Sqlite3.errmsg db)
+  | None -> Error.makef "DB error: %s" (Db.Rc.to_string e)
 
-let unwrap msg (x : ('a, Db.Rc.t) result) : 'a =
+let unwrap ?db msg (x : ('a, Db.Rc.t) result) : 'a =
   match x with
   | Ok x -> x
   | Error e ->
-    let err = err_of e |> Error.wrap (msg ()) in
+    let err = err_of ?db e |> Error.wrap (msg ()) in
     Error.raise err
 
 let unwrap_str msg (x : ('a, string) result) : 'a =

@@ -16,7 +16,7 @@ let of_db db : t =
       Db.exec db s x1 x2
         ~ty:Db.Ty.(p2 text text, p1 int, id)
         ~f:Db.Cursor.to_list_rev
-      |> Misc.unwrap_db (fun () -> "extract comparison-short from DB")
+      |> Misc.unwrap_db ~db (fun () -> "extract comparison-short from DB")
     in
     match l with
     | [ x ] -> x

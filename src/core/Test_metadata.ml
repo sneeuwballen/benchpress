@@ -80,13 +80,13 @@ let db_prepare (db : Db.t) : _ =
         );
       create index if not exists meta_k on meta(key);
       |}
-  |> Misc.unwrap_db (fun () -> "metadata.db-prepare")
+  |> Misc.unwrap_db ~db (fun () -> "metadata.db-prepare")
 
 let get_meta db k : _ =
   Db.exec db {|select value from meta where key=? ;|} k
     ~ty:Db.Ty.(p1 text, p1 (nullable any_str), id)
     ~f:Db.Cursor.next
-  |> Misc.unwrap_db (fun () -> spf "did not find metadata '%s'" k)
+  |> Misc.unwrap_db ~db (fun () -> spf "did not find metadata '%s'" k)
   |> Error.unwrap_opt' (fun () -> spf "expected a result for '%s'" k)
 
 let to_db (db : Db.t) (self : t) : unit =
@@ -103,7 +103,8 @@ let to_db (db : Db.t) (self : t) : unit =
     (CCOpt.map string_of_float self.total_wall_time)
     (Uuidm.to_string self.uuid)
     prover_versions_s
-  |> Misc.unwrap_db (fun () -> Fmt.asprintf "inserting metadata '%a'" pp self)
+  |> Misc.unwrap_db ~db (fun () ->
+         Fmt.asprintf "inserting metadata '%a'" pp self)
 
 let system_keys =
   [
@@ -118,7 +119,7 @@ let get_all_user_meta (db : Db.t) : (string * string) list =
     {|SELECT key, value FROM meta WHERE key NOT IN ('uuid','timestamp','total-wall-time','total_wall_time','prover-versions');|}
     ~ty:Db.Ty.(p2 text (nullable any_str), fun k v -> k, v)
     ~f:Db.Cursor.to_list_rev
-  |> Misc.unwrap_db (fun () -> "get-all-user-meta")
+  |> Misc.unwrap_db ~db (fun () -> "get-all-user-meta")
   |> List.filter_map (fun (k, v) -> CCOpt.map (fun v -> k, v) v)
 
 let set_user_meta (db : Db.t) ~key ~value : unit =
@@ -127,7 +128,7 @@ let set_user_meta (db : Db.t) ~key ~value : unit =
   Db.exec_no_cursor db {|INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?);|}
     ~ty:Db.Ty.(p2 text text)
     key value
-  |> Misc.unwrap_db (fun () -> spf "set-user-meta '%s'" key)
+  |> Misc.unwrap_db ~db (fun () -> spf "set-user-meta '%s'" key)
 
 let delete_user_meta (db : Db.t) ~key : unit =
   if is_system_key key then
@@ -135,7 +136,7 @@ let delete_user_meta (db : Db.t) ~key : unit =
   Db.exec_no_cursor db {|DELETE FROM meta WHERE key = ?;|}
     ~ty:Db.Ty.(p1 text)
     key
-  |> Misc.unwrap_db (fun () -> spf "delete-user-meta '%s'" key)
+  |> Misc.unwrap_db ~db (fun () -> spf "delete-user-meta '%s'" key)
 
 let of_db db : t =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "metadata.of-db" in

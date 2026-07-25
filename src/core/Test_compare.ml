@@ -11,9 +11,9 @@ let pb_int_color = Test.pb_int_color
 let make_db f1 f2 =
   let db = Sqlite3.db_open ":memory:" in
   Db.exec_no_cursor db "attach database ? as db1;" ~ty:Db.Ty.(p1 text) f1
-  |> Misc.unwrap_db (fun () -> spf "attaching DB %S" f1);
+  |> Misc.unwrap_db ~db (fun () -> spf "attaching DB %S" f1);
   Db.exec_no_cursor db "attach database ? as db2;" ~ty:Db.Ty.(p1 text) f2
-  |> Misc.unwrap_db (fun () -> spf "attaching DB %S" f2);
+  |> Misc.unwrap_db ~db (fun () -> spf "attaching DB %S" f2);
   db
 
 let cmp2sql = function
@@ -114,13 +114,13 @@ module Short = struct
           match Db.Cursor.next c with
           | None -> Error.failf "expected result for query\n%s" q
           | Some x -> x)
-      |> Misc.unwrap_db (fun () -> spf "while running\n%s" q)
+      |> Misc.unwrap_db ~db (fun () -> spf "while running\n%s" q)
     in
     let get_flt q =
       Db.exec db q p1 p2
         ~ty:Db.Ty.(p2 text text, p1 (nullable float), CCOpt.get_or ~default:0.)
         ~f:Db.Cursor.get_one_exn
-      |> Misc.unwrap_db (fun () -> spf "while running\n%s" q)
+      |> Misc.unwrap_db ~db (fun () -> spf "while running\n%s" q)
     in
     let appeared =
       get_n
@@ -171,16 +171,16 @@ module Short = struct
     @@ fun () ->
     let db = Sqlite3.db_open ":memory:" in
     Db.exec_no_cursor db "attach database ? as db1;" ~ty:Db.Ty.(p1 text) f1
-    |> Misc.unwrap_db (fun () -> spf "attaching DB %S" f1);
+    |> Misc.unwrap_db ~db (fun () -> spf "attaching DB %S" f1);
     Db.exec_no_cursor db "attach database ? as db2;" ~ty:Db.Ty.(p1 text) f2
-    |> Misc.unwrap_db (fun () -> spf "attaching DB %S" f2);
+    |> Misc.unwrap_db ~db (fun () -> spf "attaching DB %S" f2);
     let provers =
       Db.exec_no_params db
         {| select distinct * from (select prover from db1.prover_res UNION
               select prover from db2.prover_res) ;|}
         ~ty:Db.Ty.(p1 text, id)
         ~f:Db.Cursor.to_list_rev
-      |> Misc.unwrap_db (fun () -> "listing all provers")
+      |> Misc.unwrap_db ~db (fun () -> "listing all provers")
     in
     Logs.debug (fun k -> k "provers: [%s]" (String.concat ";" provers));
     CCList.map (fun prover -> prover, make1 ?status db prover prover) provers
@@ -198,7 +198,8 @@ module Full = struct
     in
     let offset = page * page_size in
     let limit = page_size + 1 in
-    Db.exec (make_db f1 f2)
+    let db = make_db f1 f2 in
+    Db.exec db
       (unsafe_sql ~order:"r1.file desc" ~limit ~offset ?filter ?status
          [ "r1.file"; "r1.res"; "r2.res"; "r1.rtime"; "r2.rtime" ])
       p1 p2
@@ -211,7 +212,7 @@ module Full = struct
               let res2 = Res.of_string ~tags res2 in
               file, res1, time1, res2, time2 ))
       ~f:Db.Cursor.to_list_rev
-    |> Misc.unwrap_db (fun () -> spf "listing comparison results")
+    |> Misc.unwrap_db ~db (fun () -> spf "listing comparison results")
 
   let to_printbox ?(file_link = Test.default_pp_linker) vals =
     let open PrintBox in
