@@ -62,4 +62,4 @@ let list_provers db : string list =
   Db.exec_no_params db {| select distinct prover from prover_res ; |}
     ~ty:Db.Ty.(p1 text, id)
     ~f:Db.Cursor.to_list_rev
-  |> Misc.unwrap_db (fun () -> "listing provers")
+  |> Misc.unwrap_db ~db (fun () -> "listing provers")

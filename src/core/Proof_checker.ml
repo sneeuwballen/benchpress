@@ -86,7 +86,7 @@ let db_prepare (db : Db.t) : unit =
       invalid text not null
     );
     |}
-  |> Misc.unwrap_db (fun () -> "creating proof checker table")
+  |> Misc.unwrap_db ~db (fun () -> "creating proof checker table")
 
 let to_db db (self : t) : unit =
   Db.exec_no_cursor db
@@ -94,13 +94,13 @@ let to_db db (self : t) : unit =
       |}
     ~ty:Db.Ty.[ text; text; blob; blob ]
     self.name self.cmd self.valid self.invalid
-  |> Misc.unwrap_db (fun () -> "proof_checker.to-db")
+  |> Misc.unwrap_db ~db (fun () -> "proof_checker.to-db")
 
 let db_names db : string list =
   Db.exec_no_params db {| select unique name from proof_checker ; |}
     ~f:Db.Cursor.to_list_rev
     ~ty:Db.Ty.([ text ], fun x -> x)
-  |> Misc.unwrap_db (fun () -> "obtaining list of proof checkers")
+  |> Misc.unwrap_db ~db (fun () -> "obtaining list of proof checkers")
 
 let of_db db (name : string) : t =
   Db.exec db {|select cmd, valid, invalid from proof_checker where name=? ; |}
@@ -110,6 +110,6 @@ let of_db db (name : string) : t =
         ( [ text ],
           [ text; blob; blob ],
           fun cmd valid invalid -> { name; cmd; valid; invalid } ))
-  |> Misc.unwrap_db (fun () -> spf "parsing proof checker %s" name)
+  |> Misc.unwrap_db ~db (fun () -> spf "parsing proof checker %s" name)
   |> Error.unwrap_opt
        (spf "expected a result when parsing proof checker %s" name)

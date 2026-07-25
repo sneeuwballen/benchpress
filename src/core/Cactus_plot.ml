@@ -35,7 +35,8 @@ let of_db ?provers db =
       prover
       ~ty:Db.Ty.(p1 text, p1 float, id)
       ~f:Db.Cursor.to_list
-    |> Misc.unwrap_db (fun () -> spf "obtaining values for prover '%s'" prover)
+    |> Misc.unwrap_db ~db (fun () ->
+           spf "obtaining values for prover '%s'" prover)
   in
   let lines = CCList.map (fun p -> "", p, get_prover p) provers in
   { lines }

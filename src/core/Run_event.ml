@@ -68,7 +68,7 @@ let db_prepare (db : Db.t) : unit =
     create index if not exists prf_all on proof_check_res(prover,checker,file);
     create index if not exists prf_file on proof_check_res(file);
     |}
-  |> Misc.unwrap_db (fun () -> "run-event.db-prepare")
+  |> Misc.unwrap_db ~db (fun () -> "run-event.db-prepare")
 
 let to_db_prover_result (db : Db.t) (self : (Prover.name, _) Run_result.t) : _ =
   Db.exec_no_cursor db
@@ -84,7 +84,7 @@ let to_db_prover_result (db : Db.t) (self : (Prover.name, _) Run_result.t) : _ =
     (self.timeout |> Limit.Time.as_int Seconds)
     self.raw.errcode self.raw.stdout self.raw.stderr self.raw.rtime
     self.raw.utime self.raw.stime
-  |> Misc.unwrap_db (fun () -> "run-event.to-db-prover-result")
+  |> Misc.unwrap_db ~db (fun () -> "run-event.to-db-prover-result")
 
 let to_db_check_result (db : Db.t) (self : _ Run_result.t) : _ =
   let p, c = self.program in
@@ -95,7 +95,7 @@ let to_db_check_result (db : Db.t) (self : _ Run_result.t) : _ =
     p self.problem.Problem.name c
     (Proof_check_res.to_string self.res)
     self.raw.rtime self.raw.stdout self.raw.stderr
-  |> Misc.unwrap_db (fun () -> "run-event.to-db-checker-result")
+  |> Misc.unwrap_db ~db (fun () -> "run-event.to-db-checker-result")
 
 let store_proof_blob (db : Db.t) ~prover ~file ~content : unit =
   Db.exec_no_cursor db
@@ -103,14 +103,14 @@ let store_proof_blob (db : Db.t) ~prover ~file ~content : unit =
       values (?, ?, ?); |}
     ~ty:Db.Ty.[ text; text; blob ]
     prover file content
-  |> Misc.unwrap_db (fun () -> "run-event.store-proof-blob")
+  |> Misc.unwrap_db ~db (fun () -> "run-event.store-proof-blob")
 
 let get_proof_blob (db : Db.t) ~prover ~file : string option =
   try
     Db.exec db {|select content from proofs where prover=? and file=?;|}
       ~ty:Db.Ty.([ text; text ], [ blob ], fun x -> x)
       ~f:Db.Cursor.next prover file
-    |> Misc.unwrap_db (fun () -> "run-event.get-proof-blob")
+    |> Misc.unwrap_db ~db (fun () -> "run-event.get-proof-blob")
     |> CCOpt.map (fun s ->
            if s = "" then
              None
@@ -165,7 +165,7 @@ let of_db_provers_map db ~f : _ list =
             in
             f p ))
     ~f:Db.Cursor.to_list_rev
-  |> Misc.unwrap_db (fun () -> "run-event.of-db-map")
+  |> Misc.unwrap_db ~db (fun () -> "run-event.of-db-map")
 
 let of_db_checker_map' db ~f : _ list =
   let tags = Prover.tags_of_db db in
@@ -192,7 +192,7 @@ let of_db_checker_map' db ~f : _ list =
             in
             f p ))
     ~f:Db.Cursor.to_list_rev
-  |> Misc.unwrap_db (fun () -> "run-event.of-db-checker-map")
+  |> Misc.unwrap_db ~db (fun () -> "run-event.of-db-checker-map")
 
 let of_db_checker_map db ~f : _ list =
   Error.guard (Error.wrap "run-event.checker.of-db") @@ fun () ->

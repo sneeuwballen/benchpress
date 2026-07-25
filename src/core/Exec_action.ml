@@ -300,7 +300,7 @@ end = struct
         if wal_mode then (
           match Db.exec0 db "pragma journal_mode=WAL;" with
           | Ok _ -> db
-          | Error rc -> Error.raise (Misc.err_of_db rc)
+          | Error rc -> Error.raise (Misc.err_of_db ~db rc)
         ) else
           db
       ) else

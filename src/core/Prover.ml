@@ -259,7 +259,7 @@ let db_prepare (db : Db.t) : unit =
       unique (prover_name,tag) on conflict fail
     );
   |}
-  |> Misc.unwrap_db (fun () -> "creating prover table")
+  |> Misc.unwrap_db ~db (fun () -> "creating prover table")
 
 let to_db db (self : t) : unit =
   let str_or = CCOpt.get_or ~default:"" in
@@ -298,7 +298,7 @@ let to_db db (self : t) : unit =
     (self.proof_ext |> str_or)
     ""
   (* inherits column kept for schema compatibility, always empty *)
-  |> Misc.unwrap_db (fun () -> "prover.to-db");
+  |> Misc.unwrap_db ~db (fun () -> "prover.to-db");
   if self.custom <> [] then
     List.iter
       (fun (tag, re) ->
@@ -308,7 +308,7 @@ let to_db db (self : t) : unit =
              |}
           ~ty:Db.Ty.(p3 text text text)
           self.name tag re
-        |> Misc.unwrap_db (fun () -> "prover.to-db.add-tag"))
+        |> Misc.unwrap_db ~db (fun () -> "prover.to-db.add-tag"))
       self.custom
 
 let tags_of_db db : _ list =
@@ -414,11 +414,11 @@ let of_db db name : t =
               timeout;
               memory;
             } ))
-  |> Misc.unwrap_db (fun () -> spf "reading data for prover '%s'" name)
+  |> Misc.unwrap_db ~db (fun () -> spf "reading data for prover '%s'" name)
   |> Error.unwrap_opt (spf "no prover by the name '%s'" name)
 
 let db_names db : _ list =
   Db.exec_no_params db {| select distinct name from prover order by name; " |}
     ~ty:Db.Ty.(p1 text, id)
     ~f:Db.Cursor.to_list_rev
-  |> Misc.unwrap_db (fun () -> "listing provers")
+  |> Misc.unwrap_db ~db (fun () -> "listing provers")

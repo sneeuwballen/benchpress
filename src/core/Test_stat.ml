@@ -158,7 +158,7 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
         prover r
         ~ty:Db.Ty.(p2 text text, p1 (nullable int), Fun.id)
         ~f:Db.Cursor.get_one_exn
-      |> Misc.unwrap_db (fun () -> spf "problems with result %s" r)
+      |> Misc.unwrap_db ~db (fun () -> spf "problems with result %s" r)
     in
 
     let stats =
@@ -168,7 +168,7 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
         ~ty:Db.Ty.(p2 text text, p1 float, Fun.id)
         ~f:(fun cursor ->
           Db.Cursor.iter cursor ~f:(fun rtime -> stat := Stats.step !stat rtime))
-      |> Misc.unwrap_db (fun () -> spf "problems with result %s" r);
+      |> Misc.unwrap_db ~db (fun () -> spf "problems with result %s" r);
       !stat
     in
 
@@ -186,7 +186,7 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
         prover r
         ~ty:Db.Ty.([ text; text ], [ int ], fun i -> i)
         ~f:Db.Cursor.get_one_exn
-      |> Misc.unwrap_db (fun () -> spf "problems with result %s" r)
+      |> Misc.unwrap_db ~db (fun () -> spf "problems with result %s" r)
     with
     | Sqlite3.SqliteError msg | Sqlite3.Error msg ->
       Log.err (fun k ->
@@ -217,7 +217,7 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
       prover
       ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.)
       ~f:Db.Cursor.get_one_exn
-    |> Misc.unwrap_db (fun () -> spf "obtaining total time for %s" prover)
+    |> Misc.unwrap_db ~db (fun () -> spf "obtaining total time for %s" prover)
   in
   let total_time_solved =
     Db.exec db
@@ -227,7 +227,7 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
       prover
       ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.)
       ~f:Db.Cursor.get_one_exn
-    |> Misc.unwrap_db (fun () ->
+    |> Misc.unwrap_db ~db (fun () ->
            spf "obtaining total solved time for %s" prover)
   in
   {

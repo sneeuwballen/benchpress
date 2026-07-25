@@ -115,7 +115,8 @@ let db_to_table ?(offset = 0) ?(page_size = max_int) ?provers ?(filter_pb = "")
         filter_pb page_size offset
         ~ty:Db.Ty.(p3 text int int, p1 text, id)
         ~f:Db.Cursor.to_list_rev
-      |> Misc.unwrap_db (fun () -> spf "listing files matching '%s'" filter_pb)
+      |> Misc.unwrap_db ~db (fun () ->
+             spf "listing files matching '%s'" filter_pb)
     in
     Log.debug (fun k ->
         k "to_table: found %d files in %.3fs" (List.length files)
@@ -135,7 +136,7 @@ let db_to_table ?(offset = 0) ?(page_size = max_int) ?provers ?(filter_pb = "")
                     p3 text text float,
                     fun prover res t -> prover, Res.of_string ~tags res, t ))
               ~f:Db.Cursor.to_list_rev file
-            |> Misc.unwrap_db (fun () ->
+            |> Misc.unwrap_db ~db (fun () ->
                    spf "listing results for file '%s'" file)
             |> List.filter (fun (p, _, _) -> List.mem p provers)
           in

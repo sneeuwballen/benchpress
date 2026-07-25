@@ -30,7 +30,7 @@ let get_proof_check db p file : proof_check_res option =
           {|select res from proof_check_res where prover=? and file =?; |}
           ~ty:Db.Ty.([ text; text ], [ text ], fun i -> i)
           ~f:Db.Cursor.next p file
-        |> Misc.unwrap_db (fun () ->
+        |> Misc.unwrap_db ~db (fun () ->
                spf "getting proof check res for '%s' on '%s'" p file)
         |> Error.unwrap_opt "expected result"
       and stdout, rtime =
@@ -38,7 +38,7 @@ let get_proof_check db p file : proof_check_res option =
           {| select stdout, rtime from proof_check_res where prover=? and file=?; |}
           ~ty:Db.Ty.([ text; text ], [ blob; float ], fun x y -> x, y)
           ~f:Db.Cursor.get_one_exn p file
-        |> Misc.unwrap_db (fun () ->
+        |> Misc.unwrap_db ~db (fun () ->
                spf "getting proof check output for '%s' on '%s'" p file)
       in
       Some { res = Proof_check_res.of_string r; stdout; rtime }
@@ -80,7 +80,7 @@ let list_keys ?(offset = 0) ?(page_size = 500) ?(filter_prover = "")
          filter_expect)
       ~ty:Db.Ty.(p3 text text text, p1 int, id)
       ~f:Db.Cursor.get_one_exn filter_prover filter_res filter_pb
-    |> Misc.unwrap_db (fun () ->
+    |> Misc.unwrap_db ~db (fun () ->
            spf "counting results of '%s' with '%s'" filter_prover filter_res)
   in
 
@@ -103,7 +103,7 @@ let list_keys ?(offset = 0) ?(page_size = 500) ?(filter_prover = "")
               prover, file, res, file_expect, rtime ))
       ~f:Db.Cursor.to_list_rev filter_prover filter_res filter_pb
       (page_size + 1) offset
-    |> Misc.unwrap_db (fun () ->
+    |> Misc.unwrap_db ~db (fun () ->
            spf "listing %d results of '%s' with '%s'" (page_size + 1)
              filter_prover filter_res)
   in
@@ -122,7 +122,7 @@ let list_keys ?(offset = 0) ?(page_size = 500) ?(filter_prover = "")
               {|select res from proof_check_res where prover=? and file=? limit 1;|}
               ~ty:Db.Ty.([ text; text ], [ text ], fun x -> x)
               ~f:Db.Cursor.next prover file
-            |> Misc.unwrap_db (fun () -> "getting proof check res")
+            |> Misc.unwrap_db ~db (fun () -> "getting proof check res")
             |> Error.unwrap_opt "no proof check res"
           in
           Some pc_res_s
@@ -168,7 +168,7 @@ let get_res db prover file : _ * proof_check_res option =
             ],
             fun x1 x2 x3 x4 x5 x6 x7 x8 x9 -> x1, x2, x3, x4, x5, x6, x7, x8, x9
           ))
-    |> Misc.unwrap_db (fun () -> spf "listing results")
+    |> Misc.unwrap_db ~db (fun () -> spf "listing results")
     |> Error.unwrap_opt' (fun () ->
            spf "expected a non-empty result for prover='%s', file='%s'" prover
              file)
