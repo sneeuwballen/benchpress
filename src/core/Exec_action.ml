@@ -16,6 +16,24 @@ let compress_file_to_zst ~src ~dst =
   if rc <> 0 then
     Logs.warn (fun k -> k "zstd compression of '%s' failed (exit %d)" src rc)
 
+(** Decompress a [.zst] file, returning the path of the decompressed file. The
+    decompressed file is placed next to [src] with a [.tmp] suffix. On failure,
+    [None] is returned and a warning is logged. *)
+let decompress_file_from_zst ~src =
+  let dst = src ^ ".tmp" in
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "zstd.decompress" in
+  Trace.add_data_to_span _sp [ "src", `String src; "dst", `String dst ];
+  let rc =
+    Sys.command
+      (Printf.sprintf "zstd -q -f -d %s -o %s" (Filename.quote src)
+         (Filename.quote dst))
+  in
+  if rc <> 0 then (
+    Logs.warn (fun k -> k "zstd decompression of '%s' failed (exit %d)" src rc);
+    None
+  ) else
+    Some dst
+
 (** Compress every proof file in [dir] with zstd. Files already ending in [.zst]
     and extensionless files (the [pb-*] problem copies) are skipped. *)
 let compress_proof_files dir =
@@ -228,11 +246,15 @@ end = struct
         Bounded j
       | Some cpus -> Cpus cpus
     in
+    Logs.info (fun k ->
+        k "phase=find-expect start dirs=%d" (List.length s_dirs));
     let problems =
       CCList.flat_map
         (expand_subdir ?pattern:s_pattern ~dyn ?interrupted)
         s_dirs
     in
+    Logs.info (fun k ->
+        k "phase=find-expect end problems=%d" (List.length problems));
     let checkers =
       Definitions.all_checkers defs
       |> List.map (fun c ->
@@ -365,6 +387,15 @@ end = struct
       prepare_db ~wal_mode ?output:effective_output ~update timestamp uuid save
         self.provers
     in
+    Logs.info (fun k ->
+        let timeout_s =
+          match self.limits.time with
+          | Some t -> Limit.Time.as_int Seconds t
+          | None -> 0
+        in
+        k "phase=prove start n_problems=%d n_provers=%d timeout=%d"
+          (List.length self.problems)
+          (List.length self.provers) timeout_s);
     on_start self;
 
     CCOpt.iter Misc.mkdir_rec self.proof_dir;
@@ -399,6 +430,15 @@ end = struct
 
       let result =
         Run_prover_problem.run ~limits:self.limits ~proof_file prover pb
+      in
+      (* Eagerly compress proof file to reduce disk usage during the run *)
+      let proof_file =
+        match proof_file with
+        | Some file when self.compress_proofs ->
+          let compressed = file ^ ".zst" in
+          compress_file_to_zst ~src:file ~dst:compressed;
+          Some compressed
+        | other -> other
       in
       let ev_prover = Run_event.mk_prover result in
       with_db (fun db -> Run_event.to_db db ev_prover);
@@ -460,20 +500,32 @@ end = struct
            Prover.pp_name cr.cr_prover cr.cr_checker.Proof_checker.name
            Problem.pp cr.cr_pb)
       @@ fun () ->
+      (* Decompress .zst proof files temporarily for the checker *)
+      let is_tmp, proof_file =
+        if Filename.extension cr.cr_proof_file = ".zst" then (
+          match decompress_file_from_zst ~src:cr.cr_proof_file with
+          | Some p -> true, p
+          | None -> false, cr.cr_proof_file
+        ) else
+          false, cr.cr_proof_file
+      in
+      Fun.protect ~finally:(fun () ->
+          (* Clean up temporary decompressed copy even if checking raises *)
+          if is_tmp then Misc.remove_file_opt proof_file;
+          (* On POSIX, concurrent checkers can each unlink safely *)
+          if not cr.cr_keep then Misc.remove_file_opt cr.cr_proof_file)
+      @@ fun () ->
       Log.debug (fun k ->
           k "proof-file size: %d"
-            (try Unix.((stat cr.cr_proof_file).st_size) with _ -> 0));
+            (try Unix.((stat proof_file).st_size) with _ -> 0));
       let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
       let res =
-        Run_prover_problem.run_proof_check ~limits ~proof_file:cr.cr_proof_file
-          cr.cr_prover cr.cr_checker cr.cr_pb
+        Run_prover_problem.run_proof_check ~limits ~proof_file cr.cr_prover
+          cr.cr_checker cr.cr_pb
       in
       let ev = Run_event.mk_checker res in
       on_proof_check res;
       with_db (fun db -> Run_event.to_db db ev);
-      (* On POSIX, concurrent checkers sharing the same proof file can each
-         call unlink safely — only the first succeeds, the rest are no-ops. *)
-      if not cr.cr_keep then Misc.remove_file_opt cr.cr_proof_file;
       ev
     in
 
@@ -489,8 +541,11 @@ end = struct
     let remaining = Atomic.make n_initial in
     List.iter (Eio.Stream.add stream) initial_jobs;
 
+    let n_check_tasks = Atomic.make 0 in
     let push_check cr =
       Atomic.incr remaining;
+      if Atomic.fetch_and_add n_check_tasks 1 = 0 then
+        Logs.info (fun k -> k "phase=proof-check start");
       on_start_proof_check ();
       Eio.Stream.add stream (Check cr)
     in
@@ -549,15 +604,26 @@ end = struct
 
     let res_l = !res_l in
 
-    (* batch compress remaining proof files with zstd *)
-    if self.compress_proofs then CCOpt.iter compress_proof_files self.proof_dir;
+    Logs.info (fun k -> k "phase=prove end");
+
+    (* batch compress remaining proof files with zstd, in case *)
+    if self.compress_proofs then (
+      match self.proof_dir with
+      | Some dir ->
+        Logs.info (fun k -> k "phase=compress-prove-files start dir=%s" dir);
+        compress_proof_files dir;
+        Logs.info (fun k -> k "phase=compress-prove-files end")
+      | None -> ()
+    );
 
     (* store proof blobs in the result DB *)
-    CCOpt.iter
-      (fun dir ->
-        Eio.Mutex.use_rw ~protect:false db_mu (fun () ->
-            store_proof_blobs_from_dir ~db:raw_db dir))
-      self.proof_dir;
+    (match self.proof_dir with
+    | Some dir ->
+      Logs.info (fun k -> k "phase=store-proof-blobs start dir=%s" dir);
+      Eio.Mutex.use_rw ~protect:false db_mu (fun () ->
+          store_proof_blobs_from_dir ~db:raw_db dir);
+      Logs.info (fun k -> k "phase=store-proof-blobs end")
+    | None -> ());
 
     if interrupted () then Error.fail "run.interrupted";
     let total_wall_time = Misc.now_s () -. start in
