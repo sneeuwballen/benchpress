@@ -130,6 +130,7 @@ module Exec_run_provers : sig
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
+    ?user_meta:(string * string) list ->
     expanded ->
     Test_top_result.t lazy_t * Test_compact_result.t
   (** Run the given prover(s) on the given problem set, obtaining results after
@@ -156,6 +157,7 @@ module Exec_run_provers : sig
     uuid:Uuidm.t ->
     save:bool ->
     wal_mode:bool ->
+    ?user_meta:(string * string) list ->
     expanded ->
     Test_top_result.t lazy_t * Test_compact_result.t
 end = struct
@@ -356,7 +358,8 @@ end = struct
   let run ?(timestamp = Misc.now_s ()) ?(on_start = _nop) ?(on_solve = _nop)
       ?(on_start_proof_check = _nop) ?(on_proof_check = _nop) ?(on_done = _nop)
       ?(interrupted = fun _ -> false) ?output ?(update = false)
-      ?(compress = false) ~uuid ~save ~wal_mode (self : expanded) : _ * _ =
+      ?(compress = false) ~uuid ~save ~wal_mode ?(user_meta = [])
+      (self : expanded) : _ * _ =
     let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "exec-action.run" in
     Trace.add_data_to_span _sp
       [
@@ -650,6 +653,9 @@ end = struct
     in
     Logs.debug (fun k -> k "saving metadata…");
     Test_metadata.to_db db meta;
+    List.iter
+      (fun (k, v) -> Test_metadata.set_user_meta db ~key:k ~value:v)
+      user_meta;
     let top_res =
       lazy
         (Test_top_result.make ~analyze_full:true ~meta ~provers:self.provers
@@ -668,7 +674,7 @@ end = struct
       ?(on_solve = _nop) ?(on_start_proof_check = _nop) ?(on_proof_check = _nop)
       ?(on_done = _nop) ?(interrupted = fun _ -> false) ?partition ~nodes ~addr
       ~port ~ntasks ?output ?(update = false) ?(compress = false) ~uuid ~save
-      ~wal_mode (self : expanded) : _ * _ =
+      ~wal_mode ?(user_meta = []) (self : expanded) : _ * _ =
     let@ _sp =
       Trace.with_span ~__FILE__ ~__LINE__ "exec-action.run-sbatch-job"
     in
@@ -972,6 +978,9 @@ end = struct
     in
     Logs.debug (fun k -> k "saving metadata…");
     Test_metadata.to_db db meta;
+    List.iter
+      (fun (k, v) -> Test_metadata.set_user_meta db ~key:k ~value:v)
+      user_meta;
     let top_res =
       lazy
         (let provers_map =

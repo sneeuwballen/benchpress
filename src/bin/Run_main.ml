@@ -101,7 +101,7 @@ let make_nats_progress_cb ~(nats : Nats.t) ~uuid : Progress.callbacks =
 (* run provers on the given dirs, return a list [prover, dir, results] *)
 let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
     ?proof_dir ?output ~notify ~uuid ~save ~wal_mode ~update ?(compress = false)
-    ?(compress_proofs = None) ?progress_cb ~total_tasks_ref
+    ?(compress_proofs = None) ?progress_cb ~total_tasks_ref ?(user_meta = [])
     (defs : Definitions.t) (r : Action.run_provers) :
     Test_top_result.t lazy_t * Test_compact_result.t =
   let@ () =
@@ -152,13 +152,13 @@ let execute_run_prover_action ?j ?cpus ?timestamp ?pp_results ?dyn ?limits
       ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
       ~on_proof_check:progress#on_proof_check_res
       ~on_done:(fun _ -> progress#on_done)
-      r
+      ~user_meta r
   in
   result
 
 let execute_submit_job_action ?j ?timestamp ?dyn ?limits ?proof_dir ?output
     ~notify ~(uuid : Uuidm.t) ~(save : bool) ~wal_mode ~update
-    ?(compress = false) ?(compress_proofs = None) ?progress_cb
+    ?(compress = false) ?(compress_proofs = None) ?progress_cb ?(user_meta = [])
     (defs : Definitions.t) (r : Action.run_provers_slurm_submission) :
     _ * Test_compact_result.t =
   let@ _sp =
@@ -211,7 +211,7 @@ let execute_submit_job_action ?j ?timestamp ?dyn ?limits ?proof_dir ?output
       ~on_start_proof_check:(fun () -> progress#on_start_proof_check)
       ~on_proof_check:progress#on_proof_check_res
       ~on_done:(fun _ -> progress#on_done)
-      exp_r
+      ~user_meta exp_r
   in
   result
 
@@ -221,11 +221,26 @@ type top_task =
   | TT_run_slurm_submission of
       Action.run_provers_slurm_submission * Definitions.t
 
-let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
-    ?summary ?task ?(dir_files = []) ?proof_dir ?output ?(save = true)
-    ?(wal_mode = false) ?(compress = false) ?(compress_proofs = None)
-    ~desktop_notification ~no_failure ~update ?(sbatch = false) ?partition
-    ?nodes ?addr ?port ?ntasks ?nats (defs : Definitions.t) paths () : unit =
+let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = [])
+    ?(meta = "") ?summary ?task ?(dir_files = []) ?proof_dir ?output
+    ?(save = true) ?(wal_mode = false) ?(compress = false)
+    ?(compress_proofs = None) ~desktop_notification ~no_failure ~update
+    ?(sbatch = false) ?partition ?nodes ?addr ?port ?ntasks ?nats
+    (defs : Definitions.t) paths () : unit =
+  let user_meta =
+    if meta = "" then
+      []
+    else
+      CCString.split_on_char ',' meta
+      |> List.filter_map (fun piece ->
+             match CCString.split_on_char '=' piece with
+             | [ k; v ] -> Some (k, v)
+             | _ ->
+               Log.warn (fun m ->
+                   m "ignoring malformed meta entry %S (expected key=value)"
+                     piece);
+               None)
+  in
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "main" in
   Log.info (fun k ->
       k "run-main.main for paths %a" (Misc.pp_list Misc.Pp.pp_str) paths);
@@ -349,7 +364,7 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
       execute_run_prover_action ~uuid ?pp_results ?proof_dir ?dyn:progress
         ~limits ?j ?cpus ?output ~notify ~timestamp ~save ~wal_mode ~update
         ~compress ~compress_proofs ?progress_cb:server_progress_cb
-        ~total_tasks_ref defs run_provers_action
+        ~total_tasks_ref ~user_meta defs run_provers_action
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in
@@ -381,7 +396,7 @@ let main ?j ?cpus ?pp_results ?dyn ?timeout ?memory ?csv ?(provers = []) ?meta:_
     let top_res, (results : Test_compact_result.t) =
       execute_submit_job_action ~uuid ?proof_dir ?dyn:progress ~limits ?j
         ?output ~notify ~timestamp ~save ~wal_mode ~update ~compress
-        ~compress_proofs defs run_provers_action_sbatch
+        ~compress_proofs ~user_meta defs run_provers_action_sbatch
     in
     if CCOpt.is_some csv then (
       let res = Lazy.force top_res in
