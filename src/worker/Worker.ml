@@ -71,7 +71,6 @@ let run_prover_pb ?proof_dir ~limits ~prover ~pb provers checkers =
             k "proof-file size: %d"
               (try Unix.((stat pfile).st_size) with _ -> 0));
         let res =
-          let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
           Run_prover_problem.run_proof_check ~limits ~proof_file:pfile prover
             checker pb
         in

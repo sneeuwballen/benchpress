@@ -7,6 +7,10 @@ type t = {
   cmd: string; (* take $proof_file and $problem *)
   valid: string;
   invalid: string;
+  timeout: Limit.Time.t option;
+      (** checker-specific timeout; falls back to prover limits then 600s *)
+  memory: Limit.Memory.t option;
+      (** checker-specific memory limit; falls back to prover limits then 1GB *)
 }
 
 val pp : t Fmt.printer

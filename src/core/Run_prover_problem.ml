@@ -44,10 +44,12 @@ let run_proof_check ~limits prover checker pb ~proof_file : check_res =
   let raw =
     Proof_checker.run ~limits ~problem:pb.Problem.name ~proof_file checker
   in
-  let res =
-    Run_result.make_from_checker prover checker ~timeout:Limit.Time.default pb
-      raw
+  let timeout =
+    match limits.Limit.All.time with
+    | Some t -> t
+    | None -> Limit.Time.(mk ~s:600 ())
   in
+  let res = Run_result.make_from_checker prover checker ~timeout pb raw in
   res
 
 let is_bad (res : job_res) : bool =

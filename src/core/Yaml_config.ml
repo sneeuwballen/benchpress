@@ -49,8 +49,17 @@ let decode_proof_checker (cur_dir : string) : Proof_checker.t t =
   let* name = field "name" string in
   let* cmd = field "cmd" string >|= Misc.str_replace [ "cur_dir", cur_dir ] in
   let* valid = field "valid" string in
-  let+ invalid = field "invalid" string in
-  { Proof_checker.name; cmd; valid; invalid }
+  let* invalid = field "invalid" string in
+  let* timeout = field_opt "timeout" int in
+  let+ memory = field_opt "memory" int in
+  {
+    Proof_checker.name;
+    cmd;
+    valid;
+    invalid;
+    timeout = Option.map (fun s -> Limit.Time.mk ~s ()) timeout;
+    memory = Option.map (fun m -> Limit.Memory.mk ~m ()) memory;
+  }
 
 (** {2 Version} *)
 

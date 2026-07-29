@@ -95,8 +95,8 @@ module Exec_run_provers : sig
     provers: Prover.t list;
     checkers: Proof_checker.t Misc.Str_map.t;
     limits: Limit.All.t;
-    proof_dir: string option; (* directory in which to store proofs *)
-    compress_proofs: bool; (* compress proof files with zstd after checking *)
+    proof_dir: string option;  (** directory in which to store proofs *)
+    compress_proofs: bool;  (** compress proof files with zstd after checking *)
   }
 
   val expand :
@@ -280,6 +280,7 @@ end = struct
     cr_pb: Problem.t;
     cr_proof_file: string;
     cr_keep: bool;
+    cr_limits: Limit.All.t;  (** prover limits to fall back on *)
   }
 
   type run_task =
@@ -478,6 +479,7 @@ end = struct
                        cr_pb = pb;
                        cr_proof_file = actual_pf;
                        cr_keep = keep;
+                       cr_limits = self.limits;
                      })
       in
 
@@ -518,7 +520,7 @@ end = struct
       Log.debug (fun k ->
           k "proof-file size: %d"
             (try Unix.((stat proof_file).st_size) with _ -> 0));
-      let limits = Limit.All.mk ~time:(Limit.Time.mk ~h:1 ()) () in
+      let limits = cr.cr_limits in
       let res =
         Run_prover_problem.run_proof_check ~limits ~proof_file cr.cr_prover
           cr.cr_checker cr.cr_pb
