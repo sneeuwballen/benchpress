@@ -789,6 +789,262 @@ module Meta = struct
       [ get_cmd; set_cmd; delete_cmd; list_cmd ]
 end
 
+(** {2 Completions: generate shell completion scripts} *)
+
+module Gen_completions = struct
+  let all_cmds : Completions.cmd list =
+    [
+      {
+        name = "dir";
+        doc = "show directories where benchpress stores its state";
+        flags = [];
+        positional = Some "config|state";
+        subcmds = [];
+      };
+      {
+        name = "run";
+        doc = "run a task on directories of problem files";
+        flags =
+          [
+            Completions.flag_of_param [ "j" ] ~has_value:true ();
+            Completions.flag_of_param [ "progress" ] ();
+            Completions.flag_of_param [ "F" ] ~has_value:true ();
+            Completions.flag_of_param [ "proof-dir" ] ~has_value:true ();
+            Completions.flag_of_param [ "task" ] ~has_value:true ();
+            Completions.flag_of_param [ "t"; "timeout" ] ~has_value:true ();
+            Completions.flag_of_param [ "m"; "memory" ] ~has_value:true ();
+            Completions.flag_of_param [ "meta" ] ~has_value:true ();
+            Completions.flag_of_param [ "p"; "provers" ] ~has_value:true ();
+            Completions.flag_of_param [ "csv" ] ~has_value:true ();
+            Completions.flag_of_param [ "summary" ] ~has_value:true ();
+            Completions.flag_of_param [ "color" ] ();
+            Completions.flag_of_param [ "o"; "output" ] ~has_value:true ();
+            Completions.flag_of_param [ "save" ] ~has_value:true ();
+            Completions.flag_of_param [ "wal" ] ();
+            Completions.flag_of_param
+              [ "dn"; "desktop-notification" ]
+              ~has_value:true ();
+            Completions.flag_of_param [ "no-failure"; "nf" ] ();
+            Completions.flag_of_param [ "u"; "update" ] ();
+            Completions.flag_of_param [ "compress" ] ();
+            Completions.flag_of_param
+              [ "cp"; "compress-proofs" ]
+              ~has_value:true ();
+            Completions.flag_of_param [ "server" ] ~has_value:true ();
+            Completions.flag_of_param [ "cpus" ] ~has_value:true ();
+            Completions.flag_of_param [ "c"; "config" ] ~has_value:true ();
+            Completions.flag_of_param [ "d"; "default" ] ~has_value:true ();
+          ];
+        positional = Some "PATH";
+        subcmds = [];
+      };
+      {
+        name = "sample";
+        doc = "sample N files in the given directories";
+        flags = [ Completions.flag_of_param [ "n" ] ~has_value:true () ];
+        positional = Some "DIR";
+        subcmds = [];
+      };
+      {
+        name = "list-files";
+        doc = "list benchmark result files";
+        flags = [ Completions.flag_of_param [ "abs" ] () ];
+        positional = None;
+        subcmds = [];
+      };
+      {
+        name = "list";
+        doc = "list benchmark result files (alias)";
+        flags = [ Completions.flag_of_param [ "abs" ] () ];
+        positional = None;
+        subcmds = [];
+      };
+      {
+        name = "show";
+        doc = "show benchmark results";
+        flags =
+          [
+            Completions.flag_of_param [ "csv" ] ();
+            Completions.flag_of_param [ "csv-file" ] ~has_value:true ();
+            Completions.flag_of_param [ "jsonl" ] ();
+            Completions.flag_of_param [ "jsonl-file" ] ~has_value:true ();
+            Completions.flag_of_param [ "check" ] ();
+            Completions.flag_of_param [ "bad" ] ();
+            Completions.flag_of_param [ "summary" ] ~has_value:true ();
+            Completions.flag_of_param [ "details" ] ();
+            Completions.flag_of_param [ "color" ] ();
+            Completions.flag_of_param [ "run" ] ~has_value:true ();
+          ];
+        positional = Some "FILE";
+        subcmds = [];
+      };
+      {
+        name = "check-config";
+        doc = "parse and print configuration file(s)";
+        flags = [ Completions.flag_of_param [ "d"; "default" ] () ];
+        positional = Some "FILE";
+        subcmds = [];
+      };
+      {
+        name = "new-config";
+        doc = "create a new YAML config file with schema annotation";
+        flags =
+          [ Completions.flag_of_param [ "o"; "output" ] ~has_value:true () ];
+        positional = None;
+        subcmds = [];
+      };
+      {
+        name = "convert-config";
+        doc = "convert a config file between YAML and JSON";
+        flags =
+          [
+            Completions.flag_of_param [ "f"; "format" ] ~has_value:true ();
+            Completions.flag_of_param [ "o"; "output" ] ~has_value:true ();
+          ];
+        positional = Some "FILE";
+        subcmds = [];
+      };
+      {
+        name = "show-prover";
+        doc = "show definitions of given prover(s)";
+        flags =
+          [
+            Completions.flag_of_param [ "c"; "config" ] ~has_value:true ();
+            Completions.flag_of_param [ "d"; "default" ] ~has_value:true ();
+          ];
+        positional = Some "NAME";
+        subcmds = [];
+      };
+      {
+        name = "list-provers";
+        doc = "list all available provers";
+        flags = [];
+        positional = None;
+        subcmds = [];
+      };
+      {
+        name = "sql-convert";
+        doc = "convert result(s) into sqlite files";
+        flags =
+          [
+            Completions.flag_of_param [ "c"; "config" ] ~has_value:true ();
+            Completions.flag_of_param [ "d"; "default" ] ~has_value:true ();
+          ];
+        positional = Some "FILES";
+        subcmds = [];
+      };
+      {
+        name = "task-list";
+        doc = "list all available tasks";
+        flags = [];
+        positional = None;
+        subcmds = [];
+      };
+      {
+        name = "task-show";
+        doc = "show definitions of given task(s)";
+        flags = [];
+        positional = Some "NAME";
+        subcmds = [];
+      };
+      {
+        name = "strip-proofs";
+        doc = "remove stored proofs from result DB file(s)";
+        flags =
+          [
+            Completions.flag_of_param [ "c"; "config" ] ~has_value:true ();
+            Completions.flag_of_param [ "d"; "default" ] ~has_value:true ();
+          ];
+        positional = Some "FILE";
+        subcmds = [];
+      };
+      {
+        name = "meta";
+        doc = "get/set/list/delete user metadata";
+        flags = [];
+        positional = None;
+        subcmds =
+          [
+            {
+              name = "get";
+              doc = "get a metadata value";
+              flags =
+                [
+                  Completions.flag_of_param [ "c"; "config" ] ~has_value:true ();
+                  Completions.flag_of_param [ "d"; "default" ] ~has_value:true
+                    ();
+                  Completions.flag_of_param [ "file" ] ~has_value:true ();
+                ];
+              positional = Some "key";
+              subcmds = [];
+            };
+            {
+              name = "set";
+              doc = "set a metadata key/value";
+              flags =
+                [
+                  Completions.flag_of_param [ "c"; "config" ] ~has_value:true ();
+                  Completions.flag_of_param [ "d"; "default" ] ~has_value:true
+                    ();
+                  Completions.flag_of_param [ "file" ] ~has_value:true ();
+                ];
+              positional = Some "key=value";
+              subcmds = [];
+            };
+            {
+              name = "delete";
+              doc = "delete a metadata key";
+              flags =
+                [
+                  Completions.flag_of_param [ "c"; "config" ] ~has_value:true ();
+                  Completions.flag_of_param [ "d"; "default" ] ~has_value:true
+                    ();
+                  Completions.flag_of_param [ "file" ] ~has_value:true ();
+                ];
+              positional = Some "key";
+              subcmds = [];
+            };
+            {
+              name = "list";
+              doc = "list all user metadata";
+              flags =
+                [
+                  Completions.flag_of_param [ "c"; "config" ] ~has_value:true ();
+                  Completions.flag_of_param [ "d"; "default" ] ~has_value:true
+                    ();
+                  Completions.flag_of_param [ "file" ] ~has_value:true ();
+                ];
+              positional = None;
+              subcmds = [];
+            };
+          ];
+      };
+    ]
+
+  let run_bash () =
+    let@ () = catch_err in
+    print_string (Completions.gen_bash all_cmds)
+
+  let run_fish () =
+    let@ () = catch_err in
+    print_string (Completions.gen_fish all_cmds)
+
+  let bash_cmd =
+    let open Cmdliner in
+    let doc = "generate bash completion script" in
+    Cmd.v (Cmd.info ~doc "bash") Term.(const run_bash $ const ())
+
+  let fish_cmd =
+    let open Cmdliner in
+    let doc = "generate fish completion script" in
+    Cmd.v (Cmd.info ~doc "fish") Term.(const run_fish $ const ())
+
+  let cmd =
+    let open Cmdliner in
+    let doc = "generate shell completion scripts (bash|fish)" in
+    Cmd.group (Cmd.info ~doc "completions") [ bash_cmd; fish_cmd ]
+end
+
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -828,6 +1084,7 @@ let parse_opt () =
       Slurm.cmd;
       Strip_proofs.cmd;
       Meta.cmd;
+      Gen_completions.cmd;
     ]
   in
   Cmd.eval_value (Cmd.group info ~default cmds)
