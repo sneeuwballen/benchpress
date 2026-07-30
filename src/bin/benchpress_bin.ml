@@ -670,6 +670,125 @@ module Strip_proofs = struct
         const run $ params_cmdliner_term () $ Bin_utils.definitions_term)
 end
 
+(** {2 Meta: get/set/delete/list user metadata} *)
+
+module Meta = struct
+  type get_params = {
+    key: string; [@pos 0] [@docv "KEY"]  (** metadata key to read *)
+    file: string option; [@names [ "file" ]] [@docv "FILE"]
+        (** result DB file (default: latest) *)
+  }
+  [@@deriving subliner]
+
+  type set_params = {
+    key: string; [@pos 0] [@docv "KEY"]  (** metadata key *)
+    value: string; [@pos 1] [@docv "VALUE"]  (** metadata value *)
+    file: string option; [@names [ "file" ]] [@docv "FILE"]
+        (** result DB file (default: latest) *)
+  }
+  [@@deriving subliner]
+
+  type delete_params = {
+    key: string; [@pos 0] [@docv "KEY"]  (** metadata key to delete *)
+    file: string option; [@names [ "file" ]] [@docv "FILE"]
+        (** result DB file (default: latest) *)
+  }
+  [@@deriving subliner]
+
+  type list_params = {
+    file: string option; [@names [ "file" ]] [@docv "FILE"]
+        (** result DB file (default: latest) *)
+  }
+  [@@deriving subliner]
+
+  let resolve_file file_opt =
+    match file_opt with
+    | Some f -> f
+    | None ->
+      let data_dir = Filename.concat (Xdg.data_dir ()) !Xdg.name_of_project in
+      let files, _ = Bin_utils.list_entries data_dir ~limit:1 in
+      (match files with
+      | (path, _) :: _ -> Filename.basename path
+      | [] -> Error.failf "no result files found in %s" data_dir)
+
+  let get_run (p : get_params) (log_lvl, _defs) =
+    Misc.setup_logs log_lvl;
+    let@ () = catch_err in
+    let file = resolve_file p.file in
+    Bin_utils.with_file_as_db ~map_err:(Error.wrapf "processing '%s'" file) file
+      (fun db ->
+        match Test_metadata.get_user_meta db p.key with
+        | Some (_, v) -> print_endline v
+        | None -> Error.failf "key '%s' not found" p.key)
+
+  let set_run (p : set_params) (log_lvl, _defs) =
+    Misc.setup_logs log_lvl;
+    let@ () = catch_err in
+    let file = resolve_file p.file in
+    Bin_utils.with_file_as_db ~map_err:(Error.wrapf "processing '%s'" file) file
+      (fun db ->
+        Test_metadata.set_user_meta db ~key:p.key ~value:p.value;
+        Format.printf "set %s = %s\n" p.key p.value)
+
+  let delete_run (p : delete_params) (log_lvl, _defs) =
+    Misc.setup_logs log_lvl;
+    let@ () = catch_err in
+    let file = resolve_file p.file in
+    Bin_utils.with_file_as_db ~map_err:(Error.wrapf "processing '%s'" file) file
+      (fun db ->
+        Test_metadata.delete_user_meta db ~key:p.key;
+        Format.printf "deleted %s\n" p.key)
+
+  let list_run (p : list_params) (log_lvl, _defs) =
+    Misc.setup_logs log_lvl;
+    let@ () = catch_err in
+    let file = resolve_file p.file in
+    Bin_utils.with_file_as_db ~map_err:(Error.wrapf "processing '%s'" file) file
+      (fun db ->
+        let all = Test_metadata.get_all_user_meta db in
+        match all with
+        | [] -> Format.printf "(no user metadata)\n"
+        | _ -> List.iter (fun (k, v) -> Format.printf "%s: %s\n" k v) all)
+
+  let get_cmd =
+    let doc = "get a user metadata value" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "get")
+      Cmdliner.Term.(
+        const get_run $ get_params_cmdliner_term () $ Bin_utils.definitions_term)
+
+  let set_cmd =
+    let doc = "set a user metadata value" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "set")
+      Cmdliner.Term.(
+        const set_run $ set_params_cmdliner_term () $ Bin_utils.definitions_term)
+
+  let delete_cmd =
+    let doc = "delete a user metadata key" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "delete")
+      Cmdliner.Term.(
+        const delete_run
+        $ delete_params_cmdliner_term ()
+        $ Bin_utils.definitions_term)
+
+  let list_cmd =
+    let doc = "list all user metadata" in
+    Cmdliner.Cmd.v
+      (Cmdliner.Cmd.info ~doc "list")
+      Cmdliner.Term.(
+        const list_run
+        $ list_params_cmdliner_term ()
+        $ Bin_utils.definitions_term)
+
+  let cmd =
+    let doc = "get/set/list/delete user metadata in result DBs" in
+    Cmdliner.Cmd.group
+      (Cmdliner.Cmd.info ~doc "meta")
+      [ get_cmd; set_cmd; delete_cmd; list_cmd ]
+end
+
 (** {2 Main: Parse CLI} *)
 
 let parse_opt () =
@@ -708,6 +827,7 @@ let parse_opt () =
       Task_show.cmd;
       Slurm.cmd;
       Strip_proofs.cmd;
+      Meta.cmd;
     ]
   in
   Cmd.eval_value (Cmd.group info ~default cmds)
