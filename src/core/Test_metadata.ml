@@ -138,6 +138,16 @@ let delete_user_meta (db : Db.t) ~key : unit =
     key
   |> Misc.unwrap_db ~db (fun () -> spf "delete-user-meta '%s'" key)
 
+let get_user_meta (db : Db.t) (key : string) : (string * string) option =
+  if is_system_key key then
+    Error.failf
+      "cannot read system metadata key '%s' (use 'benchpress show' instead)" key;
+  Db.exec db {|SELECT value FROM meta WHERE key = ?;|} key
+    ~ty:Db.Ty.(p1 text, p1 (nullable any_str), fun v -> key, v)
+    ~f:Db.Cursor.next
+  |> Misc.unwrap_db ~db (fun () -> spf "reading meta key '%s'" key)
+  |> CCOpt.flat_map (fun (k, v) -> CCOpt.map (fun v -> k, v) v)
+
 let of_db db : t =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "metadata.of-db" in
   Error.guard (Error.wrap "while reading metadata") @@ fun () ->
