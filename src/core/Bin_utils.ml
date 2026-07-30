@@ -175,8 +175,22 @@ let printbox_compact_results (results : Test_compact_result.t) : unit =
   ()
 
 let printbox_results ~details (results : Test_top_result.t) : unit =
+  let meta = results.Test_top_result.meta in
+  (* Header *)
+  Format.printf "START DATE: %s\n"
+    (CCOpt.map_or ~default:"<unavailable>" Misc.human_datetime meta.timestamp);
+  Format.printf "DURATION:   %s\n"
+    (CCOpt.map_or ~default:"<unavailable>" Misc.human_duration
+       meta.total_wall_time);
+  Format.printf "UUID:       %s\n" (Uuidm.to_string meta.uuid);
+  Format.printf "\n%!";
+  (* Metadata box *)
+  let box_meta = Test_metadata.to_printbox meta in
+  Printf.printf "%s\n%!" (PrintBox_text.to_string box_meta);
+  (* STAT *)
   (let st = Test_top_result.stat results in
    printbox_stat ~details st);
+  (* ANALYSIS *)
   (let a = Test_top_result.analyze results in
    printbox_analyze a);
   ()
