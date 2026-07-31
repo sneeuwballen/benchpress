@@ -4,17 +4,26 @@ open Common
 module Log = (val Logs.src_log (Logs.Src.create "benchpress.runexec-action"))
 
 (** Compress [src] into [dst] (a [.zst] file) with zstd. The source is removed
-    on success ([--rm]); on failure the source is kept and a warning logged. *)
+    on success ([--rm]); on failure the source is kept and a warning logged. If
+    [src] does not exist (e.g. a prover timed out without writing its proof
+    file, or a file vanished between a directory listing and here), it is
+    skipped with a debug message instead of shelling out to zstd. *)
 let compress_file_to_zst ~src ~dst =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "zstd.compress" in
   Trace.add_data_to_span _sp [ "src", `String src; "dst", `String dst ];
-  let rc =
-    Sys.command
-      (Printf.sprintf "zstd -q -f --rm %s -o %s" (Filename.quote src)
-         (Filename.quote dst))
-  in
-  if rc <> 0 then
-    Logs.warn (fun k -> k "zstd compression of '%s' failed (exit %d)" src rc)
+  if not (Sys.file_exists src) then (
+    Logs.debug (fun k ->
+        k "zstd compression: '%s' does not exist, skipping" src);
+    ()
+  ) else (
+    let rc =
+      Sys.command
+        (Printf.sprintf "zstd -q -f --rm %s -o %s" (Filename.quote src)
+           (Filename.quote dst))
+    in
+    if rc <> 0 then
+      Logs.warn (fun k -> k "zstd compression of '%s' failed (exit %d)" src rc)
+  )
 
 (** Decompress a [.zst] file, returning the path of the decompressed file. The
     decompressed file is placed next to [src] with a [.tmp] suffix. On failure,
