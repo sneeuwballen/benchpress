@@ -316,11 +316,8 @@ let render_user_meta_html file entries =
 
 let with_result_db_read file ~f =
   let file_full = Bin_utils.mk_file_full file in
-  if Bin_utils.is_sqlite_file file_full then
-    Db.with_db ~timeout:1500 ~mode:`READONLY file_full f
-  else if Misc.is_zst_file file_full then
-    Bin_utils.with_decompressed_zst file_full (fun tmp ->
-        Db.with_db ~timeout:1500 ~mode:`READONLY tmp f)
+  if Bin_utils.is_sqlite_file file_full || Misc.is_zst_file file_full then
+    Bin_utils.with_db_maybe_decompress ~timeout:1500 file_full f
   else
     failf 400 "unsupported file format for '%s'" file
 

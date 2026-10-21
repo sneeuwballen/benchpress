@@ -174,7 +174,7 @@ let cache_meta (db : Db.t) self (meta : Test_metadata.t) =
 
 let importdb t (p : string) =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "meta-cache.importdb" in
-  Db.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY p (fun meta_db ->
+  Bin_utils.with_db_maybe_decompress ~cache:`PRIVATE p (fun meta_db ->
       let meta = Test_metadata.of_db meta_db in
       (* Only cache if complete *)
       if Test_metadata.is_complete meta then (
@@ -281,7 +281,7 @@ let find_similar_runs (t : t) (file_path : string) : string list =
           | Some h -> Some h
           | None ->
             (* hash was deleted or not yet cached; recompute and store *)
-            Db.with_db ~timeout:500 ~cache:`PRIVATE ~mode:`READONLY file_path
+            Bin_utils.with_db_maybe_decompress ~cache:`PRIVATE file_path
               (fun source_db -> cache_file_hash t.database self source_db);
             get t.database self "hash-file-set")
         | None -> None

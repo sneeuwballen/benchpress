@@ -52,7 +52,7 @@ let combine (l : (_ * t) list) : t =
   }
 
 let of_file ?provers file : t =
-  try Db.with_db ~timeout:500 ~mode:`READONLY file (of_db ?provers)
+  try Bin_utils.with_db_maybe_decompress file (of_db ?provers)
   with e -> Error.(raise @@ of_exn e)
 
 let to_echarts_json (self : t) : string =

@@ -22,11 +22,8 @@ let handle_evolution (self : Server_common.t) : unit =
         try
           let meta = Meta_cache.find self.meta_cache path in
           let summary =
-            if Bin_utils.is_sqlite_file path then
-              Db.with_db ~timeout:500 ~mode:`READONLY path per_prover_summary
-            else if Misc.is_zst_file path then
-              Bin_utils.with_decompressed_zst path (fun tmp ->
-                  Db.with_db ~timeout:500 ~mode:`READONLY tmp per_prover_summary)
+            if Bin_utils.is_sqlite_file path || Misc.is_zst_file path then
+              Bin_utils.with_db_maybe_decompress path per_prover_summary
             else
               failf 400 "unsupported file format for '%s'" path
           in

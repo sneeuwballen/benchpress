@@ -70,6 +70,15 @@ let with_decompressed_zst (path : string) (f : string -> 'a) : 'a =
         Error.failf "zstd decompression of '%s' failed (exit %d)" path rc;
       f tmp)
 
+(** Open [file] as a sqlite DB and pass it to [f]; decompress first if [file]
+    is a zstd-compressed DB. *)
+let with_db_maybe_decompress ?(timeout = 500) ?cache ?(mode = `READONLY) file
+    (f : Db.t -> 'a) : 'a =
+  if is_zst_file file then
+    with_decompressed_zst file (fun tmp ->
+        Db.with_db ~timeout ?cache ~mode tmp f)
+  else Db.with_db ~timeout ?cache ~mode file f
+
 let get_definitions () : Definitions.t =
   let conf_files =
     let default_conf = Misc.default_config () in
@@ -223,15 +232,10 @@ let guess_uuid (f : string) =
 let load_file_full (file : string) : string * Test_top_result.t =
   let file = mk_file_full file in
   Error.guard (Error.wrapf "load_file_full '%s'" file) @@ fun () ->
-  if is_sqlite_file file then
-    Db.with_db ~timeout:1500 ~mode:`NO_CREATE file (fun db ->
+  if is_sqlite_file file || is_zst_file file then
+    with_db_maybe_decompress ~timeout:1500 ~mode:`NO_CREATE file (fun db ->
         let r = Test_top_result.of_db ~analyze_full:true db in
         file, r)
-  else if is_zst_file file then
-    with_decompressed_zst file (fun tmp ->
-        Db.with_db ~timeout:1500 ~mode:`NO_CREATE tmp (fun db ->
-            let r = Test_top_result.of_db ~analyze_full:true db in
-            file, r))
   else
     Error.failf "invalid name %S, expected a .sqlite or .sqlite.zst[d] file"
       file
@@ -243,13 +247,7 @@ let with_file_as_db ~map_err filename file : _ =
   Error.guard map_err @@ fun () ->
   Error.guard (Error.wrapf "processing DB '%s'" filename) @@ fun () ->
   let filename = mk_file_full filename in
-  try
-    if is_zst_file filename then
-      with_decompressed_zst filename (fun tmp ->
-          Db.with_db ~timeout:500 ~mode:`READONLY tmp file)
-    else
-      Db.with_db ~timeout:500 ~mode:`READONLY filename file
-  with
+  try with_db_maybe_decompress filename file with
   | Error.E _ as e -> raise e
   | Db.RcError rc -> Error.raise (Misc.err_of_db rc)
   | e -> Error.raise (Error.of_exn e)
@@ -263,28 +261,17 @@ let with_loaded_file ~map_err filename (process : Test_top_result.t -> 'a) : 'a
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "with-loaded-file" in
   Trace.add_data_to_span _sp [ "file", `String filename ];
   let filename = mk_file_full filename in
-  if is_zst_file filename then
-    with_decompressed_zst filename (fun tmp ->
-        Db.with_db ~timeout:1500 ~mode:`READONLY tmp (fun db ->
-            let r = Test_top_result.of_db ~analyze_full:true db in
-            process r))
-  else
-    Db.with_db ~timeout:1500 ~mode:`READONLY filename (fun db ->
-        let r = Test_top_result.of_db ~analyze_full:true db in
-        process r)
+  with_db_maybe_decompress ~timeout:1500 filename (fun db ->
+      let r = Test_top_result.of_db ~analyze_full:true db in
+      process r)
 
 let load_file_summary ?(full = false) (file : string) :
     string * Test_compact_result.t =
   let file = mk_file_full file in
-  if is_sqlite_file file then
-    Db.with_db ~timeout:500 ~mode:`READONLY file (fun db ->
+  if is_sqlite_file file || is_zst_file file then
+    with_db_maybe_decompress file (fun db ->
         let cr = Test_compact_result.of_db ~full db in
         file, cr)
-  else if is_zst_file file then
-    with_decompressed_zst file (fun tmp ->
-        Db.with_db ~timeout:500 ~mode:`READONLY tmp (fun db ->
-            let cr = Test_compact_result.of_db ~full db in
-            file, cr))
   else (
     let file', res = load_file_full file in
     let cr = Test_top_result.to_compact_result res in
