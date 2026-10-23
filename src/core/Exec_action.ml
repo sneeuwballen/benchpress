@@ -44,14 +44,15 @@ let decompress_file_from_zst ~src =
     Some dst
 
 (** Compress every proof file in [dir] with zstd. Files already ending in [.zst]
-    and extensionless files (the [pb-*] problem copies) are skipped. *)
+    and the [pb-*] problem copies are skipped. *)
 let compress_proof_files dir =
   let files =
     try
       Sys.readdir dir |> Array.to_list
       |> List.filter (fun f ->
              let ext = Filename.extension f in
-             ext <> ".zst" && ext <> "")
+             ext <> ".zst" && ext <> ""
+             && not (CCString.prefix ~pre:"pb-" f))
       |> List.map (Filename.concat dir)
     with _ -> []
   in
