@@ -5,7 +5,7 @@ ARG OPAM_REPO_COMMIT=3ca11aaa3b437179fd587ebcbe006b6aa2c21683
 FROM alpine:${ALPINE_VERSION} AS build
 ARG OCAML_VERSION
 ARG OPAM_REPO_COMMIT
-RUN apk add --no-cache ca-certificates curl git unzip build-base pkgconf m4 \
+RUN apk add --no-cache ca-certificates curl git bash unzip build-base pkgconf m4 \
       opam zlib-dev curl-dev openssl-dev sqlite-dev jemalloc-dev
 ENV OPAMROOT=/root/.opam OPAMSWITCH=/root/w OPAMYES=1 OPAMCONFIRMLEVEL=unsafe-yes
 # deterministically setup switch from a commit of opam-repo
@@ -16,8 +16,9 @@ RUN git init /tmp/opam-repo && cd /tmp/opam-repo && \
     opam init --disable-sandboxing --bare --no-setup -k local /tmp/opam-repo && \
     opam switch create /root/w --packages=ocaml-base-compiler.$OCAML_VERSION && \
     opam install --no-depexts \
-      dune containers csv cmdliner iter logs ptime uuidm base64 printbox \
+      dune containers csv cmdliner iter logs ptime uuidm base64 \
       re processor yaml jsonm sqlite3 sqlite3_utils jemalloc eio eio_posix \
+      printbox printbox-text \
       prometheus yojson pbrt pbrt_services pbrt_yojson digestif \
       mirage-crypto-rng ppx_subliner && \
     rm -rf /tmp/opam-repo
