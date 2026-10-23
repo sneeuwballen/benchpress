@@ -1,0 +1,56 @@
+name: ghcr cleanup
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: package name, defaults to the calling repository name
+        type: string
+        required: false
+      older-than-days:
+        description: delete tagged versions older than this; the latest tag is always kept
+        type: number
+        default: 30
+      dry-run:
+        description: log deletions without performing them
+        type: boolean
+        default: true
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OWNER: ${{ github.repository_owner }}
+      PKG: ${{ inputs.package }}
+      DAYS: ${{ inputs.older-than-days }}
+      DRY_RUN: ${{ inputs.dry-run && 'true' || 'false' }}
+    steps:
+      - name: delete old and untagged versions
+        run: |
+          set -euo pipefail
+          pkg=${PKG:-${GITHUB_REPOSITORY#*/}}
+          cutoff=$(date -u -d "$DAYS days ago" +%Y-%m-%dT%H:%M:%SZ)
+          if [[ $(gh api "users/$OWNER" --jq .type) == Organization ]]; then
+            base="/orgs/$OWNER"
+          else
+            base="/users/$OWNER"
+          fi
+          base="$base/packages/container/$pkg"
+
+          if ! gh api "$base/versions" --paginate \
+              --jq '.[] | [.id, .created_at, ((.metadata.container.tags // []) | join(","))] | @tsv' \
+              > versions.tsv; then
+            echo "no versions for $pkg, skipping"
+            exit 0
+          fi
+          while IFS=$'\t' read -r id created tags; do
+            if [[ ",$tags," == *',latest,'* ]]; then continue; fi
+            if [[ -n "$tags" && "$created" > "$cutoff" ]]; then continue; fi
+            echo "deleting $id (created $created, tags: ${tags:-none})"
+            [[ "$DRY_RUN" == true ]] || gh api -X DELETE "$base/versions/$id"
+          done < versions.tsv

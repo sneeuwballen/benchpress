@@ -48,6 +48,7 @@ jobs:
     name: docker image
     needs: run
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: c-cube/c-cube-common/.github/workflows/docker-publish.yml@main
+    uses: ./.github/workflows/docker-publish.yml
     with:
-      image-name: c-cube/benchpress-server
+      image-name: sneeuwballen/benchpress-server
+      file: Dockerfile.server

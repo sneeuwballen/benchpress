@@ -33,7 +33,7 @@ RUN opam exec -- dune build --profile=release src/server/benchpress_server.exe &
     strip _build/default/src/server/benchpress_server.exe
 
 FROM alpine:${ALPINE_VERSION} AS prod
-RUN apk add --no-cache sqlite-libs zstd curl libjemalloc ca-certificates
+RUN apk add --no-cache sqlite-libs zstd curl jemalloc ca-certificates
 COPY docker/benchpress-server.conf.yaml /config/benchpress/conf.yaml
 COPY --from=build /src/_build/default/src/server/benchpress_server.exe \
      /usr/local/bin/benchpress-server

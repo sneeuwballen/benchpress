@@ -7,7 +7,7 @@ on:
 
 jobs:
   cleanup:
-    uses: c-cube/c-cube-common/.github/workflows/ghcr-cleanup.yml@main
+    uses: ./.github/workflows/ghcr-cleanup.yml
     with:
       package: benchpress-server
       older-than-days: 30
