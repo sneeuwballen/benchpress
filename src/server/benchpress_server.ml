@@ -175,21 +175,21 @@ let build_progress_bars (self : Server_common.t) ~(now : float) : string =
   let ext_cards =
     Ext_jobs.all_active self.ext_jobs
     |> List.map (fun (j : Ext_jobs.job) ->
-           let r = j.report in
-           let total = Int32.to_int r.Api.total_tasks in
-           let done_ = Int32.to_int r.Api.done_tasks in
-           let pct =
-             if total > 0 then
-               done_ * 100 / total
-             else
-               0
-           in
-           let elapsed = now -. r.Api.start_ts in
-           let job_url =
-             result_url_of_job ~uuid:r.Api.uuid ~start_ts:r.Api.start_ts
-           in
-           card_of_job ~uuid:r.Api.uuid ~job_url ~start_ts:r.Api.start_ts ~done_
-             ~total ~elapsed ~pct ~active:r.Api.active)
+        let r = j.report in
+        let total = Int32.to_int r.Api.total_tasks in
+        let done_ = Int32.to_int r.Api.done_tasks in
+        let pct =
+          if total > 0 then
+            done_ * 100 / total
+          else
+            0
+        in
+        let elapsed = now -. r.Api.start_ts in
+        let job_url =
+          result_url_of_job ~uuid:r.Api.uuid ~start_ts:r.Api.start_ts
+        in
+        card_of_job ~uuid:r.Api.uuid ~job_url ~start_ts:r.Api.start_ts ~done_
+          ~total ~elapsed ~pct ~active:r.Api.active)
   in
   (* Also include the local TaskQueue job, if any *)
   let local_cards =

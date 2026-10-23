@@ -360,11 +360,11 @@ let to_printbox_invalid_proof ?link:(mk_link = default_linker) r : PrintBox.t =
     let l =
       r.invalid_proof_full
       |> CCList.map (fun (pb, res, t) ->
-             [
-               mk_link pb.Problem.name;
-               text (Proof_check_res.to_string res);
-               text (Misc.human_duration t);
-             ])
+          [
+            mk_link pb.Problem.name;
+            text (Proof_check_res.to_string res);
+            text (Misc.human_duration t);
+          ])
     in
     let header =
       let tb = text_with_style Style.bold in

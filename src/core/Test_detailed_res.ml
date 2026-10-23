@@ -29,7 +29,7 @@ let get_proof_check db p file : proof_check_res option =
           ~ty:Db.Ty.([ text; text ], [ text ], fun i -> i)
           ~f:Db.Cursor.next p file
         |> Misc.unwrap_db (fun () ->
-               spf "getting proof check res for '%s' on '%s'" p file)
+            spf "getting proof check res for '%s' on '%s'" p file)
         |> Error.unwrap_opt "expected result"
       and stdout, rtime =
         Db.exec db
@@ -37,7 +37,7 @@ let get_proof_check db p file : proof_check_res option =
           ~ty:Db.Ty.([ text; text ], [ blob; float ], fun x y -> x, y)
           ~f:Db.Cursor.get_one_exn p file
         |> Misc.unwrap_db (fun () ->
-               spf "getting proof check output for '%s' on '%s'" p file)
+            spf "getting proof check output for '%s' on '%s'" p file)
       in
       Some { res = Proof_check_res.of_string r; stdout; rtime }
     with Error.E e ->
@@ -79,7 +79,7 @@ let list_keys ?(offset = 0) ?(page_size = 500) ?(filter_prover = "")
       ~ty:Db.Ty.(p3 text text text, p1 int, id)
       ~f:Db.Cursor.get_one_exn filter_prover filter_res filter_pb
     |> Misc.unwrap_db (fun () ->
-           spf "counting results of '%s' with '%s'" filter_prover filter_res)
+        spf "counting results of '%s' with '%s'" filter_prover filter_res)
   in
 
   (* ask for [limit+1] entries *)
@@ -104,8 +104,8 @@ let list_keys ?(offset = 0) ?(page_size = 500) ?(filter_prover = "")
       ~f:Db.Cursor.to_list_rev filter_prover filter_res filter_pb
       (page_size + 1) offset
     |> Misc.unwrap_db (fun () ->
-           spf "listing %d results of '%s' with '%s'" (page_size + 1)
-             filter_prover filter_res)
+        spf "listing %d results of '%s' with '%s'" (page_size + 1) filter_prover
+          filter_res)
   in
   if List.length l > page_size then
     ( (* there are more result, cut the last one *)
@@ -145,8 +145,7 @@ let get_res db prover file : _ * proof_check_res option =
           ))
     |> Misc.unwrap_db (fun () -> spf "listing results")
     |> Error.unwrap_opt' (fun () ->
-           spf "expected a non-empty result for prover='%s', file='%s'" prover
-             file)
+        spf "expected a non-empty result for prover='%s', file='%s'" prover file)
     |>
     fun (res, file_expect, timeout, errcode, stdout, stderr, rtime, utime, stime)
     ->

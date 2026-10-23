@@ -118,22 +118,22 @@ let to_iter self : _ Iter.t = Str_map.to_iter self.defs
 let all_provers self : _ list =
   Str_map.values self.defs
   |> Iter.filter_map (function
-       | D_prover p -> Some p
-       | _ -> None)
+    | D_prover p -> Some p
+    | _ -> None)
   |> Iter.to_rev_list
 
 let all_checkers self : _ list =
   Str_map.values self.defs
   |> Iter.filter_map (function
-       | D_proof_checker c -> Some c
-       | _ -> None)
+    | D_proof_checker c -> Some c
+    | _ -> None)
   |> Iter.to_rev_list
 
 let all_tasks self : _ list =
   Str_map.values self.defs
   |> Iter.filter_map (function
-       | D_task t -> Some t
-       | _ -> None)
+    | D_task t -> Some t
+    | _ -> None)
   |> Iter.to_rev_list
 
 let all_dirs self : Dir.t list = self.dirs
@@ -202,7 +202,7 @@ let mk_subdir self path : Subdir.t =
         None)
     self.dirs
   |> Error.unwrap_opt' (fun () ->
-         spf "no known directory contains path %S" path)
+      spf "no known directory contains path %S" path)
 
 let mk_limits ?timeout ?memory () =
   let time = CCOpt.map (fun s -> Limit.Time.mk ~s ()) timeout in

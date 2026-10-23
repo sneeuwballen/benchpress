@@ -27,10 +27,10 @@ let handle_show_echarts (self : Server_common.t) : unit =
     | fs ->
       fs
       |> List.mapi (fun i (file, provers) ->
-             guardf 500 (Error.wrapf "building cactus plot for %s" file)
-             @@ fun () ->
-             let p = Cactus_plot.of_file ?provers file in
-             spf "file %d (%s)" i (Filename.basename file), p)
+          guardf 500 (Error.wrapf "building cactus plot for %s" file)
+          @@ fun () ->
+          let p = Cactus_plot.of_file ?provers file in
+          spf "file %d (%s)" i (Filename.basename file), p)
       |> Cactus_plot.combine
   in
   let json = Cactus_plot.to_echarts_json plot in

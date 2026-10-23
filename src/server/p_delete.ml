@@ -11,12 +11,12 @@ let handle_delete (self : Server_common.t) : unit =
     let files =
       names
       |> CCList.map (fun s ->
-             match Bin_utils.mk_file_full s with
-             | exception Error.E e ->
-               Log.err (fun k -> k "cannot load file %S: %a" s Error.pp e);
-               H.Response.fail_raise ~code:404 "invalid file %S: %s" s
-               @@ Error.show e
-             | x -> x)
+          match Bin_utils.mk_file_full s with
+          | exception Error.E e ->
+            Log.err (fun k -> k "cannot load file %S: %a" s Error.pp e);
+            H.Response.fail_raise ~code:404 "invalid file %S: %s" s
+            @@ Error.show e
+          | x -> x)
     in
     List.iter
       (fun file ->

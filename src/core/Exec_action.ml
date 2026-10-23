@@ -127,26 +127,26 @@ end = struct
       let files =
         CCIO.File.walk_l s.Subdir.path
         |> CCList.filter_map (fun (kind, f) ->
-               if interrupted () then Error.fail "files.walk.interrupted";
-               match kind with
-               | `File when filter f -> Some f
-               | _ -> None)
+            if interrupted () then Error.fail "files.walk.interrupted";
+            match kind with
+            | `File when filter f -> Some f
+            | _ -> None)
       in
       let n_files = List.length files in
       let n_done = ref 0 in
       files
       |> Misc.Par_map.map_p ~j:3 (fun path ->
-             if interrupted () then failwith "interrupted";
-             if dyn then
-               Misc.synchronized_sync (fun () ->
-                   Printf.printf "%s[%6d/%6d] find expect for `%s`…%!"
-                     Misc.reset_line !n_done n_files
-                     (Misc.truncate_left 30 path));
-             let res =
-               Problem.make_find_expect path ~expect:s.Subdir.inside.expect
-             in
-             incr n_done;
-             res)
+          if interrupted () then failwith "interrupted";
+          if dyn then
+            Misc.synchronized_sync (fun () ->
+                Printf.printf "%s[%6d/%6d] find expect for `%s`…%!"
+                  Misc.reset_line !n_done n_files
+                  (Misc.truncate_left 30 path));
+          let res =
+            Problem.make_find_expect path ~expect:s.Subdir.inside.expect
+          in
+          incr n_done;
+          res)
     with
     | Error.E _ as e -> raise e
     | exn -> Error.(raise @@ of_exn exn)
@@ -182,8 +182,8 @@ end = struct
     let checkers =
       Definitions.all_checkers defs
       |> List.map (fun c ->
-             let c = c.With_loc.view in
-             c.Proof_checker.name, c)
+          let c = c.With_loc.view in
+          c.Proof_checker.name, c)
       |> Misc.Str_map.of_list
     in
     { j; limits; problems; checkers; proof_dir; provers = s_provers }
@@ -350,33 +350,33 @@ end = struct
             ~stderr:result.raw.Run_proc_result.stderr ~res:result.res
             ~proof_file
           |> CCList.filter_map (fun (checker_name, pf_override) ->
-                 let actual_pf =
-                   match pf_override with
-                   | Some p -> p
-                   | None ->
-                     (match proof_file with
-                     | Some p -> p
-                     | None ->
-                       Error.failf
-                         "prover %s: get_checkers returned checker %s but no \
-                          proof file is available"
-                         prover.Prover.name checker_name)
-                 in
-                 match Misc.Str_map.find_opt checker_name self.checkers with
-                 | None ->
-                   Log.warn (fun k ->
-                       k "prover %s: unknown proof checker '%s'" prover.name
-                         checker_name);
-                   None
-                 | Some checker ->
-                   Some
-                     {
-                       cr_checker = checker;
-                       cr_prover = prover;
-                       cr_pb = pb;
-                       cr_proof_file = actual_pf;
-                       cr_keep = keep;
-                     })
+              let actual_pf =
+                match pf_override with
+                | Some p -> p
+                | None ->
+                  (match proof_file with
+                  | Some p -> p
+                  | None ->
+                    Error.failf
+                      "prover %s: get_checkers returned checker %s but no \
+                       proof file is available"
+                      prover.Prover.name checker_name)
+              in
+              match Misc.Str_map.find_opt checker_name self.checkers with
+              | None ->
+                Log.warn (fun k ->
+                    k "prover %s: unknown proof checker '%s'" prover.name
+                      checker_name);
+                None
+              | Some checker ->
+                Some
+                  {
+                    cr_checker = checker;
+                    cr_prover = prover;
+                    cr_pb = pb;
+                    cr_proof_file = actual_pf;
+                    cr_keep = keep;
+                  })
       in
 
       (* If no check tasks will use the proof file, clean it up now. *)

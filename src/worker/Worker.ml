@@ -45,23 +45,23 @@ let run_prover_pb ?proof_dir ~limits ~prover ~pb provers checkers =
       get_checkers ~stdout:result.raw.Run_proc_result.stdout
         ~stderr:result.raw.Run_proc_result.stderr ~res:result.res ~proof_file
       |> CCList.filter_map (fun (checker_name, pf_override) ->
-             let actual_pf =
-               match pf_override with
-               | Some p -> p
-               | None ->
-                 (match proof_file with
-                 | Some p -> p
-                 | None ->
-                   Error.failf
-                     "prover %s: get_checkers returned checker %s but no proof \
-                      file available"
-                     prover.Prover.name checker_name)
-             in
-             match Misc.Str_map.find_opt checker_name checkers with
-             | None ->
-               Log.warn (fun k -> k "worker: unknown checker '%s'" checker_name);
-               None
-             | Some checker -> Some (With_loc.view checker, actual_pf))
+          let actual_pf =
+            match pf_override with
+            | Some p -> p
+            | None ->
+              (match proof_file with
+              | Some p -> p
+              | None ->
+                Error.failf
+                  "prover %s: get_checkers returned checker %s but no proof \
+                   file available"
+                  prover.Prover.name checker_name)
+          in
+          match Misc.Str_map.find_opt checker_name checkers with
+          | None ->
+            Log.warn (fun k -> k "worker: unknown checker '%s'" checker_name);
+            None
+          | Some checker -> Some (With_loc.view checker, actual_pf))
   in
   (* Inline proof checking (worker does not have a dynamic queue). *)
   let ev_proofs =

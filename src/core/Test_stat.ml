@@ -228,7 +228,7 @@ let of_db_for ~(prover : Prover.name) (db : Db.t) : t =
       ~ty:Db.Ty.(p1 text, p1 (nullable float), CCOpt.get_or ~default:0.)
       ~f:Db.Cursor.get_one_exn
     |> Misc.unwrap_db (fun () ->
-           spf "obtaining total solved time for %s" prover)
+        spf "obtaining total solved time for %s" prover)
   in
   {
     sat;

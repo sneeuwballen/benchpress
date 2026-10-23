@@ -136,7 +136,7 @@ let db_to_table ?(offset = 0) ?(page_size = max_int) ?provers ?(filter_pb = "")
                     fun prover res t -> prover, Res.of_string ~tags res, t ))
               ~f:Db.Cursor.to_list_rev file
             |> Misc.unwrap_db (fun () ->
-                   spf "listing results for file '%s'" file)
+                spf "listing results for file '%s'" file)
             |> List.filter (fun (p, _, _) -> List.mem p provers)
           in
           { tr_problem = file; tr_res })

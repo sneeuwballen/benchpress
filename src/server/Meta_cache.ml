@@ -87,10 +87,9 @@ let load_meta (db : Db.t) self =
     | Some s ->
       CCString.split ~by:"," s
       |> List.filter_map (fun pair ->
-             match CCString.Split.left ~by:"=" pair with
-             | Some (name, version) ->
-               Some (String.trim name, String.trim version)
-             | None -> None)
+          match CCString.Split.left ~by:"=" pair with
+          | Some (name, version) -> Some (String.trim name, String.trim version)
+          | None -> None)
     | None -> List.map (fun n -> n, "<unknown>") provers
   in
   Test_metadata.
@@ -183,9 +182,9 @@ let importdb t (p : string) =
             ~ty:Db.Ty.(p1 any_str, p1 int, id)
             {| INSERT INTO test_database (path) VALUES (?) RETURNING id; |} p
           |> Misc.unwrap_db (fun () ->
-                 spf "Could not create metadata cache for %s" p)
+              spf "Could not create metadata cache for %s" p)
           |> Error.unwrap_opt' (fun () ->
-                 spf "Expected an id for metadata cache")
+              spf "Expected an id for metadata cache")
         in
         cache_meta t.database self meta;
         cache_file_hash t.database self meta_db
@@ -217,7 +216,7 @@ let find t (path : string) : Test_metadata.t =
                 ~ty:Db.Ty.(p1 any_str, p1 int, id)
                 {| SELECT id FROM test_database WHERE path = ?; |} path
               |> Misc.unwrap_db (fun () ->
-                     spf "Could not load metadata cache for %s" path)
+                  spf "Could not load metadata cache for %s" path)
             with
             | Some self -> load_meta t.database self
             | None -> importdb t path)
@@ -258,7 +257,7 @@ let find_similar_runs (t : t) (file_path : string) : string list =
               ~ty:Db.Ty.(p1 any_str, p1 int, id)
               {| SELECT id FROM test_database WHERE path = ?; |} file_path
             |> Misc.unwrap_db (fun () ->
-                   spf "Could not load db id for %s" file_path)
+                spf "Could not load db id for %s" file_path)
           with
           | Some self -> Some self
           | None ->
@@ -268,7 +267,7 @@ let find_similar_runs (t : t) (file_path : string) : string list =
                  ~ty:Db.Ty.(p1 any_str, p1 int, id)
                  {| SELECT id FROM test_database WHERE path = ?; |} file_path
                |> Misc.unwrap_db (fun () ->
-                      spf "Could not load db id after import")
+                   spf "Could not load db id after import")
              with
             | Some self -> Some self
             | None ->
@@ -339,7 +338,7 @@ let create ~sw ~path =
   let db = Sqlite3.db_open ~mutex:`FULL path in
   createdb db
   |> Misc.unwrap_db (fun () ->
-         spf "Could not create cache database at: %s" path);
+      spf "Could not create cache database at: %s" path);
   {
     database = db;
     memory = Hashtbl.create ~random:true 16;

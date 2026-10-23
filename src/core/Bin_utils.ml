@@ -70,14 +70,15 @@ let with_decompressed_zst (path : string) (f : string -> 'a) : 'a =
         Error.failf "zstd decompression of '%s' failed (exit %d)" path rc;
       f tmp)
 
-(** Open [file] as a sqlite DB and pass it to [f]; decompress first if [file]
-    is a zstd-compressed DB. *)
+(** Open [file] as a sqlite DB and pass it to [f]; decompress first if [file] is
+    a zstd-compressed DB. *)
 let with_db_maybe_decompress ?(timeout = 500) ?cache ?(mode = `READONLY) file
     (f : Db.t -> 'a) : 'a =
   if is_zst_file file then
     with_decompressed_zst file (fun tmp ->
         Db.with_db ~timeout ?cache ~mode tmp f)
-  else Db.with_db ~timeout ?cache ~mode file f
+  else
+    Db.with_db ~timeout ?cache ~mode file f
 
 let get_definitions () : Definitions.t =
   let conf_files =
@@ -189,15 +190,15 @@ let list_entries ?(off = 0) ?(limit = max_int) data_dir :
     _ list * [ `Done | `More ] =
   CCIO.File.walk_l data_dir
   |> CCList.filter_map (function
-       | `File, s
-         when Filename.check_suffix s ".json.gz"
-              || Filename.check_suffix s ".json"
-              || Filename.check_suffix s ".sqlite"
-              || Filename.check_suffix s ".sqlite.zst"
-              || Filename.check_suffix s ".sqlite.zstd" ->
-         let size = (Unix.stat s).Unix.st_size in
-         Some (s, size)
-       | _ -> None)
+    | `File, s
+      when Filename.check_suffix s ".json.gz"
+           || Filename.check_suffix s ".json"
+           || Filename.check_suffix s ".sqlite"
+           || Filename.check_suffix s ".sqlite.zst"
+           || Filename.check_suffix s ".sqlite.zstd" ->
+      let size = (Unix.stat s).Unix.st_size in
+      Some (s, size)
+    | _ -> None)
   |> List.sort (fun x y -> CCOrd.(pair CCString.compare_natural int) y x)
   |> fun l ->
   let l = CCList.drop off l in

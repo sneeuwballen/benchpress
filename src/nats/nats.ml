@@ -148,11 +148,11 @@ module Proto = struct
   let parse_headers str =
     String.split_on_char '\n' str
     |> List.filter_map (fun line ->
-           let line = String.trim line in
-           if line = "" then
-             None
-           else
-             Some (parse_header line))
+        let line = String.trim line in
+        if line = "" then
+          None
+        else
+          Some (parse_header line))
 
   let read_hmsg buf subject sid reply_to hdr_len total_len =
     let hdr_data = Eio.Buf_read.take hdr_len buf in

@@ -215,35 +215,34 @@ let handle_compare (self : Server_common.t) : unit =
     let files =
       names
       |> CCList.map (fun s ->
-             match Bin_utils.mk_file_full s with
-             | exception Error.E e ->
-               Log.err (fun k -> k "cannot load file %S" s);
-               H.Response.fail_raise ~code:404 "invalid file %S: %s" s
-                 (Error.show e)
-             | x -> x)
+          match Bin_utils.mk_file_full s with
+          | exception Error.E e ->
+            Log.err (fun k -> k "cannot load file %S" s);
+            H.Response.fail_raise ~code:404 "invalid file %S: %s" s
+              (Error.show e)
+          | x -> x)
     in
     let box_compare_l =
       let open PrintBox in
       CCList.diagonal files
       |> CCList.map (fun (f1, f2) ->
-             let c =
-               match Test_compare.Short.make f1 f2 with
-               | x -> x
-               | exception Error.E e ->
-                 Log.err (fun k ->
-                     k "cannot compare %s and %s: %s" f1 f2 @@ Error.show e);
-                 H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1
-                   f2
-             in
-             vlist ~bars:false
-               [
-                 sprintf "old: %s" f1;
-                 sprintf "new: %s" f2;
-                 Test.pb_v_record
-                 @@ CCList.map
-                      (fun (pr, c) -> pr, Test_compare.Short.to_printbox c)
-                      c;
-               ])
+          let c =
+            match Test_compare.Short.make f1 f2 with
+            | x -> x
+            | exception Error.E e ->
+              Log.err (fun k ->
+                  k "cannot compare %s and %s: %s" f1 f2 @@ Error.show e);
+              H.Response.fail_raise ~code:500 "cannot compare %s and %s" f1 f2
+          in
+          vlist ~bars:false
+            [
+              sprintf "old: %s" f1;
+              sprintf "new: %s" f2;
+              Test.pb_v_record
+              @@ CCList.map
+                   (fun (pr, c) -> pr, Test_compare.Short.to_printbox c)
+                   c;
+            ])
       |> vlist
     in
     let h =

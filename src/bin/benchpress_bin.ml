@@ -339,9 +339,9 @@ module Sample = struct
     let@ () = Error.guard (Error.wrapf "expanding subdir of_dir %S" p) in
     CCIO.File.walk_l p
     |> CCList.filter_map (fun (kind, f) ->
-           match kind with
-           | `File -> Some f
-           | _ -> None)
+        match kind with
+        | `File -> Some f
+        | _ -> None)
 
   let run ~n dirs =
     let@ () = catch_err in

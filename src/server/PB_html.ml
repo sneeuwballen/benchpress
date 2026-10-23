@@ -28,8 +28,8 @@ let attrs_of_style (s : B.Style.t) : _ list * _ =
   in
   let s =
     (match bg_color with
-    | None -> []
-    | Some c -> [ "background-color", encode_color c ])
+      | None -> []
+      | Some c -> [ "background-color", encode_color c ])
     @
     match fg_color with
     | None -> []

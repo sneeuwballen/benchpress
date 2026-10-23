@@ -28,27 +28,27 @@ let of_db db : t =
   let tbl =
     CCList.diagonal provers
     |> List.rev_map (fun (p1, p2) ->
-           assert (p1 <> p2);
-           let better =
-             db_get db
-               {|select count(r1.file) from prover_res r1, prover_res r2
+        assert (p1 <> p2);
+        let better =
+          db_get db
+            {|select count(r1.file) from prover_res r1, prover_res r2
                   where r1.prover=? and r2.prover=? and r1.file=r2.file
                   and r1.res in ('sat','unsat') and not (r2.res in ('sat','unsat')); |}
-               p1 p2
-           and worse =
-             db_get db
-               {|select count(r1.file) from prover_res r1, prover_res r2
+            p1 p2
+        and worse =
+          db_get db
+            {|select count(r1.file) from prover_res r1, prover_res r2
                   where r1.prover=? and r2.prover=? and r1.file=r2.file
                   and not (r1.res in ('sat','unsat')) and (r2.res in ('sat','unsat')); |}
-               p1 p2
-           and same =
-             db_get db
-               {|select count(r1.file) from prover_res r1, prover_res r2
+            p1 p2
+        and same =
+          db_get db
+            {|select count(r1.file) from prover_res r1, prover_res r2
                   where r1.prover=? and r2.prover=? and r1.file=r2.file
                   and r1.res in ('sat','unsat') and (r2.res in ('sat','unsat')); |}
-               p1 p2
-           in
-           p1, p2, { better; worse; same })
+            p1 p2
+        in
+        p1, p2, { better; worse; same })
   in
   { provers; tbl }
 

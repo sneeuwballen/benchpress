@@ -16,13 +16,13 @@ let strip_from_child_env = [| "TRACE"; "LOG" |]
 let child_env () : string array =
   Unix.environment () |> Array.to_seq
   |> Seq.filter (fun entry ->
-         not
-           (Array.exists
-              (fun key ->
-                let pfx = key ^ "=" in
-                String.length entry >= String.length pfx
-                && String.sub entry 0 (String.length pfx) = pfx)
-              strip_from_child_env))
+      not
+        (Array.exists
+           (fun key ->
+             let pfx = key ^ "=" in
+             String.length entry >= String.length pfx
+             && String.sub entry 0 (String.length pfx) = pfx)
+           strip_from_child_env))
   |> Array.of_seq
 
 let run cmd : Run_proc_result.t =

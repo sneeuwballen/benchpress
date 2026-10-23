@@ -168,11 +168,11 @@ let resolve_prover (rp : raw_prover) ~(base : Prover.t option)
   in
   let binary =
     (match rp.rp_binary with
-    | Some b -> b
-    | None ->
-      (match base with
-      | Some b -> b.Prover.binary
-      | None -> name))
+      | Some b -> b
+      | None ->
+        (match base with
+        | Some b -> b.Prover.binary
+        | None -> name))
     |> Misc.str_replace [ "cur_dir", cur_dir ]
   in
   let cmd = Misc.str_replace [ "cur_dir", cur_dir ] cmd in
