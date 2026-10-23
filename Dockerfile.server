@@ -1,22 +1,43 @@
-FROM ocaml/opam:debian-13-ocaml-5.4 AS build
+ARG ALPINE_VERSION=3.22
+ARG OCAML_VERSION=5.4.1
+ARG OPAM_REPO_COMMIT=3ca11aaa3b437179fd587ebcbe006b6aa2c21683
 
-WORKDIR /home/opam/
-RUN sudo apt-get install gnuplot libsqlite3-dev gnuplot-x11 libcurl4-gnutls-dev libjemalloc-dev -y
-RUN cd /home/opam/opam-repository && git fetch && git checkout 4f056bfedf536e66065c3783e694e6aa0b38261a
+FROM alpine:${ALPINE_VERSION} AS build
+ARG OCAML_VERSION
+ARG OPAM_REPO_COMMIT
+RUN apk add --no-cache ca-certificates curl git unzip build-base pkgconf m4 \
+      opam zlib-dev curl-dev openssl-dev sqlite-dev jemalloc-dev
+ENV OPAMROOT=/root/.opam OPAMSWITCH=/root/w OPAMYES=1 OPAMCONFIRMLEVEL=unsafe-yes
+# deterministically setup switch from a commit of opam-repo
+RUN git init /tmp/opam-repo && cd /tmp/opam-repo && \
+    git remote add origin https://github.com/ocaml/opam-repository.git && \
+    git fetch --depth 1 origin $OPAM_REPO_COMMIT && \
+    git checkout FETCH_HEAD && \
+    opam init --disable-sandboxing --bare --no-setup -k local /tmp/opam-repo && \
+    opam switch create /root/w --packages=ocaml-base-compiler.$OCAML_VERSION && \
+    opam install --no-depexts \
+      dune containers csv cmdliner iter logs ptime uuidm base64 printbox \
+      re processor yaml jsonm sqlite3 sqlite3_utils jemalloc eio eio_posix \
+      prometheus yojson pbrt pbrt_services pbrt_yojson digestif \
+      mirage-crypto-rng ppx_subliner && \
+    rm -rf /tmp/opam-repo
+# second batch: [trace] needs [eio] present for its optional [trace.eio] lib,
+# [tiny_httpd] needs [prometheus] for its optional [tiny_httpd.prometheus] lib
+RUN opam install --no-depexts \
+      trace tiny_httpd tiny_httpd_eio twirp_tiny_httpd opentelemetry \
+      opentelemetry-client-ocurl
 
-COPY dune-project Makefile *.opam .gitignore ./
-RUN opam install . --deps-only -y
+WORKDIR /src
+COPY . .
+RUN opam exec -- dune build --profile=release src/server/benchpress_server.exe && \
+    strip _build/default/src/server/benchpress_server.exe
 
-COPY ./vendor/ ./vendor/
-RUN opam install ./vendor/opentelemetry/opentelemetry.opam ./vendor/opentelemetry/opentelemetry-client.opam ./vendor/opentelemetry/opentelemetry-client-ocurl.opam --deps-only -y
-
-COPY ./data/ ./data/
-COPY ./src/ ./src/
-RUN opam exec -- dune build src/server/benchpress_server.exe
-
-
-FROM debian:trixie-slim AS runtime
-COPY --from=build /usr/lib64/* /usr/lib64/
-COPY --from=build /usr/lib/x86_64-linux-gnu/* /usr/lib/x86_64-linux-gnu/
-COPY --from=build /home/opam/_build/default/src/server/benchpress_server.exe benchpress_server
-ENTRYPOINT ./benchpress_server -p 8080
+FROM alpine:${ALPINE_VERSION} AS prod
+RUN apk add --no-cache sqlite-libs zstd curl libjemalloc ca-certificates
+COPY docker/benchpress-server.conf.yaml /config/benchpress/conf.yaml
+COPY --from=build /src/_build/default/src/server/benchpress_server.exe \
+     /usr/local/bin/benchpress-server
+ENV XDG_DATA_HOME=/data XDG_CONFIG_HOME=/config
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/benchpress-server"]
+CMD ["serve", "-d"]

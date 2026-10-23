@@ -1,0 +1,14 @@
+name: ghcr cleanup
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    uses: c-cube/c-cube-common/.github/workflows/ghcr-cleanup.yml@main
+    with:
+      package: benchpress-server
+      older-than-days: 30
+      dry-run: false

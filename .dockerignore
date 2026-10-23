@@ -1,2 +1,13 @@
-_opam
+# Keep the docker build context small: only src/, data/ and dune files matter.
+.git
+.github
+.trunk
+.env
 _build
+_opam
+trustee
+tests
+scripts
+data.sql
+*.exe
+*.md

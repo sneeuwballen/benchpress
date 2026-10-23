@@ -1,0 +1,7 @@
+# Benchpress server configuration.
+# This image is a display server: no local provers, results are read from
+# the data directory (mount it at /data/benchpress).
+# Override by mounting your own config file over /config/benchpress/conf.yaml
+# or by passing --config to the container command.
+provers: []
+dirs: []
