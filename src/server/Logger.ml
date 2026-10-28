@@ -1,5 +1,7 @@
 open Common
 
+type format = Logfmt | Systemd
+
 let show_lvl = function
   | Logs.Debug -> "<7>DEBUG"
   | Logs.Info -> "<6>INFO"
@@ -20,10 +22,13 @@ let make_stdout () : Logs.reporter =
   in
   Logs.format_reporter ~pp_header ~app ~dst ()
 
-let setup (lvl : Logs.level option) =
-  let m = Mutex.create () in
-  Logs.set_reporter_mutex
-    ~lock:(fun () -> Mutex.lock m)
-    ~unlock:(fun () -> Mutex.unlock m);
-  Logs.set_level ~all:true lvl;
-  Logs.set_reporter @@ make_stdout ()
+let setup ?(format = Logfmt) (lvl : Logs.level option) =
+  match format with
+  | Logfmt -> Log_setup.setup_logs lvl
+  | Systemd ->
+    let m = Mutex.create () in
+    Logs.set_reporter_mutex
+      ~lock:(fun () -> Mutex.lock m)
+      ~unlock:(fun () -> Mutex.unlock m);
+    Logs.set_level ~all:true lvl;
+    Logs.set_reporter @@ make_stdout ()

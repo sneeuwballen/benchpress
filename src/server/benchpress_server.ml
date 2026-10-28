@@ -347,9 +347,9 @@ let handle_file (self : Server_common.t) : unit =
 
 module Cmd = struct
   let main ?(local_only = false) ?port ~allow_delete ~allow_localhost ~log_lvl
-      ~(stdenv : Eio_unix.Stdenv.base) (defs : Definitions.t) () =
+      ~format ~(stdenv : Eio_unix.Stdenv.base) (defs : Definitions.t) () =
     try
-      Server_common.Logger.setup log_lvl;
+      Server_common.Logger.setup ~format log_lvl;
       let addr =
         if local_only then
           "127.0.0.1"
@@ -458,15 +458,28 @@ module Cmd = struct
         value & flag
         & info [ "allow-localhost" ]
             ~doc:"allow requests from localhost without API key")
+    and format =
+      Arg.(
+        value
+        & opt
+            (enum
+               [
+                 "logfmt", Server_common.Logger.Logfmt;
+                 "systemd", Server_common.Logger.Systemd;
+               ])
+            Server_common.Logger.Logfmt
+        & info [ "log-format" ]
+            ~doc:"format of the log lines ($(b,logfmt) or $(b,systemd))")
     and defs = Bin_utils.definitions_term in
     let doc = "serve embedded web UI on given port" in
-    let aux (log_lvl, defs) port local_only allow_delete allow_localhost () =
-      main ?port ~local_only ~allow_delete ~allow_localhost ~stdenv defs
+    let aux (log_lvl, defs) port local_only allow_delete allow_localhost format
+        () =
+      main ?port ~local_only ~allow_delete ~allow_localhost ~stdenv ~format defs
         ~log_lvl ()
     in
     ( Term.(
         const aux $ defs $ port $ local_only $ allow_delete $ allow_localhost
-        $ const ()),
+        $ format $ const ()),
       Cmd.info ~doc "serve" )
 end
 
