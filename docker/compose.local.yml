@@ -1,0 +1,32 @@
+# Local deployment of the server image, in place of the systemd user unit:
+#   docker compose -f docker/compose.local.yml up -d
+# Data lives in /home/benchpress-state (also reachable via
+# ~/.local/share/benchpress) and is mounted at /data/benchpress, matching
+# XDG_DATA_HOME=/data in the image.
+services:
+  server:
+    image: benchpress-server:local
+    build:
+      context: ..
+      dockerfile: Dockerfile.server
+    container_name: benchpress-server
+    restart: unless-stopped
+    # same uid as the previous systemd server, so file ownership stays consistent
+    user: "1000:1000"
+    # "-d" takes an argument ("combine with default config file(s)")
+    command: ["serve", "-d", "true"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file: ../.env
+    environment:
+      XDG_DATA_HOME: /data
+      XDG_CONFIG_HOME: /config
+      OTEL_SERVICE_NAME: benchpress-server
+    volumes:
+      - /home/benchpress-state:/data/benchpress
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

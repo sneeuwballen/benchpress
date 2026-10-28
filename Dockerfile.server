@@ -41,4 +41,4 @@ COPY --from=build /src/_build/default/src/server/benchpress_server.exe \
 ENV XDG_DATA_HOME=/data XDG_CONFIG_HOME=/config
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/benchpress-server"]
-CMD ["serve", "-d"]
+CMD ["serve", "-d", "true"]
