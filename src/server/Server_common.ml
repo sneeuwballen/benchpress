@@ -207,8 +207,36 @@ let query_wrap wrap (f : Misc.Chrono.t -> _) : H.Response.t =
 let to_str_with_errcode i err = Error.show err, i
 let add_errcode i err = err, i
 
+let req_duration : float Opentelemetry.Meter.Instrument.t =
+  Opentelemetry.Meter.Instrument.Histogram.create
+    ~name:"http.server.request.duration" ~unit_:"s" ()
+
+let class_counters : (string * int Opentelemetry.Meter.Instrument.t) list =
+  List.map
+    (fun cls ->
+      ( cls,
+        Opentelemetry.Meter.Instrument.Int_counter.create
+          ~name:("http.server.requests." ^ cls)
+          () ))
+    [ "2xx"; "3xx"; "429"; "403"; "4xx"; "5xx"; "others" ]
+
+let http_class = function
+  | c when c >= 200 && c < 300 -> "2xx"
+  | c when c >= 300 && c < 400 -> "3xx"
+  | 429 -> "429"
+  | 403 -> "403"
+  | c when c >= 400 && c < 500 -> "4xx"
+  | c when c >= 500 && c < 600 -> "5xx"
+  | _ -> "others"
+
+let record_http_class code =
+  Opentelemetry.Meter.Instrument.Int_counter.add
+    (List.assoc (http_class code) class_counters)
+    1
+
 let trace_middleware : H.Middleware.t =
  fun h req ~resp ->
+  let t0 = Unix.gettimeofday () in
   let@ _span = Trace.with_span ~parent:None ~__FILE__ ~__LINE__ "http.handle" in
   Trace.add_data_to_span _span
     [
@@ -224,12 +252,18 @@ let trace_middleware : H.Middleware.t =
     in
     Trace.add_data_to_span _span
       (size @ [ "http.response.code", `Int response.code ]);
+    Opentelemetry.Meter.Instrument.Histogram.record req_duration
+      (Unix.gettimeofday () -. t0);
+    record_http_class response.code;
     resp response
   in
   try h req ~resp
   with exn ->
     let bt = Printexc.get_raw_backtrace () in
     Opentelemetry_trace.record_exception _span exn bt;
+    Opentelemetry.Meter.Instrument.Histogram.record req_duration
+      (Unix.gettimeofday () -. t0);
+    record_http_class 500;
     Printexc.raise_with_backtrace exn bt
 
 (** user metadata: render the fragment (table + add form) *)

@@ -363,10 +363,6 @@ module Cmd = struct
           ~max_connections:32 ~addr ?port ()
       in
 
-      let prometheus = Tiny_httpd_prometheus.(global) in
-      Tiny_httpd_prometheus.instrument_server server prometheus;
-      Tiny_httpd_prometheus.GC_metrics.create_and_update_before_emit prometheus;
-
       let data_dir = Misc.data_dir () in
       let meta_cache =
         Meta_cache.create ~sw ~path:(Filename.concat data_dir "meta.sqlite3")

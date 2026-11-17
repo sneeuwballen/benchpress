@@ -111,9 +111,9 @@
   (twirp_tiny_httpd
    (>= 0.2))
   (opentelemetry
-   (>= 0.90))
+   (>= 0.92))
   (opentelemetry-client-ocurl
-   (>= 0.90))
+   (>= 0.92))
   (pbrt
    (>= 4.0))
   (pbrt_services

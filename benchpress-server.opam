@@ -30,8 +30,8 @@ depends: [
   "mirage-crypto-rng" {>= "2.0"}
   "digestif" {>= "1.0"}
   "twirp_tiny_httpd" {>= "0.2"}
-  "opentelemetry" {>= "0.90"}
-  "opentelemetry-client-ocurl" {>= "0.90"}
+  "opentelemetry" {>= "0.92"}
+  "opentelemetry-client-ocurl" {>= "0.92"}
   "pbrt" {>= "4.0"}
   "pbrt_services" {>= "4.0"}
   "pbrt_yojson" {>= "4.0"}

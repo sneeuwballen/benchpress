@@ -19,11 +19,10 @@ RUN git init /tmp/opam-repo && cd /tmp/opam-repo && \
       dune containers csv cmdliner iter logs ptime uuidm base64 \
       re processor yaml jsonm sqlite3 sqlite3_utils jemalloc eio eio_posix \
       printbox printbox-text \
-      prometheus yojson pbrt pbrt_services pbrt_yojson digestif \
+      yojson pbrt pbrt_services pbrt_yojson digestif \
       mirage-crypto-rng ppx_subliner && \
     rm -rf /tmp/opam-repo
-# second batch: [trace] needs [eio] present for its optional [trace.eio] lib,
-# [tiny_httpd] needs [prometheus] for its optional [tiny_httpd.prometheus] lib
+# second batch: [trace] needs [eio] present for its optional [trace.eio] lib
 RUN opam install --no-depexts \
       trace tiny_httpd tiny_httpd_eio twirp_tiny_httpd opentelemetry \
       opentelemetry-client-ocurl
