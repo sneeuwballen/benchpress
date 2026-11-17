@@ -1,5 +1,8 @@
 name: build
 
+env:
+  OPAM_REPO_COMMIT: e7fc498b6a22a2e3a3004a201c785ee47c594502
+
 on:
   push:
     branches:
@@ -29,6 +32,15 @@ jobs:
             https://github.com/Orange-OpenSource/hurl/releases/download/7.1.0/hurl_7.1.0_amd64.deb
           apt-get install -y --no-install-recommends \
             libsqlite3-dev gnuplot-nox /tmp/hurl.deb
+      - name: pin opam-repository
+        run: |
+          git init /tmp/opam-repo
+          cd /tmp/opam-repo
+          git remote add origin https://github.com/ocaml/opam-repository.git
+          git fetch --depth 1 origin "$OPAM_REPO_COMMIT"
+          git checkout FETCH_HEAD
+          opam repo remove default || true
+          opam repo add pinned /tmp/opam-repo
       - run: opam pin .#HEAD -y -n
       - run: opam install -t . --deps-only
       - run: opam exec -- dune build @all --ignore-promoted-rules
