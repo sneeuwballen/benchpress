@@ -1,39 +1,20 @@
-ARG ALPINE_VERSION=3.22
-ARG OCAML_VERSION=5.4.1
-ARG OPAM_REPO_COMMIT=e7fc498b6a22a2e3a3004a201c785ee47c594502
-
-FROM alpine:${ALPINE_VERSION} AS build
-ARG OCAML_VERSION
-ARG OPAM_REPO_COMMIT
-RUN apk add --no-cache ca-certificates curl git bash unzip build-base pkgconf m4 \
-      opam zlib-dev curl-dev openssl-dev sqlite-dev jemalloc-dev
-ENV OPAMROOT=/root/.opam OPAMSWITCH=/root/w OPAMYES=1 OPAMCONFIRMLEVEL=unsafe-yes
-# deterministically setup switch from a commit of opam-repo
-RUN git init /tmp/opam-repo && cd /tmp/opam-repo && \
-    git remote add origin https://github.com/ocaml/opam-repository.git && \
-    git fetch --depth 1 origin $OPAM_REPO_COMMIT && \
-    git checkout FETCH_HEAD && \
-    opam init --disable-sandboxing --bare --no-setup -k local /tmp/opam-repo && \
-    opam switch create /root/w --packages=ocaml-base-compiler.$OCAML_VERSION && \
-    opam install --no-depexts \
-      dune containers csv cmdliner iter logs ptime uuidm base64 \
-      re processor yaml jsonm sqlite3 sqlite3_utils jemalloc eio eio_posix \
-      printbox printbox-text \
-      yojson pbrt pbrt_services pbrt_yojson digestif \
-      mirage-crypto-rng ppx_subliner && \
-    rm -rf /tmp/opam-repo
-# second batch: [trace] needs [eio] present for its optional [trace.eio] lib
-RUN opam install --no-depexts \
-      trace tiny_httpd tiny_httpd_eio twirp_tiny_httpd opentelemetry \
-      opentelemetry-client-ocurl
-
+# build stage: c-cube ci image (OCaml 5.5, dune 3.25 preinstalled)
+FROM ghcr.io/c-cube/c-cube-commmon/ci-5.5:latest AS build
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+      libsqlite3-dev libcurl4-gnutls-dev rsync
 WORKDIR /src
+COPY *.opam ./
+RUN opam pin add -y -n . && \
+    opam install -t . --deps-only -y
 COPY . .
 RUN opam exec -- dune build --profile=release src/server/benchpress_server.exe && \
     strip _build/default/src/server/benchpress_server.exe
 
-FROM alpine:${ALPINE_VERSION} AS prod
-RUN apk add --no-cache sqlite-libs zstd curl jemalloc ca-certificates
+# runtime: debian trixie (glibc >= the build image's; bookworm is too old)
+FROM debian:trixie AS prod
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+      libsqlite3-0 libcurl3-gnutls libjemalloc2 ca-certificates zstd && \
+    rm -rf /var/lib/apt/lists/*
 COPY docker/benchpress-server.conf.yaml /config/benchpress/conf.yaml
 COPY --from=build /src/_build/default/src/server/benchpress_server.exe \
      /usr/local/bin/benchpress-server
